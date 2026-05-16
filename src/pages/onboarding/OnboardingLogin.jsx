@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, ArrowRight, Building2, User } from 'lucide-react';
-import { DEMO_USERS } from '../../store/useAppStore';
+import { Mail, Lock, ArrowRight, Building2, User, Upload, CheckCircle, AlertCircle } from 'lucide-react';
+import { DEMO_USERS, KYC_REQUIREMENTS } from '../../store/useAppStore';
 import useAppStore from '../../store/useAppStore';
 
 const inputStyle = {
@@ -22,7 +22,9 @@ export default function OnboardingLogin() {
 
   // Apply form
   const [applyForm, setApplyForm] = useState({ entityName:'', email:'', password:'' });
-  const [kycForm, setKycForm]     = useState({ docType:'', regNum:'', file: null });
+  const [kycUploads, setKycUploads] = useState({});
+  const [kycSubmitted, setKycSubmitted] = useState(false);
+  const [createStep, setCreateStep] = useState('form'); // 'form' | 'kyc'
 
   const { login } = useAppStore();
   const navigate = useNavigate();
@@ -82,9 +84,10 @@ export default function OnboardingLogin() {
     </div>
   );
 
-  const DOC_TYPES = isCorp
-    ? ['Certificate of Incorporation','Tax Clearance Certificate','SCUML Certificate']
-    : ['BVN + Utility Bill','NIN + Passport Photo','Drivers License + Bank Statement'];
+  const kycDocs = isCorp ? KYC_REQUIREMENTS.corporate : KYC_REQUIREMENTS.individual;
+  const allUploaded = kycDocs.every(d => kycUploads[d.key]);
+
+  const handleKycUpload = (key, file) => setKycUploads(prev => ({ ...prev, [key]: file }));
 
   return (
     <div style={{ minHeight:'100vh', display:'flex', background:'#f0f4ff' }}>
@@ -218,61 +221,57 @@ export default function OnboardingLogin() {
             </div>
           )}
 
-          {/* ── KYC Step ── */}
+          {/* ── KYC Step (Corporate) ── */}
           {mode === 'kyc' && (
             <div className="animate-in">
-              <button onClick={() => setMode('apply')} style={{ background:'none',border:'none',cursor:'pointer',color:'#3b6ef8',fontSize:12,fontWeight:700,marginBottom:16,padding:0 }}>← Back to Registration</button>
-              <h2 style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:22, color:'var(--navy)', marginBottom:4 }}>ENTITY VERIFICATION</h2>
-              <p style={{ fontSize:10, color:'var(--gray-400)', letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:24 }}>Complete Mandatory Compliance (1/1)</p>
-              <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-                <div>
-                  <div style={{ fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--gray-400)', marginBottom:7 }}>Primary Document Type</div>
-                  <div style={{ position:'relative' }}>
-                    <select value={kycForm.docType} onChange={e => setKycForm(f => ({...f, docType: e.target.value}))}
-                      style={{ ...inputStyle, paddingLeft:14, appearance:'none', cursor:'pointer' }}
-                      onFocus={e => e.target.style.borderColor='var(--navy)'}
-                      onBlur={e => e.target.style.borderColor='#d1d5db'}>
-                      <option value="">Select Verification Doc</option>
-                      {DOC_TYPES.map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                    <span style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', color:'var(--gray-400)' }}>▾</span>
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--gray-400)', marginBottom:7 }}>Document Reg Number</div>
-                  <div style={{ position:'relative' }}>
-                    <Lock size={14} color="var(--gray-400)" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }} />
-                    <input type="text" placeholder="RC-000000" value={kycForm.regNum}
-                      onChange={e => setKycForm(f => ({...f, regNum: e.target.value}))} style={inputStyle}
-                      onFocus={e => e.target.style.borderColor='var(--navy)'}
-                      onBlur={e => e.target.style.borderColor='#d1d5db'} />
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--gray-400)', marginBottom:7 }}>Upload Authenticated Copy</div>
-                  <label style={{
-                    display:'flex', flexDirection:'column', alignItems:'center', gap:8,
-                    padding:'24px', border:'1.5px dashed #d1d5db', borderRadius:10,
-                    cursor:'pointer', background:'#f8fafc', transition:'all 0.2s',
-                  }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor='var(--navy)'; e.currentTarget.style.background='white'; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor='#d1d5db'; e.currentTarget.style.background='#f8fafc'; }}
-                  >
-                    <input type="file" style={{ display:'none' }} onChange={e => setKycForm(f => ({...f, file: e.target.files?.[0]||null}))} />
-                    <span style={{ fontSize:20 }}>📎</span>
-                    <span style={{ fontSize:12, color: kycForm.file ? 'var(--navy)' : 'var(--gray-400)', fontWeight: kycForm.file ? 600 : 400 }}>
-                      {kycForm.file ? kycForm.file.name : 'Browse PDF or Image'}
-                    </span>
-                  </label>
-                </div>
-                <button onClick={() => setMode('signin')} style={{
-                  background:'var(--navy)', color:'white', fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:13,
-                  letterSpacing:'0.08em', border:'none', borderRadius:10, padding:'14px', cursor:'pointer',
-                  display:'flex', alignItems:'center', justifyContent:'center', gap:8, marginTop:4,
-                }}>
-                  SUBMIT FOR REVIEW <ArrowRight size={15} />
-                </button>
+              <button onClick={() => { setMode('apply'); setKycUploads({}); setKycSubmitted(false); }} style={{ background:'none',border:'none',cursor:'pointer',color:'#3b6ef8',fontSize:12,fontWeight:700,marginBottom:16,padding:0 }}>← Back to Registration</button>
+              <h2 style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:22, color:'var(--navy)', marginBottom:4 }}>ENTITY KYC</h2>
+              <p style={{ fontSize:10, color:'var(--gray-400)', letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:6 }}>Upload ALL required documents to proceed</p>
+              <div style={{ fontSize:12, color:'var(--red)', background:'rgba(239,68,68,0.07)', padding:'10px 12px', borderRadius:8, marginBottom:18 }}>
+                <strong>All documents are required.</strong> You must upload each file before submitting.
               </div>
+              {kycSubmitted ? (
+                <div style={{ textAlign:'center', padding:'30px 0' }}>
+                  <CheckCircle size={48} color="var(--green)" style={{ marginBottom:14 }}/>
+                  <div style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:18, color:'var(--navy)', marginBottom:8 }}>Submitted for Review</div>
+                  <p style={{ fontSize:12, color:'var(--gray-400)', marginBottom:20 }}>Your KYC documents have been submitted. Our compliance team will review within 1–2 business days. You will be notified by email.</p>
+                  <button onClick={() => setMode('signin')} style={{ background:'var(--navy)', color:'white', fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:12, border:'none', borderRadius:8, padding:'12px 24px', cursor:'pointer' }}>BACK TO LOGIN</button>
+                </div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                  {kycDocs.map(doc => (
+                    <div key={doc.key} style={{ background: kycUploads[doc.key] ? 'rgba(34,197,94,0.06)' : '#f8fafc', border: `1px solid ${kycUploads[doc.key] ? 'rgba(34,197,94,0.3)' : '#e2e8f0'}`, borderRadius:10, padding:'12px 14px', display:'flex', alignItems:'center', gap:12 }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:12, fontWeight:700, color:'var(--navy)', marginBottom:2 }}>{doc.label}</div>
+                        {kycUploads[doc.key] ? (
+                          <div style={{ fontSize:11, color:'var(--green)', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>✓ {kycUploads[doc.key].name}</div>
+                        ) : (
+                          <div style={{ fontSize:10, color:'var(--gray-400)' }}>PDF, JPG, or PNG — Max 5MB</div>
+                        )}
+                      </div>
+                      <label style={{ flexShrink:0, display:'flex', alignItems:'center', gap:5, padding:'7px 12px', background: kycUploads[doc.key] ? 'rgba(34,197,94,0.12)' : 'var(--navy)', color: kycUploads[doc.key] ? 'var(--green)' : 'white', borderRadius:7, cursor:'pointer', fontSize:11, fontWeight:700 }}>
+                        <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display:'none' }} onChange={e => handleKycUpload(doc.key, e.target.files?.[0]||null)} />
+                        {kycUploads[doc.key] ? <><CheckCircle size={12}/> Uploaded</> : <><Upload size={12}/> Upload</>}
+                      </label>
+                    </div>
+                  ))}
+                  <div style={{ marginTop:4, fontSize:11, color: allUploaded ? 'var(--green)' : 'var(--gray-400)', fontWeight:600 }}>
+                    {Object.keys(kycUploads).length}/{kycDocs.length} documents uploaded
+                  </div>
+                  {!allUploaded && (
+                    <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color:'var(--red)', background:'rgba(239,68,68,0.06)', padding:'8px 12px', borderRadius:8 }}>
+                      <AlertCircle size={12}/> Please upload all required documents before submitting.
+                    </div>
+                  )}
+                  <button onClick={() => allUploaded && setKycSubmitted(true)} disabled={!allUploaded} style={{
+                    background:'var(--navy)', color:'white', fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:13,
+                    letterSpacing:'0.08em', border:'none', borderRadius:10, padding:'14px', cursor: allUploaded ? 'pointer' : 'not-allowed',
+                    display:'flex', alignItems:'center', justifyContent:'center', gap:8, marginTop:4, opacity: allUploaded ? 1 : 0.45,
+                  }}>
+                    SUBMIT FOR REVIEW <ArrowRight size={15} />
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -293,20 +292,81 @@ export default function OnboardingLogin() {
 
 function IndividualCreate({ onBack }) {
   const [accountType, setAccountType] = useState('single');
+  const [step, setStep] = useState('form'); // 'form' | 'kyc'
   const [form, setForm] = useState({ primaryName:'', secondaryName:'', email:'', password:'' });
+  const [kycUploads, setKycUploads] = useState({});
+  const [submitted, setSubmitted] = useState(false);
   const set = (k,v) => setForm(f => ({...f,[k]:v}));
-  const inputStyle = { width:'100%', border:'1px solid #d1d5db', borderRadius:8, padding:'11px 14px 11px 38px', fontFamily:'DM Sans,sans-serif', fontSize:14, color:'#1e293b', background:'white', outline:'none', transition:'border-color 0.2s' };
+  const handleUpload = (key, file) => setKycUploads(prev => ({ ...prev, [key]: file }));
+
+  const iStyle = { width:'100%', border:'1px solid #d1d5db', borderRadius:8, padding:'11px 14px 11px 38px', fontFamily:'DM Sans,sans-serif', fontSize:14, color:'#1e293b', background:'white', outline:'none', transition:'border-color 0.2s' };
+
+  const docList = accountType === 'joint' ? KYC_REQUIREMENTS.joint : KYC_REQUIREMENTS.individual;
+  const allUploaded = docList.every(d => kycUploads[d.key]);
+  const formValid = form.primaryName && form.email && form.password && (accountType !== 'joint' || form.secondaryName);
+
+  if (submitted) return (
+    <div className="animate-in" style={{ textAlign:'center', padding:'30px 0' }}>
+      <CheckCircle size={48} color="var(--green)" style={{ marginBottom:14 }}/>
+      <div style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:18, color:'var(--navy)', marginBottom:8 }}>Application Submitted</div>
+      <p style={{ fontSize:12, color:'var(--gray-400)', marginBottom:20 }}>All KYC documents received. Our team will review and activate your account within 1–2 business days.</p>
+      <button onClick={onBack} style={{ background:'var(--navy)', color:'white', fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:12, border:'none', borderRadius:8, padding:'12px 24px', cursor:'pointer' }}>BACK TO LOGIN</button>
+    </div>
+  );
+
+  if (step === 'kyc') return (
+    <div className="animate-in">
+      <button onClick={() => { setStep('form'); setKycUploads({}); }} style={{ background:'none',border:'none',cursor:'pointer',color:'#3b6ef8',fontSize:12,fontWeight:700,marginBottom:16,padding:0 }}>← Back to Account Details</button>
+      <h2 style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:22, color:'var(--navy)', marginBottom:4 }}>IDENTITY VERIFICATION</h2>
+      <p style={{ fontSize:10, color:'var(--gray-400)', letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:6 }}>{accountType === 'joint' ? 'Joint KYC — Both Holders' : 'Individual KYC'} · All documents required</p>
+      <div style={{ fontSize:12, color:'var(--red)', background:'rgba(239,68,68,0.07)', padding:'10px 12px', borderRadius:8, marginBottom:18 }}>
+        <strong>All documents are mandatory.</strong> Upload each file before submitting.
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+        {docList.map(doc => (
+          <div key={doc.key} style={{ background: kycUploads[doc.key] ? 'rgba(34,197,94,0.06)' : '#f8fafc', border: `1px solid ${kycUploads[doc.key] ? 'rgba(34,197,94,0.3)' : '#e2e8f0'}`, borderRadius:10, padding:'12px 14px', display:'flex', alignItems:'center', gap:12 }}>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:'var(--navy)', marginBottom:2 }}>{doc.label}</div>
+              {kycUploads[doc.key] ? (
+                <div style={{ fontSize:11, color:'var(--green)', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>✓ {kycUploads[doc.key].name}</div>
+              ) : (
+                <div style={{ fontSize:10, color:'var(--gray-400)' }}>PDF, JPG, or PNG — Max 5MB</div>
+              )}
+            </div>
+            <label style={{ flexShrink:0, display:'flex', alignItems:'center', gap:5, padding:'7px 12px', background: kycUploads[doc.key] ? 'rgba(34,197,94,0.12)' : 'var(--navy)', color: kycUploads[doc.key] ? 'var(--green)' : 'white', borderRadius:7, cursor:'pointer', fontSize:11, fontWeight:700 }}>
+              <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display:'none' }} onChange={e => handleUpload(doc.key, e.target.files?.[0]||null)} />
+              {kycUploads[doc.key] ? <><CheckCircle size={12}/> Uploaded</> : <><Upload size={12}/> Upload</>}
+            </label>
+          </div>
+        ))}
+        <div style={{ fontSize:11, color: allUploaded ? 'var(--green)' : 'var(--gray-400)', fontWeight:600 }}>
+          {Object.keys(kycUploads).length}/{docList.length} documents uploaded
+        </div>
+        {!allUploaded && (
+          <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color:'var(--red)', background:'rgba(239,68,68,0.06)', padding:'8px 12px', borderRadius:8 }}>
+            <AlertCircle size={12}/> Please upload all required documents before submitting.
+          </div>
+        )}
+        <button onClick={() => allUploaded && setSubmitted(true)} disabled={!allUploaded} style={{
+          background:'var(--navy)', color:'white', fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:13,
+          letterSpacing:'0.08em', border:'none', borderRadius:10, padding:'14px', cursor: allUploaded ? 'pointer' : 'not-allowed',
+          display:'flex', alignItems:'center', justifyContent:'center', gap:8, marginTop:4, opacity: allUploaded ? 1 : 0.45,
+        }}>
+          SUBMIT APPLICATION <ArrowRight size={15} />
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="animate-in">
       <button onClick={onBack} style={{ background:'none',border:'none',cursor:'pointer',color:'#3b6ef8',fontSize:12,fontWeight:700,marginBottom:16,padding:0 }}>← Back to Login</button>
       <h2 style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:22, color:'var(--navy)', marginBottom:4 }}>CREATE ACCOUNT</h2>
-      <p style={{ fontSize:10, color:'var(--gray-400)', letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:20 }}>Select account type and proceed</p>
+      <p style={{ fontSize:10, color:'var(--gray-400)', letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:20 }}>Select account type and provide details</p>
 
-      {/* Account type tabs */}
       <div style={{ display:'flex', background:'#f1f5f9', borderRadius:10, padding:4, marginBottom:22 }}>
         {['single','joint'].map(t => (
-          <button key={t} onClick={() => setAccountType(t)} style={{
+          <button key={t} onClick={() => { setAccountType(t); setKycUploads({}); }} style={{
             flex:1, padding:'9px', borderRadius:7, border:'none', cursor:'pointer',
             fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:12, letterSpacing:'0.05em',
             background: accountType===t ? 'white' : 'transparent',
@@ -326,14 +386,14 @@ function IndividualCreate({ onBack }) {
               <div style={{ fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--gray-400)', marginBottom:7 }}>Primary Applicant Name</div>
               <div style={{ position:'relative' }}>
                 <User size={14} color="var(--gray-400)" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }} />
-                <input type="text" placeholder="JOHN DOE" value={form.primaryName} onChange={e => set('primaryName',e.target.value)} style={inputStyle} onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='#d1d5db'} />
+                <input type="text" placeholder="JOHN DOE" value={form.primaryName} onChange={e => set('primaryName',e.target.value)} style={iStyle} onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='#d1d5db'} />
               </div>
             </div>
             <div>
               <div style={{ fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--gray-400)', marginBottom:7 }}>Secondary Applicant Name</div>
               <div style={{ position:'relative' }}>
                 <User size={14} color="var(--gray-400)" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }} />
-                <input type="text" placeholder="JANE DOE" value={form.secondaryName} onChange={e => set('secondaryName',e.target.value)} style={inputStyle} onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='#d1d5db'} />
+                <input type="text" placeholder="JANE DOE" value={form.secondaryName} onChange={e => set('secondaryName',e.target.value)} style={iStyle} onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='#d1d5db'} />
               </div>
             </div>
           </>
@@ -342,7 +402,7 @@ function IndividualCreate({ onBack }) {
             <div style={{ fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--gray-400)', marginBottom:7 }}>Full Name</div>
             <div style={{ position:'relative' }}>
               <User size={14} color="var(--gray-400)" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }} />
-              <input type="text" placeholder="JOHN DOE" value={form.primaryName} onChange={e => set('primaryName',e.target.value)} style={inputStyle} onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='#d1d5db'} />
+              <input type="text" placeholder="JOHN DOE" value={form.primaryName} onChange={e => set('primaryName',e.target.value)} style={iStyle} onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='#d1d5db'} />
             </div>
           </div>
         )}
@@ -350,20 +410,20 @@ function IndividualCreate({ onBack }) {
           <div style={{ fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--gray-400)', marginBottom:7 }}>Email Address</div>
           <div style={{ position:'relative' }}>
             <Mail size={14} color="var(--gray-400)" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }} />
-            <input type="email" placeholder="you@email.com" value={form.email} onChange={e => set('email',e.target.value)} style={inputStyle} onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='#d1d5db'} />
+            <input type="email" placeholder="you@email.com" value={form.email} onChange={e => set('email',e.target.value)} style={iStyle} onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='#d1d5db'} />
           </div>
         </div>
         <div>
           <div style={{ fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--gray-400)', marginBottom:7 }}>Secure Password</div>
           <div style={{ position:'relative' }}>
             <Lock size={14} color="var(--gray-400)" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }} />
-            <input type="password" placeholder="••••••••••" value={form.password} onChange={e => set('password',e.target.value)} style={inputStyle} onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='#d1d5db'} />
+            <input type="password" placeholder="••••••••••" value={form.password} onChange={e => set('password',e.target.value)} style={iStyle} onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='#d1d5db'} />
           </div>
         </div>
-        <button onClick={onBack} style={{
+        <button onClick={() => formValid && setStep('kyc')} disabled={!formValid} style={{
           background:'var(--navy)', color:'white', fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:13,
-          letterSpacing:'0.08em', border:'none', borderRadius:10, padding:'14px', cursor:'pointer',
-          display:'flex', alignItems:'center', justifyContent:'center', gap:8, marginTop:4,
+          letterSpacing:'0.08em', border:'none', borderRadius:10, padding:'14px', cursor: formValid ? 'pointer' : 'not-allowed',
+          display:'flex', alignItems:'center', justifyContent:'center', gap:8, marginTop:4, opacity: formValid ? 1 : 0.5,
         }}>
           CONTINUE TO KYC <ArrowRight size={15} />
         </button>
