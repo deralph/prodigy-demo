@@ -1,34 +1,58 @@
 import React, { useState } from 'react';
-import { Clock } from 'lucide-react';
-
-const auditLog = [
-  { id:'AUD-001', admin:'Super Administrator', action:'Approved KYC',          target:'Prodigy Holdings Ltd', time:'Apr 22, 2024 09:14', category:'kyc' },
-  { id:'AUD-002', admin:'Compliance Officer',  action:'Flagged AML Alert',     target:'Heritage Global Inv.', time:'Apr 21, 2024 15:32', category:'compliance' },
-  { id:'AUD-003', admin:'Finance Manager',     action:'Processed Redemption',  target:'₦2,000,000 — Corp Fund',time:'Apr 20, 2024 11:00', category:'finance' },
-  { id:'AUD-004', admin:'Investment Manager',  action:'Updated Plan ROI',      target:'Prodigy Apex → 20%',  time:'Apr 19, 2024 14:22', category:'investment' },
-  { id:'AUD-005', admin:'Head of Operations',  action:'Approved Subscription', target:'John Doe — Genesis',  time:'Apr 18, 2024 10:45', category:'operations' },
-  { id:'AUD-006', admin:'Audit Officer',       action:'Generated Report',      target:'Q1 2024 Portfolio',   time:'Apr 15, 2024 16:00', category:'audit' },
-  { id:'AUD-007', admin:'Super Administrator', action:'Created Admin Account', target:'investment@prodigy.ng',time:'Apr 10, 2024 09:00', category:'system' },
-  { id:'AUD-008', admin:'Compliance Officer',  action:'Reviewed Document',     target:'Sunshine Ventures CAC',time:'Apr 08, 2024 12:30', category:'kyc' },
-];
+import { Clock, Download, Search } from 'lucide-react';
+import useAppStore, { ROLE_COLORS } from '../../store/useAppStore';
 
 const catColor = { kyc:'#8b5cf6', compliance:'#ef4444', finance:'#22c55e', investment:'#e8b84b', operations:'#3b82f6', audit:'#f97316', system:'#0d1b35' };
 
 export default function AuditTrail() {
+  const { auditLog } = useAppStore();
   const [catFilter, setCatFilter] = useState('all');
-  const filtered = catFilter==='all' ? auditLog : auditLog.filter(a=>a.category===catFilter);
+  const [search, setSearch] = useState('');
+
+  const filtered = auditLog.filter(a => {
+    const ms = search === '' ||
+      a.admin.toLowerCase().includes(search.toLowerCase()) ||
+      a.action.toLowerCase().includes(search.toLowerCase()) ||
+      a.target.toLowerCase().includes(search.toLowerCase());
+    const mc = catFilter === 'all' || a.category === catFilter;
+    return ms && mc;
+  });
+
+  const exportCSV = () => {
+    const rows = filtered.map(a => `"${a.time}","${a.id}","${a.admin}","${a.role}","${a.action}","${a.target}","${a.category}","${a.ip}"`).join('\n');
+    const blob = new Blob(['Time,ID,Admin Name,Role,Action,Target,Category,IP\n'+rows],{type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download='audit_log.csv'; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div>
       <div style={{ marginBottom:24 }} className="animate-in">
-        <h1 style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:'clamp(18px,3vw,24px)',color:'var(--navy)',letterSpacing:'0.02em',textTransform:'uppercase' }}>Audit Trail</h1>
-        <p style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.1em',textTransform:'uppercase',marginTop:4 }}>Complete activity log across all admins and users</p>
+        <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12 }}>
+          <div>
+            <h1 style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:'clamp(18px,3vw,24px)',color:'var(--navy)',letterSpacing:'0.02em',textTransform:'uppercase' }}>Audit Trail</h1>
+            <p style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.1em',textTransform:'uppercase',marginTop:4 }}>Complete activity log — all admins, all actions</p>
+          </div>
+          <button onClick={exportCSV} style={{ display:'flex',alignItems:'center',gap:6,padding:'9px 16px',background:'white',border:'1px solid var(--gray-200)',borderRadius:9,cursor:'pointer',fontSize:12,fontWeight:700,color:'#3b82f6',fontFamily:'Syne,sans-serif' }}>
+            <Download size={13}/> Export CSV
+          </button>
+        </div>
       </div>
 
-      <div style={{ display:'flex',gap:8,marginBottom:18,flexWrap:'wrap' }} className="animate-in delay-1">
+      {/* Search */}
+      <div style={{ position:'relative',marginBottom:16 }} className="animate-in delay-1">
+        <Search size={14} color="var(--gray-400)" style={{ position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',pointerEvents:'none' }}/>
+        <input placeholder="Search by admin name, action, or target..." value={search} onChange={e=>setSearch(e.target.value)}
+          style={{ width:'100%',border:'1px solid var(--gray-200)',borderRadius:9,padding:'10px 12px 10px 36px',fontFamily:'DM Sans,sans-serif',fontSize:13,outline:'none',background:'white' }}
+          onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='var(--gray-200)'}/>
+      </div>
+
+      {/* Category filters */}
+      <div style={{ display:'flex',gap:8,marginBottom:18,flexWrap:'wrap' }} className="animate-in delay-2">
         {['all','kyc','compliance','finance','investment','operations','audit','system'].map(f=>(
           <button key={f} onClick={()=>setCatFilter(f)} style={{
-            padding:'7px 14px',borderRadius:8,border:'none',cursor:'pointer',
+            padding:'6px 13px',borderRadius:8,cursor:'pointer',
             fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:10,letterSpacing:'0.06em',textTransform:'uppercase',
             background: catFilter===f ? (catColor[f]||'var(--navy)') : 'white',
             color: catFilter===f ? 'white' : 'var(--gray-400)',
@@ -38,26 +62,39 @@ export default function AuditTrail() {
         ))}
       </div>
 
-      <div style={{ background:'white',borderRadius:14,border:'1px solid var(--gray-200)',overflow:'hidden' }} className="animate-in delay-2">
-        {filtered.map((a,i)=>(
-          <div key={a.id} style={{ padding:'16px 22px',borderBottom:i<filtered.length-1?'1px solid var(--gray-100)':'none',display:'flex',alignItems:'center',gap:14,transition:'background 0.15s' }}
+      <div style={{ background:'white',borderRadius:14,border:'1px solid var(--gray-200)',overflow:'hidden' }} className="animate-in delay-3">
+        {filtered.length === 0 ? (
+          <div style={{ padding:'40px',textAlign:'center',color:'var(--gray-400)',fontSize:13 }}>No audit entries match your filter</div>
+        ) : filtered.map((a,i)=>(
+          <div key={a.id} style={{ padding:'15px 22px',borderBottom:i<filtered.length-1?'1px solid var(--gray-100)':'none',display:'flex',alignItems:'flex-start',gap:14,transition:'background 0.15s' }}
             onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'}
             onMouseLeave={e=>e.currentTarget.style.background='transparent'}
           >
-            <div style={{ width:8,height:8,borderRadius:'50%',background:catColor[a.category]||'var(--gray-400)',flexShrink:0 }} />
+            <div style={{ width:9,height:9,borderRadius:'50%',background:catColor[a.category]||'var(--gray-400)',flexShrink:0,marginTop:5 }} />
             <div style={{ flex:1,minWidth:0 }}>
               <div style={{ display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:3 }}>
                 <span style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:13,color:'var(--navy)' }}>{a.action}</span>
-                <span style={{ fontSize:9,fontWeight:700,color:catColor[a.category],background:`${catColor[a.category]}18`,padding:'2px 6px',borderRadius:3,letterSpacing:'0.08em',textTransform:'uppercase' }}>{a.category}</span>
+                <span style={{ fontSize:9,fontWeight:700,color:catColor[a.category]||'var(--gray-400)',background:`${catColor[a.category]||'#ccc'}18`,padding:'2px 6px',borderRadius:3,letterSpacing:'0.08em',textTransform:'uppercase' }}>{a.category}</span>
               </div>
-              <div style={{ fontSize:12,color:'var(--gray-600)',marginBottom:2 }}>{a.target}</div>
-              <div style={{ fontSize:11,color:'var(--gray-400)' }}>By: <strong style={{ color:'var(--navy)' }}>{a.admin}</strong></div>
+              <div style={{ fontSize:12,color:'var(--gray-600)',marginBottom:3 }}>{a.target}</div>
+              <div style={{ display:'flex',alignItems:'center',gap:10,flexWrap:'wrap' }}>
+                <span style={{ fontSize:11,color:'var(--gray-400)' }}>
+                  By: <strong style={{ color:'var(--navy)' }}>{a.admin}</strong>
+                </span>
+                <span style={{ fontSize:9,fontWeight:700,color:ROLE_COLORS[a.role]||'var(--gray-400)',background:`${ROLE_COLORS[a.role]||'#ccc'}15`,padding:'2px 7px',borderRadius:4,letterSpacing:'0.06em',textTransform:'uppercase' }}>{a.role?.replace('_',' ')}</span>
+                {a.ip && <span style={{ fontSize:10,color:'var(--gray-400)',fontFamily:'monospace' }}>IP: {a.ip}</span>}
+              </div>
             </div>
-            <div style={{ fontSize:11,color:'var(--gray-400)',flexShrink:0,textAlign:'right',display:'flex',alignItems:'center',gap:4 }}>
+            <div style={{ fontSize:11,color:'var(--gray-400)',flexShrink:0,textAlign:'right',display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap' }}>
               <Clock size={11}/>{a.time}
             </div>
           </div>
         ))}
+        {filtered.length > 0 && (
+          <div style={{ padding:'10px 22px',borderTop:'1px solid var(--gray-100)',fontSize:11,color:'var(--gray-400)' }}>
+            Showing {filtered.length} of {auditLog.length} entries
+          </div>
+        )}
       </div>
     </div>
   );

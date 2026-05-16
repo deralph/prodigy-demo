@@ -37,17 +37,27 @@ import AccessControl   from './pages/joint/AccessControl';
 import JointStatements from './pages/joint/JointStatements';
 
 // Admin layout + pages
-import AdminLayout        from './components/admin/AdminLayout';
-import AdminOverview      from './pages/admin/AdminOverview';
-import ClientManagement   from './pages/admin/ClientManagement';
-import ApprovalsQueue     from './pages/admin/ApprovalsQueue';
-import InvestmentPlans    from './pages/admin/InvestmentPlans';
-import TransactionLedger  from './pages/admin/TransactionLedger';
-import StaffLoansAdmin    from './pages/admin/StaffLoansAdmin';
-import RiskCompliance     from './pages/admin/RiskCompliance';
-import AuditTrail         from './pages/admin/AuditTrail';
-import AdminReports       from './pages/admin/AdminReports';
-import UserManagement     from './pages/admin/UserManagement';
+import AdminLayout           from './components/admin/AdminLayout';
+import AdminOverview         from './pages/admin/AdminOverview';
+import ClientManagement      from './pages/admin/ClientManagement';
+import ApprovalsQueue        from './pages/admin/ApprovalsQueue';
+import ApprovalHub           from './pages/admin/ApprovalHub';
+import InvestmentPlans       from './pages/admin/InvestmentPlans';
+import TransactionLedger     from './pages/admin/TransactionLedger';
+import StaffLoansAdmin       from './pages/admin/StaffLoansAdmin';
+import RiskCompliance        from './pages/admin/RiskCompliance';
+import AuditTrail            from './pages/admin/AuditTrail';
+import AdminReports          from './pages/admin/AdminReports';
+import UserManagement        from './pages/admin/UserManagement';
+import BookInstrument        from './pages/admin/BookInstrument';
+import PreTermination        from './pages/admin/PreTermination';
+import ProductSetup          from './pages/admin/ProductSetup';
+import DividendDeclaration   from './pages/admin/DividendDeclaration';
+import InterestAccruals      from './pages/admin/InterestAccruals';
+import EODRun                from './pages/admin/EODRun';
+import FinanceQueue          from './pages/admin/FinanceQueue';
+import Analytics             from './pages/admin/Analytics';
+import ClientInvestments     from './pages/admin/ClientInvestments';
 
 /* ── Role-based protected route ─────────────────────────── */
 function ProtectedRoute({ children, allowedRoles }) {
@@ -100,16 +110,25 @@ export default function App() {
 
         {/* Admin */}
         <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminLayout /></ProtectedRoute>}>
-          <Route index element={<AdminOverview />} />
-          <Route path="clients"      element={<ClientManagement />} />
-          <Route path="approvals"    element={<ApprovalsQueue />} />
-          <Route path="plans"        element={<InvestmentPlans />} />
-          <Route path="transactions" element={<TransactionLedger />} />
-          <Route path="loans"        element={<StaffLoansAdmin />} />
-          <Route path="risk"         element={<RiskCompliance />} />
-          <Route path="audit"        element={<AuditTrail />} />
-          <Route path="reports"      element={<AdminReports />} />
-          <Route path="users"        element={<UserManagement />} />
+          <Route index                    element={<AdminOverview />} />
+          <Route path="clients"           element={<ClientManagement />} />
+          <Route path="approvals"         element={<ApprovalHub />} />
+          <Route path="plans"             element={<InvestmentPlans />} />
+          <Route path="transactions"      element={<TransactionLedger />} />
+          <Route path="loans"             element={<StaffLoansAdmin />} />
+          <Route path="risk"              element={<RiskCompliance />} />
+          <Route path="audit"             element={<AuditTrail />} />
+          <Route path="reports"           element={<AdminReports />} />
+          <Route path="users"             element={<UserManagement />} />
+          <Route path="book"              element={<BookInstrument />} />
+          <Route path="pretermination"    element={<PreTermination />} />
+          <Route path="products"          element={<ProductSetup />} />
+          <Route path="dividends"         element={<DividendDeclaration />} />
+          <Route path="accruals"          element={<InterestAccruals />} />
+          <Route path="eod"               element={<EODRun />} />
+          <Route path="finance-queue"     element={<FinanceQueue />} />
+          <Route path="analytics"         element={<Analytics />} />
+          <Route path="client-investments"element={<ClientInvestments />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
