@@ -167,7 +167,7 @@ export class AuthService {
       data: { otpCode: await bcrypt.hash(otp, 10), otpExpiry: expiry },
     });
 
-    // TODO: send otp via SendGrid / Termii
+    // TODO: send OTP via Nodemailer (NotificationsService.sendOtpEmail)
     return { message: 'If that email exists, a reset link has been sent.' };
   }
 

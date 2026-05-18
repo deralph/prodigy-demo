@@ -20,6 +20,7 @@ const NAV_GROUPS = [
     group: 'Operations',
     items: [
       { to:'/admin/book',         icon:BookOpen,        label:'Book Instrument',    key:'book_instrument' },
+      { to:'/admin/booked',       icon:TrendingUp,      label:'Booked Instruments', key:'book_instrument' },
       { to:'/admin/approvals',    icon:CheckSquare,     label:'Approval Hub',       key:'approval_hub' },
       { to:'/admin/pretermination',icon:AlertTriangle,  label:'Pre-Termination',    key:'pretermination' },
       { to:'/admin/clients',      icon:Users,           label:'Client Management',  key:'clients' },

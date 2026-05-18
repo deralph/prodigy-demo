@@ -58,6 +58,10 @@ import EODRun                from './pages/admin/EODRun';
 import FinanceQueue          from './pages/admin/FinanceQueue';
 import Analytics             from './pages/admin/Analytics';
 import ClientInvestments     from './pages/admin/ClientInvestments';
+import BookedInstruments     from './pages/admin/BookedInstruments';
+
+// Shared user pages
+import Products              from './pages/shared/Products';
 
 /* ── Role-based protected route ─────────────────────────── */
 function ProtectedRoute({ children, allowedRoles }) {
@@ -86,6 +90,7 @@ export default function App() {
           <Route path="kyc"         element={<KYC />} />
           <Route path="reports"     element={<Reports />} />
           <Route path="risk"        element={<RiskStrategy />} />
+          <Route path="products"    element={<Products />} />
         </Route>
 
         {/* Individual */}
@@ -96,6 +101,7 @@ export default function App() {
           <Route path="goals"     element={<PersonalGoals />} />
           <Route path="vault"     element={<SecurityVault />} />
           <Route path="activity"  element={<ActivityLog />} />
+          <Route path="products" element={<Products />} />
         </Route>
 
         {/* Joint */}
@@ -106,6 +112,7 @@ export default function App() {
           <Route path="legacy"      element={<SharedLegacy />} />
           <Route path="access"      element={<AccessControl />} />
           <Route path="statements"  element={<JointStatements />} />
+          <Route path="products"   element={<Products />} />
         </Route>
 
         {/* Admin */}
@@ -128,6 +135,7 @@ export default function App() {
           <Route path="eod"               element={<EODRun />} />
           <Route path="finance-queue"     element={<FinanceQueue />} />
           <Route path="analytics"         element={<Analytics />} />
+          <Route path="booked"              element={<BookedInstruments />} />
           <Route path="client-investments"element={<ClientInvestments />} />
         </Route>
 

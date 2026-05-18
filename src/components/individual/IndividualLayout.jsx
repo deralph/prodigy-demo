@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { BarChart3, Wallet, Target, Shield, Clock, LogOut, X, Menu } from 'lucide-react';
+import { BarChart3, Wallet, Target, Shield, Clock, LogOut, X, Menu, Package } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 
 const navItems = [
@@ -9,6 +9,7 @@ const navItems = [
   { to:'/individual/goals',     icon:Target,    label:'Personal Goals' },
   { to:'/individual/vault',     icon:Shield,    label:'Security Vault' },
   { to:'/individual/activity',  icon:Clock,     label:'Activity Log' },
+  { to:'/individual/products',  icon:Package,   label:'Products' },
 ];
 
 export default function IndividualLayout() {

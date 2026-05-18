@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { CheckCircle, XCircle, Eye, Filter, X } from 'lucide-react';
-import useAppStore from '../../store/useAppStore';
+import { CheckCircle, XCircle, Eye, Filter, X, FileText, User, ExternalLink, Download } from 'lucide-react';
+import useAppStore, { KYC_REQUIREMENTS } from '../../store/useAppStore';
 import StatusBadge from '../../components/shared/StatusBadge';
 
 const fmt = n => '₦' + Number(n).toLocaleString('en-NG');
@@ -19,10 +19,11 @@ const TYPE_LABEL = {
 };
 
 export default function ApprovalHub() {
-  const { approvals, updateApproval, user, addAuditEntry } = useAppStore();
+  const { approvals, updateApproval, user, addAuditEntry, clients } = useAppStore();
   const [filter, setFilter]   = useState('pending');
   const [typeFilter, setTypeFilter] = useState('all');
   const [viewing, setViewing] = useState(null);
+  const [reviewTab, setReviewTab] = useState('details');
   const [rejectNote, setRejectNote] = useState('');
 
   const canApprove = ['super_admin','operations','compliance','investment'].includes(user?.adminRole);
@@ -135,70 +136,204 @@ export default function ApprovalHub() {
         ))}
       </div>
 
-      {/* Review Modal */}
-      {viewing && (
-        <div style={{ position:'fixed',inset:0,background:'rgba(13,27,53,0.55)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:300,padding:20 }} onClick={()=>setViewing(null)}>
-          <div style={{ background:'white',borderRadius:20,width:'100%',maxWidth:520,overflow:'hidden',boxShadow:'0 32px 80px rgba(13,27,53,0.25)' }} onClick={e=>e.stopPropagation()}>
-            <div style={{ background:'var(--navy)',padding:'20px 24px',display:'flex',alignItems:'center',justifyContent:'space-between' }}>
-              <div>
-                <div style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:15,color:'white',textTransform:'uppercase' }}>Review {TYPE_LABEL[viewing.type]||viewing.type}</div>
-                <div style={{ fontSize:11,color:'rgba(255,255,255,0.5)',marginTop:2 }}>{viewing.id}</div>
-              </div>
-              <button onClick={()=>setViewing(null)} style={{ background:'none',border:'none',cursor:'pointer',color:'rgba(255,255,255,0.5)' }}><X size={18}/></button>
-            </div>
-            <div style={{ padding:'22px 24px' }}>
-              {[
-                ['Client',     viewing.clientName],
-                ['Type',       TYPE_LABEL[viewing.type]||viewing.type],
-                ['Details',    viewing.details],
-                ['Date',       viewing.date],
-                viewing.amount && ['Amount', fmt(viewing.amount)],
-                ['Status',     viewing.status],
-                viewing.reviewedBy && ['Reviewed By', viewing.reviewedBy],
-                viewing.rejectReason && ['Rejection Note', viewing.rejectReason],
-              ].filter(Boolean).map(([l,v])=>(
-                <div key={l} style={{ display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid var(--gray-100)' }}>
-                  <span style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.06em',textTransform:'uppercase' }}>{l}</span>
-                  <span style={{ fontSize:12,fontWeight:600,color:'var(--navy)',textTransform:'capitalize',maxWidth:'60%',textAlign:'right' }}>{v}</span>
-                </div>
-              ))}
+      {/* Review Modal — Tabbed */}
+      {viewing && (() => {
+        const cl = clients.find(c => c.clientId === viewing.clientId) || {};
+        const kycReqs = KYC_REQUIREMENTS[cl.type || cl.accountType || 'individual'] || KYC_REQUIREMENTS.individual;
+        const uploadedDocs = viewing.kycDocs || [];
 
-              {viewing.kycDocs && (
-                <div style={{ marginTop:14 }}>
-                  <div style={{ fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--gray-400)',marginBottom:8 }}>KYC Documents</div>
-                  <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
-                    {viewing.kycDocs.map((d,i)=>(
-                      <div key={i} style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',background:'var(--gray-50)',borderRadius:7 }}>
-                        <span style={{ fontSize:12,color:'var(--navy)',fontWeight:500 }}>{d.name}</span>
-                        <span style={{ fontSize:10,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',color:d.status==='uploaded'?'var(--green)':'var(--red)',background:d.status==='uploaded'?'rgba(34,197,94,0.1)':'rgba(239,68,68,0.1)',padding:'2px 8px',borderRadius:4 }}>{d.status}</span>
+        return (
+          <div style={{ position:'fixed',inset:0,background:'rgba(13,27,53,0.55)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:300,padding:20 }} onClick={()=>{setViewing(null);setReviewTab('details');}}>
+            <div style={{ background:'white',borderRadius:20,width:'100%',maxWidth:640,maxHeight:'90vh',display:'flex',flexDirection:'column',overflow:'hidden',boxShadow:'0 32px 80px rgba(13,27,53,0.25)',animation:'modalIn 0.25s ease' }} onClick={e=>e.stopPropagation()}>
+              {/* Header */}
+              <div style={{ background:'var(--navy)',padding:'20px 24px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>
+                <div>
+                  <div style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:15,color:'white',textTransform:'uppercase' }}>Review {TYPE_LABEL[viewing.type]||viewing.type}</div>
+                  <div style={{ fontSize:11,color:'rgba(255,255,255,0.5)',marginTop:2 }}>{viewing.id} · {viewing.clientName}</div>
+                </div>
+                <button onClick={()=>{setViewing(null);setReviewTab('details');}} style={{ background:'none',border:'none',cursor:'pointer',color:'rgba(255,255,255,0.5)' }}><X size={18}/></button>
+              </div>
+
+              {/* Tabs */}
+              <div style={{ display:'flex',borderBottom:'1px solid var(--gray-200)',background:'#fafbfd',flexShrink:0 }}>
+                {[
+                  { key:'details', label:'Details', icon:Eye },
+                  { key:'documents', label:'Documents', icon:FileText },
+                  { key:'client', label:'Client Info', icon:User },
+                ].map(t => (
+                  <button key={t.key} onClick={()=>setReviewTab(t.key)} style={{
+                    flex:1, padding:'11px 8px', border:'none', cursor:'pointer', fontSize:11, fontWeight:reviewTab===t.key?700:500,
+                    color: reviewTab===t.key ? 'var(--navy)' : 'var(--gray-400)', background:'transparent',
+                    borderBottom: reviewTab===t.key ? '2px solid var(--navy)' : '2px solid transparent',
+                    display:'flex', alignItems:'center', justifyContent:'center', gap:5, transition:'all 0.2s',
+                    fontFamily:'DM Sans,sans-serif', letterSpacing:'0.04em', textTransform:'uppercase',
+                  }}>
+                    <t.icon size={12}/> {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Tab Content */}
+              <div style={{ flex:1, overflowY:'auto', padding:'20px 24px' }}>
+
+                {/* ── Details Tab ── */}
+                {reviewTab === 'details' && (
+                  <div>
+                    {[
+                      ['Client',     viewing.clientName],
+                      ['Type',       TYPE_LABEL[viewing.type]||viewing.type],
+                      ['Details',    viewing.details],
+                      ['Date',       viewing.date],
+                      viewing.amount && ['Amount', fmt(viewing.amount)],
+                      ['Status',     viewing.status],
+                      viewing.reviewedBy && ['Reviewed By', viewing.reviewedBy],
+                      viewing.reviewedAt && ['Reviewed At', viewing.reviewedAt],
+                      viewing.rejectReason && ['Rejection Note', viewing.rejectReason],
+                      viewing.bookedBy && ['Submitted By', viewing.bookedBy],
+                    ].filter(Boolean).map(([l,v])=>(
+                      <div key={l} style={{ display:'flex',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--gray-100)' }}>
+                        <span style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.06em',textTransform:'uppercase' }}>{l}</span>
+                        <span style={{ fontSize:12,fontWeight:600,color:'var(--navy)',textTransform:'capitalize',maxWidth:'60%',textAlign:'right' }}>{v}</span>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
 
-              {viewing.status === 'pending' && canApprove && (
-                <>
-                  <div style={{ marginTop:14 }}>
-                    <div style={{ fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--gray-400)',marginBottom:6 }}>Rejection Reason (optional)</div>
-                    <input placeholder="State reason if rejecting…" value={rejectNote} onChange={e=>setRejectNote(e.target.value)}
-                      style={{ width:'100%',border:'1.5px solid var(--gray-200)',borderRadius:8,padding:'10px 12px',fontFamily:'DM Sans,sans-serif',fontSize:13,outline:'none' }}
-                      onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='var(--gray-200)'}/>
+                {/* ── Documents Tab ── */}
+                {reviewTab === 'documents' && (
+                  <div>
+                    <div style={{ fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--gray-400)',marginBottom:12,fontWeight:700 }}>
+                      KYC Documents — {cl.type?.toUpperCase() || 'INDIVIDUAL'} Account
+                    </div>
+                    {uploadedDocs.length > 0 ? (
+                      <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
+                        {uploadedDocs.map((d,i)=>(
+                          <div key={i} style={{
+                            display:'flex',alignItems:'center',justifyContent:'space-between',
+                            padding:'12px 16px',
+                            background: d.status === 'uploaded' ? 'rgba(34,197,94,0.04)' : '#fff8f0',
+                            border:`1px solid ${d.status === 'uploaded' ? 'rgba(34,197,94,0.2)' : 'rgba(249,115,22,0.2)'}`,
+                            borderRadius:10,
+                          }}>
+                            <div style={{ display:'flex',alignItems:'center',gap:10 }}>
+                              <FileText size={15} color={d.status === 'uploaded' ? 'var(--green)' : '#f97316'}/>
+                              <div>
+                                <div style={{ fontSize:12,fontWeight:600,color:'var(--navy)' }}>{d.name}</div>
+                                <div style={{ fontSize:10,color:'var(--gray-400)',marginTop:1 }}>
+                                  {d.status === 'uploaded' ? 'Document uploaded' : 'Awaiting upload'}
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{ display:'flex',alignItems:'center',gap:6 }}>
+                              <StatusBadge status={d.status === 'uploaded' ? 'approved' : 'pending'}/>
+                              {d.status === 'uploaded' && (
+                                <button title="View document" style={{
+                                  background:'rgba(59,130,246,0.1)',border:'none',borderRadius:6,padding:'5px',cursor:'pointer',display:'flex',alignItems:'center',
+                                }}>
+                                  <ExternalLink size={12} color="#3b82f6"/>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={{ fontSize:11,color:'var(--gray-400)',marginBottom:10 }}>
+                          Required documents for this account type:
+                        </div>
+                        <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
+                          {kycReqs.map(doc => (
+                            <div key={doc.key} style={{
+                              display:'flex',alignItems:'center',justifyContent:'space-between',
+                              padding:'12px 16px',background:'#f8fafc',
+                              border:'1px solid var(--gray-200)',borderRadius:10,
+                            }}>
+                              <div style={{ display:'flex',alignItems:'center',gap:10 }}>
+                                <FileText size={14} color="var(--gray-400)"/>
+                                <div>
+                                  <div style={{ fontSize:12,fontWeight:600,color:'var(--navy)' }}>{doc.label}</div>
+                                  <div style={{ fontSize:10,color:'var(--gray-400)' }}>{doc.required ? 'Required' : 'Optional'}</div>
+                                </div>
+                              </div>
+                              <StatusBadge status="pending"/>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {uploadedDocs.length > 0 && (
+                      <div style={{ marginTop:14,padding:'12px 16px',background:'rgba(59,130,246,0.04)',border:'1px solid rgba(59,130,246,0.15)',borderRadius:10 }}>
+                        <div style={{ fontSize:10,color:'var(--gray-400)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:4,fontWeight:700 }}>Summary</div>
+                        <div style={{ fontSize:12,color:'var(--navy)' }}>
+                          <strong>{uploadedDocs.filter(d=>d.status==='uploaded').length}</strong> of <strong>{uploadedDocs.length}</strong> documents uploaded
+                          {uploadedDocs.some(d=>d.status!=='uploaded') && (
+                            <span style={{ color:'#f97316',marginLeft:8 }}>⚠ Some documents are still pending</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <div style={{ display:'flex',gap:10,marginTop:16 }}>
-                    <button onClick={()=>handleReject(viewing)} style={{ flex:1,padding:'12px',background:'rgba(239,68,68,0.1)',color:'var(--red)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:8,cursor:'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
-                      <XCircle size={14}/> REJECT
-                    </button>
-                    <button onClick={()=>handleApprove(viewing)} style={{ flex:1,padding:'12px',background:'var(--green)',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
-                      <CheckCircle size={14}/> APPROVE
-                    </button>
+                )}
+
+                {/* ── Client Info Tab ── */}
+                {reviewTab === 'client' && (
+                  <div>
+                    {cl.id ? (
+                      <>
+                        {[
+                          ['Client Name', cl.name],
+                          ['Client ID', cl.clientId],
+                          ['Email', cl.email],
+                          ['Phone', cl.phone || '—'],
+                          ['Address', cl.address || '—'],
+                          ['Account Type', (cl.type || cl.accountType || '').toUpperCase()],
+                          ['KYC Status', cl.kyc],
+                          ['Account Status', cl.status],
+                          ['Wallet Balance', fmt(cl.balance || 0)],
+                          ['Joined', cl.joined],
+                          ...(cl.secondaryName ? [['Secondary Holder', cl.secondaryName]] : []),
+                        ].map(([l,v]) => (
+                          <div key={l} style={{ display:'flex',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--gray-100)' }}>
+                            <span style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.06em',textTransform:'uppercase' }}>{l}</span>
+                            <span style={{ fontSize:12,fontWeight:600,color:'var(--navy)' }}>{v}</span>
+                          </div>
+                        ))}
+                      </>
+                    ) : (
+                      <div style={{ textAlign:'center',padding:'30px',color:'var(--gray-400)',fontSize:13 }}>
+                        Client info not found for ID: {viewing.clientId}
+                      </div>
+                    )}
                   </div>
-                </>
-              )}
+                )}
+
+                {/* Action buttons (always visible at bottom for pending) */}
+                {viewing.status === 'pending' && canApprove && (
+                  <>
+                    <div style={{ marginTop:18,borderTop:'1px solid var(--gray-200)',paddingTop:16 }}>
+                      <div style={{ fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--gray-400)',marginBottom:6 }}>Rejection Reason (optional)</div>
+                      <input placeholder="State reason if rejecting…" value={rejectNote} onChange={e=>setRejectNote(e.target.value)}
+                        style={{ width:'100%',border:'1.5px solid var(--gray-200)',borderRadius:8,padding:'10px 12px',fontFamily:'DM Sans,sans-serif',fontSize:13,outline:'none' }}
+                        onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='var(--gray-200)'}/>
+                    </div>
+                    <div style={{ display:'flex',gap:10,marginTop:14 }}>
+                      <button onClick={()=>handleReject(viewing)} style={{ flex:1,padding:'12px',background:'rgba(239,68,68,0.1)',color:'var(--red)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:8,cursor:'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
+                        <XCircle size={14}/> REJECT
+                      </button>
+                      <button onClick={()=>handleApprove(viewing)} style={{ flex:1,padding:'12px',background:'var(--green)',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
+                        <CheckCircle size={14}/> APPROVE
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      <style>{`@keyframes modalIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}`}</style>
     </div>
   );
 }

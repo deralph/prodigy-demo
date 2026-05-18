@@ -9,6 +9,7 @@ import { KycService } from './kyc.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { uploadToCloudinary } from '../common/cloudinary.provider';
 
 @ApiTags('KYC')
 @ApiBearerAuth()
@@ -32,8 +33,8 @@ export class KycController {
     @Param('key') docKey: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
-    const s3Url = `https://s3.amazonaws.com/placeholder/${file.originalname}`;
-    return this.kycService.uploadDocument(req.user.clientDbId, docKey, file, s3Url);
+    const { url } = await uploadToCloudinary(file, `prodigy-kyc/${req.user.clientDbId}`);
+    return this.kycService.uploadDocument(req.user.clientDbId, docKey, file, url);
   }
 
   @Post('corporate/upload')
@@ -42,12 +43,13 @@ export class KycController {
   @UseInterceptors(FilesInterceptor('files', 10))
   async uploadCorporateDocs(@Req() req: any, @UploadedFiles() files: Express.Multer.File[]) {
     const filesMap: Record<string, Express.Multer.File> = {};
-    const s3Urls: Record<string, string> = {};
+    const cloudUrls: Record<string, string> = {};
     for (const file of files) {
       filesMap[file.fieldname] = file;
-      s3Urls[file.fieldname] = `https://s3.amazonaws.com/placeholder/${file.originalname}`;
+      const { url } = await uploadToCloudinary(file, `prodigy-kyc/${req.user.clientDbId}`);
+      cloudUrls[file.fieldname] = url;
     }
-    return this.kycService.uploadAllDocuments(req.user.clientDbId, filesMap, s3Urls);
+    return this.kycService.uploadAllDocuments(req.user.clientDbId, filesMap, cloudUrls);
   }
 
   @Post('individual/upload')
@@ -56,12 +58,13 @@ export class KycController {
   @UseInterceptors(FilesInterceptor('files', 12))
   async uploadIndividualDocs(@Req() req: any, @UploadedFiles() files: Express.Multer.File[]) {
     const filesMap: Record<string, Express.Multer.File> = {};
-    const s3Urls: Record<string, string> = {};
+    const cloudUrls: Record<string, string> = {};
     for (const file of files) {
       filesMap[file.fieldname] = file;
-      s3Urls[file.fieldname] = `https://s3.amazonaws.com/placeholder/${file.originalname}`;
+      const { url } = await uploadToCloudinary(file, `prodigy-kyc/${req.user.clientDbId}`);
+      cloudUrls[file.fieldname] = url;
     }
-    return this.kycService.uploadAllDocuments(req.user.clientDbId, filesMap, s3Urls);
+    return this.kycService.uploadAllDocuments(req.user.clientDbId, filesMap, cloudUrls);
   }
 
   // ── Admin ────────────────────────────────────────────────────────

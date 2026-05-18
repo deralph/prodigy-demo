@@ -37,7 +37,7 @@ export class KycService {
     clientId: string,
     docKey: string,
     file: Express.Multer.File,
-    s3Url: string,
+    fileUrl: string,
   ) {
     const client = await this.prisma.client.findUnique({ where: { id: clientId } });
     if (!client) throw new NotFoundException('Client not found');
@@ -52,7 +52,7 @@ export class KycService {
         clientId,
         docKey,
         label: req.label,
-        fileUrl: s3Url,
+        fileUrl,
         fileName: file.originalname,
         fileMimeType: file.mimetype,
         fileSizeBytes: file.size,
@@ -60,7 +60,7 @@ export class KycService {
         uploadedAt: new Date(),
       },
       update: {
-        fileUrl: s3Url,
+        fileUrl,
         fileName: file.originalname,
         fileMimeType: file.mimetype,
         fileSizeBytes: file.size,
@@ -79,7 +79,7 @@ export class KycService {
   async uploadAllDocuments(
     clientId: string,
     files: Record<string, Express.Multer.File>,
-    s3Urls: Record<string, string>,
+    fileUrls: Record<string, string>,
   ) {
     const client = await this.prisma.client.findUnique({ where: { id: clientId } });
     if (!client) throw new NotFoundException('Client not found');
@@ -100,7 +100,7 @@ export class KycService {
             clientId,
             docKey: req.key,
             label: req.label,
-            fileUrl: s3Urls[req.key],
+            fileUrl: fileUrls[req.key],
             fileName: files[req.key].originalname,
             fileMimeType: files[req.key].mimetype,
             fileSizeBytes: files[req.key].size,
@@ -108,7 +108,7 @@ export class KycService {
             uploadedAt: new Date(),
           },
           update: {
-            fileUrl: s3Urls[req.key],
+            fileUrl: fileUrls[req.key],
             fileName: files[req.key].originalname,
             status: 'UPLOADED',
             uploadedAt: new Date(),

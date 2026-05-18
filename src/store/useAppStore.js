@@ -139,12 +139,9 @@ export const KYC_REQUIREMENTS = {
   corporate: [
     { key:'cac_cert',        label:'CAC Certificate',                         required:true },
     { key:'memart',          label:'MEMART & Status of Directors',            required:true },
-    { key:'utility_bill',    label:'Utility Bill (Business)',                 required:true },
     { key:'scuml_tax',       label:'SCUML & Tax ID',                         required:true },
     { key:'directors_id',    label:"Directors' Valid ID",                    required:true },
     { key:'sig_mandate',     label:'Signature Mandate',                      required:true },
-    { key:'nin',             label:'NIN (Directors)',                         required:true },
-    { key:'personal_utility',label:'Personal Utility Bill (Directors)',       required:true },
   ],
   individual: [
     { key:'valid_id',        label:"Client's Valid ID",                      required:true },
@@ -228,11 +225,66 @@ const useAppStore = create((set, get) => ({
   dividends: SAMPLE_DIVIDENDS,
   adminUsers: DEMO_USERS.filter(u => u.role === 'admin'),
 
-  // Auth
-  login: (userData) => set({ user: userData, isAuthenticated: true }),
-  logout: () => set({ user: null, isAuthenticated: false, sidebarOpen: false }),
+  // Auth — with API integration
+  login: (userData) => {
+    set({ user: userData, isAuthenticated: true });
+    // Fetch live data from backend (non-blocking, falls back to sample data)
+    const store = get();
+    store.fetchApiData();
+  },
+  logout: () => {
+    import('../services/api').then(m => m.authApi.logout()).catch(() => {});
+    import('../services/api').then(m => m.clearTokens()).catch(() => {});
+    set({ user: null, isAuthenticated: false, sidebarOpen: false });
+  },
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   closeSidebar: () => set({ sidebarOpen: false }),
+
+  // Fetch live data from backend APIs (non-blocking, supplements sample data)
+  fetchApiData: async () => {
+    try {
+      const api = await import('../services/api');
+      // Products
+      api.productApi.findAll().then(data => {
+        if (data && Array.isArray(data) && data.length > 0) set({ plans: data });
+      }).catch(() => {});
+      // Admin: Clients
+      api.adminClientApi.findAll().then(data => {
+        if (data && Array.isArray(data) && data.length > 0) set({ clients: data });
+      }).catch(() => {});
+      // Admin: Approvals
+      api.adminApprovalApi.findAll().then(data => {
+        if (data && Array.isArray(data) && data.length > 0) set({ approvals: data });
+      }).catch(() => {});
+      // Admin: Investments
+      api.adminInvestmentApi.findAll().then(data => {
+        if (data && Array.isArray(data) && data.length > 0) set({ clientInvestments: data });
+      }).catch(() => {});
+      // Admin: Transactions
+      api.adminTransactionApi.findAll().then(data => {
+        if (data && Array.isArray(data) && data.length > 0) set({ allTransactions: data });
+      }).catch(() => {});
+      // Admin: Finance Queue
+      api.adminFinanceQueueApi.findAll().then(data => {
+        if (data && Array.isArray(data) && data.length > 0) set({ financeQueue: data });
+      }).catch(() => {});
+      // Admin: Pre-Terminations
+      api.adminPreTermApi.findAll().then(data => {
+        if (data && Array.isArray(data) && data.length > 0) set({ preTermQueue: data });
+      }).catch(() => {});
+      // Admin: Dividends
+      api.adminDividendApi.findAll().then(data => {
+        if (data && Array.isArray(data) && data.length > 0) set({ dividends: data });
+      }).catch(() => {});
+      // User: Wallet
+      api.walletApi.getWallet().then(data => {
+        if (data && data.balance !== undefined) set({ walletBalance: data.balance, pendingBalance: data.pending || 0 });
+      }).catch(() => {});
+      api.walletApi.getTransactions().then(data => {
+        if (data && Array.isArray(data) && data.length > 0) set({ transactions: data });
+      }).catch(() => {});
+    } catch { /* Backend offline — use sample data */ }
+  },
 
   // Wallet
   addTransaction: (txn) => set((s) => ({
@@ -241,22 +293,31 @@ const useAppStore = create((set, get) => ({
   })),
 
   // Admin: update a plan
-  updatePlan: (id, patch) => set((s) => ({
-    plans: s.plans.map(p => p.id === id ? { ...p, ...patch } : p),
-  })),
+  updatePlan: (id, patch) => {
+    set((s) => ({ plans: s.plans.map(p => p.id === id ? { ...p, ...patch } : p) }));
+    import('../services/api').then(m => m.productApi.update(id, patch)).catch(() => {});
+  },
 
   // Admin: add a new plan
   addPlan: (plan) => set((s) => ({ plans: [...s.plans, plan] })),
 
   // Admin: update approval (accepts patch object or status string)
-  updateApproval: (id, patchOrStatus) => set((s) => ({
-    approvals: s.approvals.map(a => a.id === id ? { ...a, ...(typeof patchOrStatus === 'string' ? { status: patchOrStatus } : patchOrStatus) } : a),
-  })),
+  updateApproval: (id, patchOrStatus) => {
+    const patch = typeof patchOrStatus === 'string' ? { status: patchOrStatus } : patchOrStatus;
+    set((s) => ({ approvals: s.approvals.map(a => a.id === id ? { ...a, ...patch } : a) }));
+    // Sync to backend
+    if (patch.status === 'approved') {
+      import('../services/api').then(m => m.adminApprovalApi.approve(id, patch.notes)).catch(() => {});
+    } else if (patch.status === 'rejected') {
+      import('../services/api').then(m => m.adminApprovalApi.reject(id, patch.rejectReason)).catch(() => {});
+    }
+  },
 
   // Admin: update client status
-  updateClient: (id, patch) => set((s) => ({
-    clients: s.clients.map(c => c.id === id ? { ...c, ...patch } : c),
-  })),
+  updateClient: (id, patch) => {
+    set((s) => ({ clients: s.clients.map(c => c.id === id ? { ...c, ...patch } : c) }));
+    import('../services/api').then(m => m.adminClientApi.updateStatus(id, patch.status)).catch(() => {});
+  },
 
   // Admin: add instrument
   addInstrument: (inst) => set((s) => ({ instruments: [inst, ...s.instruments] })),
@@ -266,30 +327,44 @@ const useAppStore = create((set, get) => ({
 
   // Admin: add dividend declaration
   addDividend: (div) => set((s) => ({ dividends: [div, ...s.dividends] })),
-  declareDividend: (div) => set((s) => ({ dividends: [div, ...s.dividends] })),
+  declareDividend: (div) => {
+    set((s) => ({ dividends: [div, ...s.dividends] }));
+    import('../services/api').then(m => m.adminDividendApi.declare(div)).catch(() => {});
+  },
 
   // Admin: book investment instrument
-  bookInvestment: (inv) => set((s) => ({ clientInvestments: [inv, ...s.clientInvestments] })),
+  bookInvestment: (inv) => {
+    set((s) => ({ clientInvestments: [inv, ...s.clientInvestments] }));
+    import('../services/api').then(m => m.adminInvestmentApi.book(inv)).catch(() => {});
+  },
 
   // Admin: pre-termination actions
-  approvePreTerm: (id, approvedBy) => set((s) => ({
-    preTermQueue: s.preTermQueue.map(p => p.id === id ? { ...p, status:'approved_ops', approvedBy } : p),
-    financeQueue: [
-      ...s.financeQueue,
-      (() => { const p = s.preTermQueue.find(x=>x.id===id); return p ? { id:'FQ-'+Date.now(), client:p.client, clientId:p.clientId, product:p.product, type:'Pre-Termination', amount:p.amount, penalty:p.penalty, reason:p.reason, requestDate:p.requestDate, requestedBy:`${approvedBy} (Ops)`, status:'pending', approvedBy:'', rejectedBy:'', rejectReason:'' } : null; })()
-    ].filter(Boolean),
-  })),
-  rejectPreTerm: (id, rejectedBy, rejectReason) => set((s) => ({
-    preTermQueue: s.preTermQueue.map(p => p.id === id ? { ...p, status:'rejected', rejectedBy, rejectReason } : p),
-  })),
+  approvePreTerm: (id, approvedBy) => {
+    set((s) => ({
+      preTermQueue: s.preTermQueue.map(p => p.id === id ? { ...p, status:'approved_ops', approvedBy } : p),
+      financeQueue: [
+        ...s.financeQueue,
+        (() => { const p = s.preTermQueue.find(x=>x.id===id); return p ? { id:'FQ-'+Date.now(), client:p.client, clientId:p.clientId, product:p.product, type:'Pre-Termination', amount:p.amount, penalty:p.penalty, reason:p.reason, requestDate:p.requestDate, requestedBy:`${approvedBy} (Ops)`, status:'pending', approvedBy:'', rejectedBy:'', rejectReason:'' } : null; })()
+      ].filter(Boolean),
+    }));
+    import('../services/api').then(m => m.adminPreTermApi.approve(id)).catch(() => {});
+  },
+  rejectPreTerm: (id, rejectedBy, rejectReason) => {
+    set((s) => ({
+      preTermQueue: s.preTermQueue.map(p => p.id === id ? { ...p, status:'rejected', rejectedBy, rejectReason } : p),
+    }));
+    import('../services/api').then(m => m.adminPreTermApi.reject(id, rejectReason)).catch(() => {});
+  },
 
   // Admin: finance queue actions
-  approveFinanceItem: (id, approvedBy) => set((s) => ({
-    financeQueue: s.financeQueue.map(f => f.id === id ? { ...f, status:'approved', approvedBy } : f),
-  })),
-  rejectFinanceItem: (id, rejectedBy, rejectReason) => set((s) => ({
-    financeQueue: s.financeQueue.map(f => f.id === id ? { ...f, status:'rejected', rejectedBy, rejectReason } : f),
-  })),
+  approveFinanceItem: (id, approvedBy) => {
+    set((s) => ({ financeQueue: s.financeQueue.map(f => f.id === id ? { ...f, status:'approved', approvedBy } : f) }));
+    import('../services/api').then(m => m.adminFinanceQueueApi.approve(id)).catch(() => {});
+  },
+  rejectFinanceItem: (id, rejectedBy, rejectReason) => {
+    set((s) => ({ financeQueue: s.financeQueue.map(f => f.id === id ? { ...f, status:'rejected', rejectedBy, rejectReason } : f) }));
+    import('../services/api').then(m => m.adminFinanceQueueApi.reject(id, rejectReason)).catch(() => {});
+  },
 
   // Admin: user management
   addAdminUser: (u) => set((s) => ({ adminUsers: [...s.adminUsers, u] })),

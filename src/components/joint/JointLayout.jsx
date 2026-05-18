@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { BarChart3, Wallet, Heart, Lock, FileText, LogOut, X, Menu } from 'lucide-react';
+import { BarChart3, Wallet, Heart, Lock, FileText, LogOut, X, Menu, Package } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 
 const navItems = [
@@ -9,6 +9,7 @@ const navItems = [
   { to:'/joint/legacy',      icon:Heart,     label:'Shared Legacy' },
   { to:'/joint/access',      icon:Lock,      label:'Access Control' },
   { to:'/joint/statements',  icon:FileText,  label:'Joint Statements' },
+  { to:'/joint/products',    icon:Package,   label:'Products' },
 ];
 
 export default function JointLayout() {

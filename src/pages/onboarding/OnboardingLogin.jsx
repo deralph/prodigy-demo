@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, Building2, User, Upload, CheckCircle, AlertCircle } from 'lucide-react';
 import { DEMO_USERS, KYC_REQUIREMENTS } from '../../store/useAppStore';
 import useAppStore from '../../store/useAppStore';
+import { authApi, setTokens, kycApi } from '../../services/api';
 
 const inputStyle = {
   width: '100%', border: '1px solid #d1d5db', borderRadius: 8,
@@ -35,7 +36,29 @@ export default function OnboardingLogin() {
     e.preventDefault();
     setError('');
     setLoading(true);
-    await new Promise(r => setTimeout(r, 700));
+
+    // Try backend API login first
+    try {
+      const res = await authApi.login(email, password);
+      if (res && res.accessToken) {
+        setTokens(res);
+        // Get user profile from backend
+        const me = await authApi.getMe();
+        const role = me.role?.toLowerCase() || 'individual';
+        login({ ...me, role, email, name: me.name || me.companyName || email });
+        if (role === 'admin')       navigate('/admin');
+        else if (role === 'corporate')  navigate('/corporate/treasury');
+        else if (role === 'individual') navigate('/individual/portfolio');
+        else if (role === 'joint')      navigate('/joint/portfolio');
+        setLoading(false);
+        return;
+      }
+    } catch {
+      // Backend unavailable or invalid — fall through to demo users
+    }
+
+    // Fall back to demo users
+    await new Promise(r => setTimeout(r, 400));
     const user = DEMO_USERS.find(u => u.email === email && u.password === password);
     if (!user) { setError('Invalid credentials. Check the demo logins below.'); setLoading(false); return; }
     login(user);
@@ -263,7 +286,12 @@ export default function OnboardingLogin() {
                       <AlertCircle size={12}/> Please upload all required documents before submitting.
                     </div>
                   )}
-                  <button onClick={() => allUploaded && setKycSubmitted(true)} disabled={!allUploaded} style={{
+                  <button onClick={() => {
+                    if (!allUploaded) return;
+                    // Try uploading to backend
+                    (isCorp ? kycApi.uploadCorporateDocs(kycUploads) : kycApi.uploadIndividualDocs(kycUploads)).catch(() => {});
+                    setKycSubmitted(true);
+                  }} disabled={!allUploaded} style={{
                     background:'var(--navy)', color:'white', fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:13,
                     letterSpacing:'0.08em', border:'none', borderRadius:10, padding:'14px', cursor: allUploaded ? 'pointer' : 'not-allowed',
                     display:'flex', alignItems:'center', justifyContent:'center', gap:8, marginTop:4, opacity: allUploaded ? 1 : 0.45,
