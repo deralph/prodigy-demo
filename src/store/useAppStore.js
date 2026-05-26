@@ -92,6 +92,7 @@ const useAppStore = create((set, get) => ({
 
   // Auth — with API integration
   login: (userData) => {
+    localStorage.setItem('prodigy_user', JSON.stringify(userData));
     set({ user: userData, isAuthenticated: true });
     const store = get();
     store.fetchApiData();
@@ -99,6 +100,7 @@ const useAppStore = create((set, get) => ({
   logout: () => {
     import('../services/api').then(m => m.authApi.logout()).catch(() => {});
     import('../services/api').then(m => m.clearTokens()).catch(() => {});
+    localStorage.removeItem('prodigy_user');
     set({ user: null, isAuthenticated: false, sidebarOpen: false, ...INITIAL_STATE });
   },
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -285,6 +287,9 @@ const useAppStore = create((set, get) => ({
         api.adminStaffLoanApi.getAllEntities().then(data => {
           if (data && Array.isArray(data)) set({ corpLoanEntities: data });
         }).catch(() => {});
+        api.adminUserApi.findAll().then(data => {
+          if (data && Array.isArray(data)) set({ adminUsers: data });
+        }).catch(() => {});
       }
     } catch { /* Backend offline */ }
     finally { set({ isLoadingData: false }); }
@@ -303,7 +308,19 @@ const useAppStore = create((set, get) => ({
   },
 
   // Admin: add a new plan
-  addPlan: (plan) => set((s) => ({ plans: [...s.plans, plan] })),
+  addPlan: async (plan) => {
+    const api = await import('../services/api');
+    try {
+      const created = await api.productApi.create(plan);
+      if (created) {
+        set((s) => ({ plans: [...s.plans, created] }));
+      }
+      return created;
+    } catch (err) {
+      console.error('Failed to create product:', err);
+      throw err;
+    }
+  },
 
   // Admin: update approval (accepts patch object or status string)
   updateApproval: (id, patchOrStatus) => {
@@ -428,10 +445,34 @@ const useAppStore = create((set, get) => ({
   },
 
   // Admin: user management
-  addAdminUser: (u) => set((s) => ({ adminUsers: [...s.adminUsers, u] })),
-  updateAdminUser: (email, patch) => set((s) => ({
-    adminUsers: s.adminUsers.map(u => u.email === email ? { ...u, ...patch } : u),
-  })),
+  addAdminUser: async (u) => {
+    const api = await import('../services/api');
+    try {
+      const created = await api.adminUserApi.create(u);
+      if (created) {
+        set((s) => ({ adminUsers: [...s.adminUsers, created] }));
+      }
+      return created;
+    } catch (err) {
+      console.error('Failed to create admin user:', err);
+      throw err;
+    }
+  },
+  updateAdminUser: async (id, patch) => {
+    const api = await import('../services/api');
+    try {
+      const updated = await api.adminUserApi.update(id, patch);
+      if (updated) {
+        set((s) => ({
+          adminUsers: s.adminUsers.map(u => u.id === id ? { ...u, ...updated } : u),
+        }));
+      }
+      return updated;
+    } catch (err) {
+      console.error('Failed to update admin user:', err);
+      throw err;
+    }
+  },
 }));
 
 export default useAppStore;

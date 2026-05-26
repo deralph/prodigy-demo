@@ -139,6 +139,7 @@ export const kycApi = {
 export const productApi = {
   findAll: () => request('/products'),
   findOne: (id) => request(`/products/${id}`),
+  create: (data) => request('/products', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => request(`/products/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 };
 
@@ -216,6 +217,14 @@ export const adminApprovalApi = {
     request(`/admin/approvals/${id}/approve`, { method: 'POST', body: JSON.stringify({ notes }) }),
   reject: (id, reason) =>
     request(`/admin/approvals/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
+};
+
+/* ── ADMIN USERS ─────────────────────────────────────────── */
+export const adminUserApi = {
+  findAll: () => request('/admin-users'),
+  create: (data) => request('/admin-users', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/admin-users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id) => request(`/admin-users/${id}`, { method: 'DELETE' }),
 };
 
 /* ── PRE-TERMINATION ─────────────────────────────────────── */

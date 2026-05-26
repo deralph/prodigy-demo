@@ -67,11 +67,21 @@ function ProtectedRoute({ children, allowedRoles }) {
 
 /* ── Session restore on page load ───────────────────────── */
 function SessionRestore() {
-  const { isAuthenticated, login } = useAppStore();
+  const { isAuthenticated, login, logout } = useAppStore();
   useEffect(() => {
     if (isAuthenticated) return;
     const tokens = getTokens();
     if (!tokens?.accessToken) return;
+    // Restore from localStorage cache immediately (no DB hit)
+    const cachedUser = localStorage.getItem('prodigy_user');
+    if (cachedUser) {
+      try {
+        const userData = JSON.parse(cachedUser);
+        login(userData);
+        return;
+      } catch {}
+    }
+    // No cache — fetch from backend
     authApi.getMe()
       .then(me => {
         if (me) {
@@ -93,7 +103,7 @@ function SessionRestore() {
           });
         }
       })
-      .catch(() => clearTokens());
+      .catch(() => { clearTokens(); localStorage.removeItem('prodigy_user'); });
   }, []);
   return null;
 }

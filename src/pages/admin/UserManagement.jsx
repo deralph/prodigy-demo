@@ -25,13 +25,16 @@ export default function UserManagement() {
     });
   };
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!form.name || !form.email) return;
-    const newUser = { ...form, role:'admin', clientId:'ADM-'+Date.now() };
-    addAdminUser(newUser);
-    logAction('Created Admin Account', form.email);
-    setSaved('User added'); setTimeout(()=>setSaved(''),2500);
-    setShowAdd(false); setForm(BLANK_FORM);
+    try {
+      await addAdminUser({ ...form, role:'admin' });
+      logAction('Created Admin Account', form.email);
+      setSaved('User added'); setTimeout(()=>setSaved(''),2500);
+      setShowAdd(false); setForm(BLANK_FORM);
+    } catch (err) {
+      alert('Failed to create user: ' + (err.message || 'Unknown error'));
+    }
   };
 
   const toggleLock = (u) => {

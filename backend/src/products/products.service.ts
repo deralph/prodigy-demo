@@ -19,6 +19,24 @@ export class ProductsService {
     return product;
   }
 
+  async create(data: any, adminId: string) {
+    return this.prisma.product.create({
+      data: {
+        code: data.code || data.name?.toLowerCase().replace(/\s+/g, '-'),
+        name: data.name,
+        description: data.description,
+        roiMin: data.roiMin || data.roi,
+        roiMax: data.roiMax || data.roi,
+        minInvestKobo: BigInt((data.minInvest || 0) * 100),
+        lockInDays: data.lockInDays || 30,
+        color: data.color || '#3b82f6',
+        isNegotiated: data.isNegotiated || false,
+        status: 'ACTIVE',
+        updatedById: adminId,
+      },
+    });
+  }
+
   async update(id: string, patch: Partial<{ roiMin: number; roiMax: number; minInvestKobo: bigint; lockInDays: number; description: string; status: ProductStatus }>, adminId: string) {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Product not found');

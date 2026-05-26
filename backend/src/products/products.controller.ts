@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Param, Body, UseGuards, Req, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, UseGuards, Req, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -20,6 +20,14 @@ export class ProductsController {
   @ApiOperation({ summary: 'Get single product' })
   findOne(@Param('id') id: string) {
     return this.productsService.findOne(id);
+  }
+
+  @Post()
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  @ApiOperation({ summary: 'Admin: create new product' })
+  create(@Body() body: any, @Req() req: any) {
+    return this.productsService.create(body, req.user.sub);
   }
 
   @Patch(':id')
