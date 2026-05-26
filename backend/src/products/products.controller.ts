@@ -23,7 +23,7 @@ export class ProductsController {
   }
 
   @Post()
-  @UseGuards(RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
   @ApiOperation({ summary: 'Admin: create new product' })
   create(@Body() body: any, @Req() req: any) {
@@ -31,7 +31,7 @@ export class ProductsController {
   }
 
   @Patch(':id')
-  @UseGuards(RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
   @ApiOperation({ summary: 'Admin: update product settings' })
   update(@Param('id') id: string, @Body() body: any, @Req() req: any) {
