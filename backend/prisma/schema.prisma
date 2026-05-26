@@ -1,8 +1,3 @@
-// Prodigy Finance — Prisma Schema
-// Database: PostgreSQL
-// ORM: Prisma 5.x
-// All monetary values stored in KOBO (integer × 100)
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,9 +8,515 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// ─────────────────────────────────────────────
-// ENUMS
-// ─────────────────────────────────────────────
+model Client {
+  id                 String              @id @default(cuid())
+  clientRef          String              @unique
+  type               ClientType
+  status             ClientStatus        @default(PENDING_KYC)
+  name               String
+  email              String              @unique
+  phone              String?
+  address            String?
+  city               String?
+  state              String?
+  country            String              @default("Nigeria")
+  rcNumber           String?
+  taxId              String?
+  scumlCert          String?
+  secondaryName      String?
+  secondaryEmail     String?
+  secondaryPhone     String?
+  mandateType        MandateType?        @default(AND)
+  walletBalance      BigInt              @default(0)
+  pendingBalance     BigInt              @default(0)
+  virtualAccountNo   String?
+  virtualAccountBank String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  activityLog        ActivityLog[]
+  approvals          Approval[]
+  authUser           AuthUser?
+  beneficiaries      Beneficiary[]
+  goals              Goal[]
+  investments        Investment[]
+  kycDocuments       KycDocument[]
+  kycRecord          KycRecord?
+  legacyNote         LegacyNote?
+  riskProfile        RiskProfile?
+  staffLoans         StaffLoan[]
+  statements         Statement[]
+  walletTransactions WalletTransaction[]
+
+  @@index([type])
+  @@index([status])
+  @@index([email])
+}
+
+model AuthUser {
+  id                  String     @id @default(cuid())
+  email               String     @unique
+  passwordHash        String
+  role                String
+  isActive            Boolean    @default(true)
+  lastLoginAt         DateTime?
+  refreshToken        String?
+  passwordResetToken  String?
+  passwordResetExpiry DateTime?
+  otpCode             String?
+  otpExpiry           DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  clientId            String?    @unique
+  adminUserId         String?    @unique
+  adminUser           AdminUser? @relation(fields: [adminUserId], references: [id])
+  client              Client?    @relation(fields: [clientId], references: [id])
+  sessions            Session[]
+
+  @@index([email])
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  token      String   @unique
+  authUserId String
+  ipAddress  String?
+  userAgent  String?
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  authUser   AuthUser @relation(fields: [authUserId], references: [id], onDelete: Cascade)
+
+  @@index([authUserId])
+}
+
+model AdminUser {
+  id           String      @id @default(cuid())
+  adminRef     String      @unique
+  name         String
+  email        String      @unique
+  role         AdminRole
+  status       AdminStatus @default(ACTIVE)
+  department   String?
+  permissions  Json        @default("[]")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  createdById  String?
+  auditEntries AuditLog[]
+  authUser     AuthUser?
+
+  @@index([role])
+  @@index([status])
+}
+
+model KycRecord {
+  id           String    @id @default(cuid())
+  clientId     String    @unique
+  status       KycStatus @default(PENDING)
+  reviewedById String?
+  reviewNotes  String?
+  submittedAt  DateTime?
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  client       Client    @relation(fields: [clientId], references: [id])
+}
+
+model KycDocument {
+  id              String       @id @default(cuid())
+  clientId        String
+  docKey          String
+  label           String
+  fileUrl         String?
+  fileName        String?
+  fileMimeType    String?
+  fileSizeBytes   Int?
+  status          KycDocStatus @default(NOT_UPLOADED)
+  uploadedAt      DateTime?
+  verifiedAt      DateTime?
+  verifiedById    String?
+  rejectionReason String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  client          Client       @relation(fields: [clientId], references: [id])
+
+  @@unique([clientId, docKey])
+  @@index([clientId])
+  @@index([status])
+}
+
+model Product {
+  id            String        @id @default(cuid())
+  code          String        @unique
+  name          String
+  description   String?
+  roiMin        Decimal       @db.Decimal(5, 2)
+  roiMax        Decimal       @db.Decimal(5, 2)
+  minInvestKobo BigInt
+  lockInDays    Int?
+  color         String?
+  isNegotiated  Boolean       @default(false)
+  status        ProductStatus @default(ACTIVE)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  updatedById   String?
+  approvals     Approval[]
+  dividends     Dividend[]
+  investments   Investment[]
+
+  @@index([status])
+}
+
+model Investment {
+  id              String            @id @default(cuid())
+  investRef       String            @unique
+  clientId        String
+  productId       String
+  status          InvestmentStatus  @default(PENDING_APPROVAL)
+  principalKobo   BigInt
+  roiRate         Decimal           @db.Decimal(5, 2)
+  taxRate         Decimal           @default(10.00) @db.Decimal(5, 2)
+  tenorDays       Int
+  valueDate       DateTime
+  maturityDate    DateTime
+  autoRollover    Boolean           @default(false)
+  bookedById      String?
+  bookedAt        DateTime?
+  approvedById    String?
+  approvedAt      DateTime?
+  notes           String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  approval        Approval?
+  dividendEntries DividendEntry[]
+  client          Client            @relation(fields: [clientId], references: [id])
+  product         Product           @relation(fields: [productId], references: [id])
+  history         InvestmentEvent[]
+  preTermination  PreTermination?
+  statement       Statement?
+
+  @@index([clientId])
+  @@index([productId])
+  @@index([status])
+  @@index([maturityDate])
+}
+
+model InvestmentEvent {
+  id            String     @id @default(cuid())
+  investmentId  String
+  action        String
+  note          String?
+  performedById String?
+  occurredAt    DateTime   @default(now())
+  investment    Investment @relation(fields: [investmentId], references: [id])
+
+  @@index([investmentId])
+}
+
+model Approval {
+  id           String         @id @default(cuid())
+  approvalRef  String         @unique
+  type         ApprovalType
+  status       ApprovalStatus @default(PENDING)
+  clientId     String?
+  investmentId String?        @unique
+  productId    String?
+  amountKobo   BigInt?
+  details      Json?
+  submittedAt  DateTime       @default(now())
+  reviewedAt   DateTime?
+  reviewedById String?
+  reviewNotes  String?
+  client       Client?        @relation(fields: [clientId], references: [id])
+  investment   Investment?    @relation(fields: [investmentId], references: [id])
+  product      Product?       @relation(fields: [productId], references: [id])
+
+  @@index([type])
+  @@index([status])
+  @@index([clientId])
+}
+
+model WalletTransaction {
+  id            String            @id @default(cuid())
+  txnRef        String            @unique
+  clientId      String
+  type          TransactionType
+  status        TransactionStatus @default(PENDING)
+  amountKobo    BigInt
+  description   String?
+  paystackRef   String?
+  bankName      String?
+  bankAcctNo    String?
+  bankAcctName  String?
+  initiatedById String?
+  processedAt   DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  client        Client            @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model PreTermination {
+  id                  String            @id @default(cuid())
+  preTermRef          String            @unique
+  investmentId        String            @unique
+  clientId            String
+  status              PreTermStatus     @default(PENDING_OPS)
+  requestedAmountKobo BigInt
+  penaltyKobo         BigInt            @default(0)
+  netPayoutKobo       BigInt
+  reason              String?
+  requestedAt         DateTime          @default(now())
+  opsApprovedById     String?
+  opsApprovedAt       DateTime?
+  financeApprovedById String?
+  financeApprovedAt   DateTime?
+  disbursedAt         DateTime?
+  rejectedById        String?
+  rejectedAt          DateTime?
+  rejectionReason     String?
+  financeQueueItem    FinanceQueueItem?
+  investment          Investment        @relation(fields: [investmentId], references: [id])
+
+  @@index([clientId])
+  @@index([status])
+}
+
+model FinanceQueueItem {
+  id              String             @id @default(cuid())
+  fqRef           String             @unique
+  type            String
+  status          FinanceQueueStatus @default(PENDING)
+  clientId        String
+  amountKobo      BigInt
+  penaltyKobo     BigInt             @default(0)
+  notes           String?
+  preTermId       String?            @unique
+  requestedById   String?
+  approvedById    String?
+  approvedAt      DateTime?
+  rejectedById    String?
+  rejectedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  preTermination  PreTermination?    @relation(fields: [preTermId], references: [id])
+
+  @@index([clientId])
+  @@index([status])
+}
+
+model CorporateEntity {
+  id         String      @id @default(cuid())
+  entityRef  String      @unique
+  name       String
+  sector     String?
+  staffCount Int         @default(0)
+  clientId   String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  staffLoans StaffLoan[]
+
+  @@index([name])
+}
+
+model StaffLoan {
+  id                 String          @id @default(cuid())
+  loanRef            String          @unique
+  corporateId        String
+  clientId           String?
+  staffName          String
+  staffEmail         String?
+  department         String?
+  principalKobo      BigInt
+  interestRate       Decimal         @db.Decimal(5, 2)
+  tenorMonths        Int
+  monthlyPaymentKobo BigInt
+  disbursedAt        DateTime?
+  maturityDate       DateTime?
+  status             LoanStatus      @default(PENDING)
+  outstandingKobo    BigInt          @default(0)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  repayments         LoanRepayment[]
+  client             Client?         @relation(fields: [clientId], references: [id])
+  corporate          CorporateEntity @relation(fields: [corporateId], references: [id])
+
+  @@index([corporateId])
+  @@index([status])
+}
+
+model LoanRepayment {
+  id         String    @id @default(cuid())
+  loanId     String
+  amountKobo BigInt
+  paidAt     DateTime  @default(now())
+  note       String?
+  loan       StaffLoan @relation(fields: [loanId], references: [id])
+
+  @@index([loanId])
+}
+
+model Dividend {
+  id              String          @id @default(cuid())
+  dividendRef     String          @unique
+  productId       String
+  rate            Decimal         @db.Decimal(5, 2)
+  totalPayoutKobo BigInt
+  eligibleCount   Int
+  declarationDate DateTime
+  paymentDate     DateTime?
+  notes           String?
+  status          DividendStatus  @default(DECLARED)
+  declaredById    String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  product         Product         @relation(fields: [productId], references: [id])
+  entries         DividendEntry[]
+
+  @@index([productId])
+  @@index([status])
+}
+
+model DividendEntry {
+  id           String     @id @default(cuid())
+  dividendId   String
+  investmentId String
+  clientId     String
+  amountKobo   BigInt
+  paidAt       DateTime?
+  dividend     Dividend   @relation(fields: [dividendId], references: [id])
+  investment   Investment @relation(fields: [investmentId], references: [id])
+
+  @@index([dividendId])
+  @@index([clientId])
+}
+
+model Goal {
+  id               String     @id @default(cuid())
+  clientId         String
+  name             String
+  targetAmountKobo BigInt
+  currentKobo      BigInt     @default(0)
+  targetDate       DateTime?
+  status           GoalStatus @default(ON_TRACK)
+  notes            String?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  client           Client     @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+}
+
+model Beneficiary {
+  id           String   @id @default(cuid())
+  clientId     String
+  name         String
+  relationship String?
+  email        String?
+  phone        String?
+  percentage   Decimal  @default(0) @db.Decimal(5, 2)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  client       Client   @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+}
+
+model LegacyNote {
+  id        String   @id @default(cuid())
+  clientId  String   @unique
+  content   String
+  updatedAt DateTime @updatedAt
+  client    Client   @relation(fields: [clientId], references: [id])
+}
+
+model Statement {
+  id           String     @id @default(cuid())
+  investmentId String     @unique
+  clientId     String
+  fileUrl      String?
+  generatedAt  DateTime   @default(now())
+  holder       String?
+  client       Client     @relation(fields: [clientId], references: [id])
+  investment   Investment @relation(fields: [investmentId], references: [id])
+
+  @@index([clientId])
+}
+
+model RiskProfile {
+  id         String   @id @default(cuid())
+  clientId   String   @unique
+  riskLevel  String
+  score      Int?
+  assessedAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  notes      String?
+  client     Client   @relation(fields: [clientId], references: [id])
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  clientId    String
+  action      String
+  description String?
+  amountKobo  BigInt?
+  metadata    Json?
+  occurredAt  DateTime @default(now())
+  client      Client   @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+  @@index([occurredAt])
+}
+
+model AuditLog {
+  id           String        @id @default(cuid())
+  auditRef     String        @unique @default(cuid())
+  adminId      String?
+  adminName    String
+  adminRole    String
+  action       String
+  targetEntity String?
+  category     AuditCategory
+  ipAddress    String?
+  userAgent    String?
+  metadata     Json?
+  occurredAt   DateTime      @default(now())
+  admin        AdminUser?    @relation(fields: [adminId], references: [id])
+
+  @@index([adminId])
+  @@index([category])
+  @@index([occurredAt])
+}
+
+model EodRun {
+  id            String       @id @default(cuid())
+  runDate       DateTime     @unique @db.Date
+  status        EodRunStatus @default(RUNNING)
+  triggeredById String
+  steps         Json
+  startedAt     DateTime     @default(now())
+  completedAt   DateTime?
+  errorMessage  String?
+
+  @@index([runDate])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  type      String
+  isRead    Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+}
 
 enum ClientType {
   CORPORATE
@@ -166,635 +667,4 @@ enum AuditCategory {
   COMPLIANCE
   SYSTEM
   AUDIT
-}
-
-// ─────────────────────────────────────────────
-// CLIENT (Corporate / Individual / Joint)
-// ─────────────────────────────────────────────
-
-model Client {
-  id            String       @id @default(cuid())
-  clientRef     String       @unique // CLI-001, CLI-002 …
-  type          ClientType
-  status        ClientStatus @default(PENDING_KYC)
-
-  // Primary holder / entity info
-  name          String
-  email         String       @unique
-  phone         String?
-  address       String?
-  city          String?
-  state         String?
-  country       String       @default("Nigeria")
-
-  // Corporate-specific
-  rcNumber      String?      // CAC registration number
-  taxId         String?
-  scumlCert     String?
-
-  // Joint-specific
-  secondaryName  String?
-  secondaryEmail String?
-  secondaryPhone String?
-  mandateType    MandateType? @default(AND)
-
-  // Wallet (kobo)
-  walletBalance  BigInt       @default(0)
-  pendingBalance BigInt       @default(0)
-
-  // Virtual account (Paystack/Flutterwave)
-  virtualAccountNo   String?
-  virtualAccountBank String?
-
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-
-  // Relations
-  authUser          AuthUser?
-  kycDocuments      KycDocument[]
-  kycRecord         KycRecord?
-  investments       Investment[]
-  walletTransactions WalletTransaction[]
-  goals             Goal[]
-  beneficiaries     Beneficiary[]
-  legacyNote        LegacyNote?
-  staffLoans        StaffLoan[]
-  approvals         Approval[]
-  activityLog       ActivityLog[]
-  statements        Statement[]
-  riskProfile       RiskProfile?
-
-  @@index([type])
-  @@index([status])
-  @@index([email])
-}
-
-// ─────────────────────────────────────────────
-// AUTH USER (login credentials, linked to Client OR AdminUser)
-// ─────────────────────────────────────────────
-
-model AuthUser {
-  id             String   @id @default(cuid())
-  email          String   @unique
-  passwordHash   String
-  role           String   // 'corporate' | 'individual' | 'joint' | 'admin'
-  isActive       Boolean  @default(true)
-  lastLoginAt    DateTime?
-  refreshToken   String?  // hashed
-  passwordResetToken  String?
-  passwordResetExpiry DateTime?
-  otpCode        String?
-  otpExpiry      DateTime?
-
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  clientId       String?  @unique
-  client         Client?  @relation(fields: [clientId], references: [id])
-
-  adminUserId    String?  @unique
-  adminUser      AdminUser? @relation(fields: [adminUserId], references: [id])
-
-  sessions       Session[]
-
-  @@index([email])
-}
-
-model Session {
-  id          String   @id @default(cuid())
-  token       String   @unique
-  authUserId  String
-  authUser    AuthUser @relation(fields: [authUserId], references: [id], onDelete: Cascade)
-  ipAddress   String?
-  userAgent   String?
-  expiresAt   DateTime
-  createdAt   DateTime @default(now())
-
-  @@index([authUserId])
-}
-
-// ─────────────────────────────────────────────
-// ADMIN USER
-// ─────────────────────────────────────────────
-
-model AdminUser {
-  id          String      @id @default(cuid())
-  adminRef    String      @unique // ADM-001 …
-  name        String
-  email       String      @unique
-  role        AdminRole
-  status      AdminStatus @default(ACTIVE)
-  department  String?
-  permissions Json        @default("[]") // array of permission strings
-
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  createdById String?     // which super_admin created this
-
-  authUser    AuthUser?
-  auditEntries AuditLog[]
-
-  @@index([role])
-  @@index([status])
-}
-
-// ─────────────────────────────────────────────
-// KYC
-// ─────────────────────────────────────────────
-
-model KycRecord {
-  id           String    @id @default(cuid())
-  clientId     String    @unique
-  client       Client    @relation(fields: [clientId], references: [id])
-  status       KycStatus @default(PENDING)
-  reviewedById String?
-  reviewNotes  String?
-  submittedAt  DateTime?
-  reviewedAt   DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-}
-
-model KycDocument {
-  id          String       @id @default(cuid())
-  clientId    String
-  client      Client       @relation(fields: [clientId], references: [id])
-  docKey      String       // e.g. 'cac_cert', 'valid_id', 'nin_p1'
-  label       String       // human-readable label
-  fileUrl     String?      // S3 URL
-  fileName    String?
-  fileMimeType String?
-  fileSizeBytes Int?
-  status      KycDocStatus @default(NOT_UPLOADED)
-  uploadedAt  DateTime?
-  verifiedAt  DateTime?
-  verifiedById String?
-  rejectionReason String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-
-  @@unique([clientId, docKey])
-  @@index([clientId])
-  @@index([status])
-}
-
-// ─────────────────────────────────────────────
-// INVESTMENT PRODUCTS
-// ─────────────────────────────────────────────
-
-model Product {
-  id              String        @id @default(cuid())
-  code            String        @unique // 'aura', 'flex', 'genesis' …
-  name            String
-  description     String?
-  roiMin          Decimal       @db.Decimal(5, 2) // e.g. 15.00
-  roiMax          Decimal       @db.Decimal(5, 2) // same as min if fixed
-  minInvestKobo   BigInt        // minimum in kobo
-  lockInDays      Int?          // null = no lock-in
-  color           String?       // hex for UI
-  isNegotiated    Boolean       @default(false)
-  status          ProductStatus @default(ACTIVE)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  updatedById     String?       // admin who last edited
-
-  investments     Investment[]
-  dividends       Dividend[]
-  approvals       Approval[]
-
-  @@index([status])
-}
-
-// ─────────────────────────────────────────────
-// INVESTMENTS (bookings per client)
-// ─────────────────────────────────────────────
-
-model Investment {
-  id              String          @id @default(cuid())
-  investRef       String          @unique // INV-001 …
-  clientId        String
-  client          Client          @relation(fields: [clientId], references: [id])
-  productId       String
-  product         Product         @relation(fields: [productId], references: [id])
-  status          InvestmentStatus @default(PENDING_APPROVAL)
-
-  principalKobo   BigInt          // amount in kobo
-  roiRate         Decimal         @db.Decimal(5, 2) // negotiated rate
-  taxRate         Decimal         @db.Decimal(5, 2) @default(10.00)
-  tenorDays       Int
-  valueDate       DateTime
-  maturityDate    DateTime
-  autoRollover    Boolean         @default(false)
-
-  bookedById      String?         // admin who booked
-  bookedAt        DateTime?
-  approvedById    String?
-  approvedAt      DateTime?
-  notes           String?
-
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-
-  history         InvestmentEvent[]
-  preTermination  PreTermination?
-  dividendEntries DividendEntry[]
-  statement       Statement?
-  approval        Approval?
-
-  @@index([clientId])
-  @@index([productId])
-  @@index([status])
-  @@index([maturityDate])
-}
-
-model InvestmentEvent {
-  id           String     @id @default(cuid())
-  investmentId String
-  investment   Investment @relation(fields: [investmentId], references: [id])
-  action       String     // 'Booked', 'Approved', 'Activated', 'Matured', 'Rolled Over' …
-  note         String?
-  performedById String?
-  occurredAt   DateTime   @default(now())
-
-  @@index([investmentId])
-}
-
-// ─────────────────────────────────────────────
-// APPROVALS (unified maker-checker queue)
-// ─────────────────────────────────────────────
-
-model Approval {
-  id           String         @id @default(cuid())
-  approvalRef  String         @unique // APP-001 …
-  type         ApprovalType
-  status       ApprovalStatus @default(PENDING)
-
-  clientId     String?
-  client       Client?        @relation(fields: [clientId], references: [id])
-  investmentId String?        @unique
-  investment   Investment?    @relation(fields: [investmentId], references: [id])
-  productId    String?
-  product      Product?       @relation(fields: [productId], references: [id])
-
-  amountKobo   BigInt?
-  details      Json?          // type-specific extra data
-
-  submittedAt  DateTime       @default(now())
-  reviewedAt   DateTime?
-  reviewedById String?
-  reviewNotes  String?
-
-  @@index([type])
-  @@index([status])
-  @@index([clientId])
-}
-
-// ─────────────────────────────────────────────
-// WALLET TRANSACTIONS
-// ─────────────────────────────────────────────
-
-model WalletTransaction {
-  id           String            @id @default(cuid())
-  txnRef       String            @unique // WAL-FT-0001 …
-  clientId     String
-  client       Client            @relation(fields: [clientId], references: [id])
-  type         TransactionType
-  status       TransactionStatus @default(PENDING)
-  amountKobo   BigInt
-  description  String?
-  paystackRef  String?           // Paystack transaction reference
-  bankName     String?
-  bankAcctNo   String?
-  bankAcctName String?
-  initiatedById String?          // admin if manual, null if client-initiated
-  processedAt  DateTime?
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
-
-  @@index([clientId])
-  @@index([type])
-  @@index([status])
-  @@index([createdAt])
-}
-
-// ─────────────────────────────────────────────
-// PRE-TERMINATION
-// ─────────────────────────────────────────────
-
-model PreTermination {
-  id              String        @id @default(cuid())
-  preTermRef      String        @unique // PT-001 …
-  investmentId    String        @unique
-  investment      Investment    @relation(fields: [investmentId], references: [id])
-  clientId        String
-  status          PreTermStatus @default(PENDING_OPS)
-
-  requestedAmountKobo BigInt
-  penaltyKobo         BigInt    @default(0)
-  netPayoutKobo       BigInt
-  reason              String?
-
-  requestedAt     DateTime      @default(now())
-  opsApprovedById String?
-  opsApprovedAt   DateTime?
-  financeApprovedById String?
-  financeApprovedAt   DateTime?
-  disbursedAt     DateTime?
-  rejectedById    String?
-  rejectedAt      DateTime?
-  rejectionReason String?
-
-  financeQueueItem FinanceQueueItem?
-
-  @@index([clientId])
-  @@index([status])
-}
-
-// ─────────────────────────────────────────────
-// FINANCE QUEUE
-// ─────────────────────────────────────────────
-
-model FinanceQueueItem {
-  id             String             @id @default(cuid())
-  fqRef          String             @unique // FQ-001 …
-  type           String             // 'Pre-Termination' | 'Redemption' | 'Withdrawal'
-  status         FinanceQueueStatus @default(PENDING)
-  clientId       String
-  amountKobo     BigInt
-  penaltyKobo    BigInt             @default(0)
-  notes          String?
-
-  preTermId      String?            @unique
-  preTermination PreTermination?    @relation(fields: [preTermId], references: [id])
-
-  requestedById  String?
-  approvedById   String?
-  approvedAt     DateTime?
-  rejectedById   String?
-  rejectedAt     DateTime?
-  rejectionReason String?
-
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-
-  @@index([clientId])
-  @@index([status])
-}
-
-// ─────────────────────────────────────────────
-// STAFF LOANS
-// ─────────────────────────────────────────────
-
-model CorporateEntity {
-  id         String      @id @default(cuid())
-  entityRef  String      @unique // CORP-001 …
-  name       String
-  sector     String?
-  staffCount Int         @default(0)
-  clientId   String?     // link to the corporate Client if they're also a client
-
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-
-  staffLoans StaffLoan[]
-
-  @@index([name])
-}
-
-model StaffLoan {
-  id              String      @id @default(cuid())
-  loanRef         String      @unique // SL-001 …
-  corporateId     String
-  corporate       CorporateEntity @relation(fields: [corporateId], references: [id])
-  clientId        String?
-  client          Client?     @relation(fields: [clientId], references: [id])
-
-  staffName       String
-  staffEmail      String?
-  department      String?
-  principalKobo   BigInt
-  interestRate    Decimal     @db.Decimal(5, 2)
-  tenorMonths     Int
-  monthlyPaymentKobo BigInt
-  disbursedAt     DateTime?
-  maturityDate    DateTime?
-  status          LoanStatus  @default(PENDING)
-  outstandingKobo BigInt      @default(0)
-
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-
-  repayments      LoanRepayment[]
-
-  @@index([corporateId])
-  @@index([status])
-}
-
-model LoanRepayment {
-  id          String    @id @default(cuid())
-  loanId      String
-  loan        StaffLoan @relation(fields: [loanId], references: [id])
-  amountKobo  BigInt
-  paidAt      DateTime  @default(now())
-  note        String?
-
-  @@index([loanId])
-}
-
-// ─────────────────────────────────────────────
-// DIVIDENDS
-// ─────────────────────────────────────────────
-
-model Dividend {
-  id               String        @id @default(cuid())
-  dividendRef      String        @unique // DIV-001 …
-  productId        String
-  product          Product       @relation(fields: [productId], references: [id])
-  rate             Decimal       @db.Decimal(5, 2) // % of principal
-  totalPayoutKobo  BigInt
-  eligibleCount    Int
-  declarationDate  DateTime
-  paymentDate      DateTime?
-  notes            String?
-  status           DividendStatus @default(DECLARED)
-  declaredById     String
-
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-
-  entries          DividendEntry[]
-
-  @@index([productId])
-  @@index([status])
-}
-
-model DividendEntry {
-  id           String     @id @default(cuid())
-  dividendId   String
-  dividend     Dividend   @relation(fields: [dividendId], references: [id])
-  investmentId String
-  investment   Investment @relation(fields: [investmentId], references: [id])
-  clientId     String
-  amountKobo   BigInt
-  paidAt       DateTime?
-
-  @@index([dividendId])
-  @@index([clientId])
-}
-
-// ─────────────────────────────────────────────
-// PERSONAL GOALS (individual/joint)
-// ─────────────────────────────────────────────
-
-model Goal {
-  id              String     @id @default(cuid())
-  clientId        String
-  client          Client     @relation(fields: [clientId], references: [id])
-  name            String
-  targetAmountKobo BigInt
-  currentKobo     BigInt     @default(0)
-  targetDate      DateTime?
-  status          GoalStatus @default(ON_TRACK)
-  notes           String?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-
-  @@index([clientId])
-}
-
-// ─────────────────────────────────────────────
-// BENEFICIARIES / LEGACY (joint)
-// ─────────────────────────────────────────────
-
-model Beneficiary {
-  id           String   @id @default(cuid())
-  clientId     String
-  client       Client   @relation(fields: [clientId], references: [id])
-  name         String
-  relationship String?
-  email        String?
-  phone        String?
-  percentage   Decimal  @db.Decimal(5, 2) @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  @@index([clientId])
-}
-
-model LegacyNote {
-  id        String   @id @default(cuid())
-  clientId  String   @unique
-  client    Client   @relation(fields: [clientId], references: [id])
-  content   String
-  updatedAt DateTime @updatedAt
-}
-
-// ─────────────────────────────────────────────
-// STATEMENTS (generated per-investment)
-// ─────────────────────────────────────────────
-
-model Statement {
-  id           String     @id @default(cuid())
-  investmentId String     @unique
-  investment   Investment @relation(fields: [investmentId], references: [id])
-  clientId     String
-  client       Client     @relation(fields: [clientId], references: [id])
-  fileUrl      String?    // S3 PDF URL
-  generatedAt  DateTime   @default(now())
-  holder       String?    // 'primary' | 'secondary' (joint only)
-
-  @@index([clientId])
-}
-
-// ─────────────────────────────────────────────
-// RISK PROFILE
-// ─────────────────────────────────────────────
-
-model RiskProfile {
-  id           String   @id @default(cuid())
-  clientId     String   @unique
-  client       Client   @relation(fields: [clientId], references: [id])
-  riskLevel    String   // 'conservative' | 'moderate' | 'aggressive'
-  score        Int?
-  assessedAt   DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  notes        String?
-}
-
-// ─────────────────────────────────────────────
-// ACTIVITY LOG (client-facing)
-// ─────────────────────────────────────────────
-
-model ActivityLog {
-  id          String   @id @default(cuid())
-  clientId    String
-  client      Client   @relation(fields: [clientId], references: [id])
-  action      String
-  description String?
-  amountKobo  BigInt?
-  metadata    Json?
-  occurredAt  DateTime @default(now())
-
-  @@index([clientId])
-  @@index([occurredAt])
-}
-
-// ─────────────────────────────────────────────
-// AUDIT LOG (admin-facing — append-only)
-// ─────────────────────────────────────────────
-
-model AuditLog {
-  id           String        @id @default(cuid())
-  auditRef     String        @unique @default(cuid()) // AUD-001 …
-  adminId      String?
-  admin        AdminUser?    @relation(fields: [adminId], references: [id])
-  adminName    String        // denormalized for immutability
-  adminRole    String        // denormalized
-  action       String
-  targetEntity String?       // e.g. "Prodigy Holdings Ltd"
-  category     AuditCategory
-  ipAddress    String?
-  userAgent    String?
-  metadata     Json?         // extra structured data
-  occurredAt   DateTime      @default(now())
-
-  @@index([adminId])
-  @@index([category])
-  @@index([occurredAt])
-}
-
-// ─────────────────────────────────────────────
-// EOD RUN LOG
-// ─────────────────────────────────────────────
-
-model EodRun {
-  id           String       @id @default(cuid())
-  runDate      DateTime     @db.Date
-  status       EodRunStatus @default(RUNNING)
-  triggeredById String
-  steps        Json         // array of { step, status, completedAt }
-  startedAt    DateTime     @default(now())
-  completedAt  DateTime?
-  errorMessage String?
-
-  @@unique([runDate])
-  @@index([runDate])
-}
-
-// ─────────────────────────────────────────────
-// NOTIFICATIONS
-// ─────────────────────────────────────────────
-
-model Notification {
-  id        String   @id @default(cuid())
-  userId    String   // AuthUser.id
-  title     String
-  body      String
-  type      String   // 'kyc' | 'investment' | 'wallet' | 'approval' | 'system'
-  isRead    Boolean  @default(false)
-  metadata  Json?
-  createdAt DateTime @default(now())
-
-  @@index([userId])
-  @@index([isRead])
 }
