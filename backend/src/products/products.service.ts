@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ProductStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -18,7 +19,7 @@ export class ProductsService {
     return product;
   }
 
-  async update(id: string, patch: Partial<{ roiMin: number; roiMax: number; minInvestKobo: bigint; lockInDays: number; description: string; status: string }>, adminId: string) {
+  async update(id: string, patch: Partial<{ roiMin: number; roiMax: number; minInvestKobo: bigint; lockInDays: number; description: string; status: ProductStatus }>, adminId: string) {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Product not found');
     return this.prisma.product.update({

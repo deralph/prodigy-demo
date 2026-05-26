@@ -24,7 +24,6 @@ import RiskStrategy from './pages/corporate/RiskStrategy';
 import IndividualLayout  from './components/individual/IndividualLayout';
 import AssetPortfolio    from './pages/individual/AssetPortfolio';
 import CashAccount       from './pages/individual/CashAccount';
-import PersonalGoals     from './pages/individual/PersonalGoals';
 import SecurityVault     from './pages/individual/SecurityVault';
 import ActivityLog       from './pages/individual/ActivityLog';
 
@@ -62,6 +61,7 @@ import BookedInstruments     from './pages/admin/BookedInstruments';
 
 // Shared user pages
 import Products              from './pages/shared/Products';
+import Ledger                from './pages/shared/Ledger';
 
 /* ── Role-based protected route ─────────────────────────── */
 function ProtectedRoute({ children, allowedRoles }) {
@@ -90,6 +90,7 @@ export default function App() {
           <Route path="kyc"         element={<KYC />} />
           <Route path="reports"     element={<Reports />} />
           <Route path="risk"        element={<RiskStrategy />} />
+          <Route path="ledger"      element={<Ledger />} />
           <Route path="products"    element={<Products />} />
         </Route>
 
@@ -98,9 +99,9 @@ export default function App() {
           <Route index element={<Navigate to="portfolio" replace />} />
           <Route path="portfolio" element={<AssetPortfolio />} />
           <Route path="cash"      element={<CashAccount />} />
-          <Route path="goals"     element={<PersonalGoals />} />
           <Route path="vault"     element={<SecurityVault />} />
           <Route path="activity"  element={<ActivityLog />} />
+          <Route path="ledger"    element={<Ledger />} />
           <Route path="products" element={<Products />} />
         </Route>
 
@@ -112,6 +113,7 @@ export default function App() {
           <Route path="legacy"      element={<SharedLegacy />} />
           <Route path="access"      element={<AccessControl />} />
           <Route path="statements"  element={<JointStatements />} />
+          <Route path="ledger"      element={<Ledger />} />
           <Route path="products"   element={<Products />} />
         </Route>
 

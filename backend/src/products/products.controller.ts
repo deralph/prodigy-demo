@@ -6,8 +6,6 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @ApiTags('Products')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
 @Controller('products')
 export class ProductsController {
   constructor(private productsService: ProductsService) {}

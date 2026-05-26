@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Wallet, Users, ShieldCheck, Globe, FileText, TrendingUp, LogOut, X, Menu, Package } from 'lucide-react';
+import { LayoutDashboard, Wallet, Users, ShieldCheck, Globe, FileText, TrendingUp, LogOut, X, Menu, Package, BookOpen } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { to:'/corporate/kyc',         icon:Globe,           label:'KYC & Registry' },
   { to:'/corporate/reports',     icon:FileText,        label:'Report Center' },
   { to:'/corporate/risk',        icon:TrendingUp,      label:'Risk Strategy' },
+  { to:'/corporate/ledger',      icon:BookOpen,        label:'Ledger' },
   { to:'/corporate/products',    icon:Package,         label:'Products' },
 ];
 

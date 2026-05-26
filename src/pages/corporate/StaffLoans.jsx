@@ -196,9 +196,6 @@ export default function StaffLoans() {
           <button className="btn-gold" style={{ width: '100%', justifyContent: 'center', padding: '12px' }} onClick={() => setShowModal(true)}>
             + New Application
           </button>
-          <button className="btn-navy" style={{ width: '100%', justifyContent: 'center', padding: '12px' }}>
-            ↑ Upload Schedule
-          </button>
         </div>
 
         <div className="card animate-in delay-4" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 8 }}>

@@ -1,13 +1,19 @@
-import React, { useState } from 'react';
-import { ArrowRight, AlertTriangle, CheckCircle, XCircle, Clock } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { ArrowRight, AlertTriangle, CheckCircle, XCircle, Clock, Filter, Search, X, ShoppingCart } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 
 const fmt = n => '₦' + Number(n).toLocaleString('en-NG');
 
 export default function PreTermination() {
-  const { preTermQueue, clientInvestments, approvePreTerm, rejectPreTerm, user, addAuditEntry } = useAppStore();
-  const [selected, setSelected]   = useState(null);
+  const { preTermQueue, clientInvestments, clients, approvePreTerm, rejectPreTerm, sellPreTerm, user, addAuditEntry } = useAppStore();
+  const [selected, setSelected]     = useState(null);
   const [rejectNote, setRejectNote] = useState('');
+  const [filterStatus,  setFilterStatus]  = useState('all');
+  const [filterProduct, setFilterProduct] = useState('');
+  const [filterSearch,  setFilterSearch]  = useState('');
+  const [sellOpen, setSellOpen]           = useState(null);
+  const [sellForm, setSellForm]           = useState({ salePrice:'', buyer:'', note:'' });
+  const [sellDone, setSellDone]           = useState(false);
 
   const isOps = ['super_admin','operations'].includes(user?.adminRole);
 
@@ -28,6 +34,23 @@ export default function PreTermination() {
     log('Rejected Pre-Termination Request', `${item.client} — ${rejectNote}`);
     setRejectNote(''); setSelected(null);
   };
+
+  const handleSell = (item) => {
+    if (!sellForm.salePrice) return;
+    sellPreTerm(item.id, { ...sellForm, soldBy: user?.name, soldAt: new Date().toISOString() });
+    log('Instrument Sold (Pre-Termination)', `${item.client} — ${item.product} — Sale: ${fmt(Number(sellForm.salePrice))}`);
+    setSellDone(true);
+    setTimeout(() => { setSellOpen(null); setSellDone(false); setSellForm({ salePrice:'', buyer:'', note:'' }); }, 1800);
+  };
+
+  const allProducts = [...new Set(preTermQueue.map(i => i.product))];
+
+  const filtered = useMemo(() => preTermQueue.filter(item => {
+    const matchStatus  = filterStatus === 'all' || item.status === filterStatus;
+    const matchProduct = !filterProduct || item.product === filterProduct;
+    const matchSearch  = !filterSearch || item.client.toLowerCase().includes(filterSearch.toLowerCase()) || item.product.toLowerCase().includes(filterSearch.toLowerCase());
+    return matchStatus && matchProduct && matchSearch;
+  }), [preTermQueue, filterStatus, filterProduct, filterSearch]);
 
   const pending  = preTermQueue.filter(i => i.status === 'pending');
   const approved = preTermQueue.filter(i => i.status === 'approved_ops');
@@ -85,9 +108,37 @@ export default function PreTermination() {
         </div>
       )}
 
+      {/* Filter Bar */}
+      <div style={{ background:'white',borderRadius:12,border:'1px solid var(--gray-200)',padding:'14px 18px',marginBottom:18,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap' }} className="animate-in delay-3">
+        <Filter size={14} color="var(--gray-400)"/>
+        <div style={{ position:'relative',flex:'1 1 180px' }}>
+          <Search size={13} color="var(--gray-400)" style={{ position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',pointerEvents:'none' }}/>
+          <input placeholder="Search client or product…" value={filterSearch} onChange={e=>setFilterSearch(e.target.value)}
+            style={{ width:'100%',border:'1px solid var(--gray-200)',borderRadius:7,padding:'8px 10px 8px 30px',fontFamily:'DM Sans,sans-serif',fontSize:12,outline:'none',color:'var(--navy)' }}/>
+        </div>
+        <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}
+          style={{ border:'1px solid var(--gray-200)',borderRadius:7,padding:'8px 10px',fontFamily:'DM Sans,sans-serif',fontSize:12,outline:'none',background:'white',color:'var(--navy)',cursor:'pointer' }}>
+          <option value="all">All Statuses</option>
+          <option value="pending">Pending Review</option>
+          <option value="approved_ops">Sent to Finance</option>
+          <option value="rejected">Rejected</option>
+        </select>
+        <select value={filterProduct} onChange={e=>setFilterProduct(e.target.value)}
+          style={{ border:'1px solid var(--gray-200)',borderRadius:7,padding:'8px 10px',fontFamily:'DM Sans,sans-serif',fontSize:12,outline:'none',background:'white',color:'var(--navy)',cursor:'pointer' }}>
+          <option value="">All Products</option>
+          {allProducts.map(p=><option key={p} value={p}>{p}</option>)}
+        </select>
+        {(filterSearch||filterProduct||filterStatus!=='all') && (
+          <button onClick={()=>{setFilterSearch('');setFilterProduct('');setFilterStatus('all');}} style={{ display:'flex',alignItems:'center',gap:4,padding:'7px 10px',background:'rgba(239,68,68,0.07)',color:'var(--red)',border:'none',borderRadius:7,cursor:'pointer',fontSize:11,fontWeight:700 }}>
+            <X size={11}/> Clear
+          </button>
+        )}
+        <span style={{ marginLeft:'auto',fontSize:11,color:'var(--gray-400)',fontWeight:600 }}>{filtered.length} result{filtered.length!==1?'s':''}</span>
+      </div>
+
       {/* Queue items */}
       <div style={{ display:'flex',flexDirection:'column',gap:12 }} className="animate-in delay-3">
-        {preTermQueue.map(item => {
+        {filtered.map(item => {
           const inv = clientInvestments.find(i => i.id === item.investmentId);
           const st  = getStatusStyle(item.status);
           return (
@@ -104,7 +155,7 @@ export default function PreTermination() {
                     </span>
                   </div>
                   <div style={{ fontSize:12,color:'var(--gray-600)',marginBottom:2 }}>{item.product} · {item.tenor}</div>
-                  <div style={{ fontSize:11,color:'var(--gray-400)',marginBottom:4 }}>Request date: {item.requestDate}</div>
+                  <div style={{ fontSize:11,color:'var(--gray-400)',marginBottom:4 }}>Request date: {item.requestDate} · Maturity: {item.maturityDate}</div>
                   <div style={{ fontSize:12,color:'var(--navy)',fontWeight:500 }}>Reason: <span style={{ color:'var(--gray-600)',fontWeight:400 }}>{item.reason}</span></div>
                   {item.approvedBy && <div style={{ fontSize:11,color:'var(--green)',marginTop:4 }}>Approved by: {item.approvedBy}</div>}
                   {item.rejectedBy && <div style={{ fontSize:11,color:'var(--red)',marginTop:4 }}>Rejected by: {item.rejectedBy} — {item.rejectReason}</div>}
@@ -112,23 +163,95 @@ export default function PreTermination() {
                 <div style={{ textAlign:'right',flexShrink:0 }}>
                   <div style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:16,color:'var(--navy)',marginBottom:2 }}>{fmt(item.amount)}</div>
                   <div style={{ fontSize:11,color:'var(--red)' }}>Penalty: {fmt(item.penalty)}</div>
-                  <div style={{ fontSize:12,color:'var(--green)',fontWeight:700 }}>Net: {fmt(item.amount-item.penalty)}</div>
-                  {item.status === 'pending' && isOps && (
-                    <button onClick={()=>setSelected(item)} style={{ marginTop:10,display:'flex',alignItems:'center',gap:5,padding:'7px 14px',background:'var(--navy)',color:'white',border:'none',borderRadius:7,cursor:'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:11 }}>
-                      Review <ArrowRight size={12}/>
+                  <div style={{ fontSize:12,color:'var(--green)',fontWeight:700,marginBottom:8 }}>Net: {fmt(item.amount-item.penalty)}</div>
+                  <div style={{ display:'flex',gap:6,justifyContent:'flex-end',flexWrap:'wrap' }}>
+                    {item.status === 'pending' && isOps && (
+                      <button onClick={()=>setSelected(item)} style={{ display:'flex',alignItems:'center',gap:5,padding:'7px 14px',background:'var(--navy)',color:'white',border:'none',borderRadius:7,cursor:'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:11 }}>
+                        Review <ArrowRight size={12}/>
+                      </button>
+                    )}
+                    <button onClick={()=>setSellOpen(item)} style={{ display:'flex',alignItems:'center',gap:5,padding:'7px 12px',background:'rgba(249,115,22,0.1)',color:'#f97316',border:'1px solid rgba(249,115,22,0.2)',borderRadius:7,cursor:'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:11 }}>
+                      <ShoppingCart size={11}/> Sell
                     </button>
-                  )}
+                  </div>
                 </div>
               </div>
             </div>
           );
         })}
-        {preTermQueue.length === 0 && (
+        {filtered.length === 0 && (
           <div style={{ background:'white',borderRadius:12,border:'1px solid var(--gray-200)',padding:'40px',textAlign:'center',color:'var(--gray-400)',fontSize:13 }}>
-            No pre-termination requests
+            No pre-termination requests match the current filters
           </div>
         )}
       </div>
+
+      {/* Sell interface modal */}
+      {sellOpen && (
+        <div style={{ position:'fixed',inset:0,background:'rgba(13,27,53,0.55)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:300,padding:20 }} onClick={()=>setSellOpen(null)}>
+          <div style={{ background:'white',borderRadius:20,width:'100%',maxWidth:480,overflow:'hidden',boxShadow:'0 32px 80px rgba(13,27,53,0.25)' }} onClick={e=>e.stopPropagation()}>
+            <div style={{ background:'#f97316',padding:'18px 22px',display:'flex',alignItems:'center',justifyContent:'space-between' }}>
+              <div style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:14,color:'white',textTransform:'uppercase',display:'flex',alignItems:'center',gap:8 }}>
+                <ShoppingCart size={16}/> Sell / Liquidate Position
+              </div>
+              <button onClick={()=>setSellOpen(null)} style={{ background:'none',border:'none',cursor:'pointer',color:'rgba(255,255,255,0.7)' }}>✕</button>
+            </div>
+            <div style={{ padding:'22px 24px' }}>
+              <div style={{ background:'rgba(249,115,22,0.07)',border:'1px solid rgba(249,115,22,0.2)',borderRadius:9,padding:'12px 14px',marginBottom:18 }}>
+                <div style={{ fontSize:11,color:'#c2410c',fontWeight:700,marginBottom:4 }}>EARLY EXIT — PENALTY APPLIES</div>
+                <div style={{ fontSize:12,color:'var(--navy)' }}>Confirm sale/liquidation of <strong>{sellOpen.product}</strong> for <strong>{sellOpen.client}</strong></div>
+              </div>
+              {sellDone ? (
+                <div style={{ textAlign:'center',padding:'20px 0' }}>
+                  <CheckCircle size={40} color="var(--green)" style={{ marginBottom:10 }}/>
+                  <div style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:15,color:'var(--green)' }}>Sale Recorded</div>
+                  <div style={{ fontSize:12,color:'var(--gray-400)',marginTop:4 }}>Instrument sale saved and audit logged.</div>
+                </div>
+              ) : (
+                <>
+                  {[
+                    ['Client',      sellOpen.client],
+                    ['Product',     sellOpen.product],
+                    ['Principal',   fmt(sellOpen.amount)],
+                    ['Penalty',     fmt(sellOpen.penalty)],
+                    ['Net Payout',  fmt(sellOpen.amount - sellOpen.penalty)],
+                    ['Invest Date', sellOpen.investDate],
+                    ['Maturity',    sellOpen.maturityDate],
+                    ['Reason',      sellOpen.reason],
+                  ].map(([l,v])=>(
+                    <div key={l} style={{ display:'flex',justifyContent:'space-between',padding:'7px 0',borderBottom:'1px solid var(--gray-100)' }}>
+                      <span style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.06em',textTransform:'uppercase' }}>{l}</span>
+                      <span style={{ fontSize:12,fontWeight:600,color:'var(--navy)' }}>{v}</span>
+                    </div>
+                  ))}
+                  <div style={{ marginTop:14,display:'flex',flexDirection:'column',gap:10 }}>
+                    {[
+                      { label:'Sale Price (₦)', key:'salePrice', type:'number', placeholder:`e.g. ${sellOpen.amount - sellOpen.penalty}` },
+                      { label:'Buyer / Counterparty', key:'buyer', type:'text', placeholder:'e.g. Zenith Bank, CBN/DMO' },
+                      { label:'Note', key:'note', type:'text', placeholder:'Optional note…' },
+                    ].map(f=>(
+                      <div key={f.key}>
+                        <div style={{ fontSize:9,color:'var(--gray-400)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:4 }}>{f.label}</div>
+                        <input type={f.type} placeholder={f.placeholder} value={sellForm[f.key]}
+                          onChange={e=>setSellForm(x=>({...x,[f.key]:e.target.value}))}
+                          style={{ width:'100%',border:'1.5px solid var(--gray-200)',borderRadius:8,padding:'9px 12px',fontFamily:'DM Sans,sans-serif',fontSize:13,outline:'none',color:'var(--navy)' }}
+                          onFocus={e=>e.target.style.borderColor='#f97316'} onBlur={e=>e.target.style.borderColor='var(--gray-200)'}/>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display:'flex',gap:10,marginTop:18 }}>
+                    <button onClick={()=>setSellOpen(null)} style={{ flex:1,padding:'12px',background:'var(--gray-100)',color:'var(--navy)',border:'none',borderRadius:8,cursor:'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:12 }}>CANCEL</button>
+                    <button onClick={()=>handleSell(sellOpen)} disabled={!sellForm.salePrice}
+                      style={{ flex:2,padding:'12px',background:'#f97316',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6,opacity:!sellForm.salePrice?0.5:1 }}>
+                      <ShoppingCart size={14}/> CONFIRM SELL
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Review Modal */}
       {selected && (

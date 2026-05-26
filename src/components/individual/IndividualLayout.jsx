@@ -1,14 +1,15 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { BarChart3, Wallet, Target, Shield, Clock, LogOut, X, Menu, Package } from 'lucide-react';
+import { BarChart3, Wallet, Shield, Clock, LogOut, X, Menu, Package, BookOpen } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
+import ContactButton from '../ContactButton';
 
 const navItems = [
   { to:'/individual/portfolio', icon:BarChart3, label:'Asset Portfolio' },
   { to:'/individual/cash',      icon:Wallet,    label:'Cash Account' },
-  { to:'/individual/goals',     icon:Target,    label:'Personal Goals' },
   { to:'/individual/vault',     icon:Shield,    label:'Security Vault' },
   { to:'/individual/activity',  icon:Clock,     label:'Activity Log' },
+  { to:'/individual/ledger',    icon:BookOpen,  label:'Ledger' },
   { to:'/individual/products',  icon:Package,   label:'Products' },
 ];
 
@@ -87,6 +88,7 @@ export default function IndividualLayout() {
           main{padding:20px 16px!important;}
         }
       `}</style>
+      <ContactButton/>
     </div>
   );
 }

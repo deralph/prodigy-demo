@@ -24,6 +24,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { ActivityModule } from './activity/activity.module';
 import { StatementsModule } from './statements/statements.module';
+import { NibssModule } from './nibss/nibss.module';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { StatementsModule } from './statements/statements.module';
     WebhooksModule,
     ActivityModule,
     StatementsModule,
+    NibssModule,
   ],
 })
 export class AppModule {}

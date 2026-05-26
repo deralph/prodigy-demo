@@ -18,7 +18,7 @@ export class AnalyticsService {
     const investments = await this.prisma.investment.groupBy({
       by: ['status'],
       _count: true,
-      _sum: { amount: true },
+      _sum: { principalKobo: true },
     });
     return investments;
   }

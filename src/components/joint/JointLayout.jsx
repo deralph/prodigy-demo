@@ -1,14 +1,16 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { BarChart3, Wallet, Heart, Lock, FileText, LogOut, X, Menu, Package } from 'lucide-react';
+import { BarChart3, Wallet, Users, Lock, FileText, LogOut, X, Menu, Package, BookOpen } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
+import ContactButton from '../ContactButton';
 
 const navItems = [
   { to:'/joint/portfolio',   icon:BarChart3, label:'Asset Portfolio' },
   { to:'/joint/cash',        icon:Wallet,    label:'Cash Account' },
-  { to:'/joint/legacy',      icon:Heart,     label:'Shared Legacy' },
+  { to:'/joint/legacy',      icon:Users,     label:'Account Overview' },
   { to:'/joint/access',      icon:Lock,      label:'Access Control' },
   { to:'/joint/statements',  icon:FileText,  label:'Joint Statements' },
+  { to:'/joint/ledger',      icon:BookOpen,  label:'Ledger' },
   { to:'/joint/products',    icon:Package,   label:'Products' },
 ];
 
@@ -84,6 +86,7 @@ export default function JointLayout() {
           main{padding:20px 16px!important;}
         }
       `}</style>
+      <ContactButton/>
     </div>
   );
 }

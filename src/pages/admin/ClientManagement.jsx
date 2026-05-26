@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Eye, Edit, Ban, CheckCircle, X, Wallet, TrendingUp, FileText, User, Phone, MapPin, Calendar, Save } from 'lucide-react';
-import useAppStore, { SAMPLE_CLIENT_INVESTMENTS, KYC_REQUIREMENTS } from '../../store/useAppStore';
+import useAppStore, { KYC_REQUIREMENTS } from '../../store/useAppStore';
 import { adminClientApi, adminTransactionApi } from '../../services/api';
 import StatusBadge from '../../components/shared/StatusBadge';
 

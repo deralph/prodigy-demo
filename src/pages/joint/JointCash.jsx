@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Wallet, ArrowUpRight, ArrowDownLeft, Plus, X, Copy, Check, Users } from 'lucide-react';
+import { Wallet, ArrowUpRight, ArrowDownLeft, Plus, X, Copy, Check, Users, Download, Search } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 
 const fmt = n => '₦' + Number(n).toLocaleString('en-NG');
@@ -29,7 +29,25 @@ export default function JointCash() {
 
   const ACCOUNT = { bank:'Prodigy MFB', acct:'0234567890', name:`${user?.name||''} & ${client?.secondaryName||'Joint Holder'}` };
 
+  const [txSearch, setTxSearch] = useState('');
+
   const copy = () => { navigator.clipboard.writeText(ACCOUNT.acct).catch(()=>{}); setCopied(true); setTimeout(()=>setCopied(false),2000); };
+
+  const filteredTxns = txSearch ? allTxns.filter(t => `${t.description||''} ${t.ref||''} ${t.type||''}`.toLowerCase().includes(txSearch.toLowerCase())) : allTxns;
+
+  const downloadCSV = () => {
+    const headers = 'Date,Reference,Description,Type,Amount,Direction,Status';
+    const rows = allTxns.map(t => {
+      const ty = TYPE_STYLE[t.type] || TYPE_STYLE.wallet_funding;
+      const dir = ty.icon === ArrowDownLeft ? 'CREDIT' : 'DEBIT';
+      return `"${t.date||''}","${t.ref||t.id||''}","${t.description||ty.label}","${ty.label}",${t.amount||0},${dir},"${t.status||''}"`;
+    });
+    const blob = new Blob([`JOINT CASH LEDGER\nAccount: ${user?.name} & ${client?.secondaryName||'Joint Holder'}\n\n${headers}\n${rows.join('\n')}`], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `joint-cash-ledger-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleFund = () => {
     if (!amount || isNaN(amount) || Number(amount)<1000) return;
@@ -91,17 +109,25 @@ export default function JointCash() {
 
       {/* Transactions */}
       <div style={{ background:'white',borderRadius:14,border:'1px solid var(--gray-200)',overflow:'hidden' }} className="animate-in delay-3">
-        <div style={{ padding:'16px 22px',borderBottom:'1px solid var(--gray-100)' }}>
-          <h3 style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:13,color:'var(--navy)',letterSpacing:'0.06em',textTransform:'uppercase' }}>Joint Transaction History</h3>
+        <div style={{ padding:'14px 22px',borderBottom:'1px solid var(--gray-100)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap' }}>
+          <h3 style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:13,color:'var(--navy)',letterSpacing:'0.06em',textTransform:'uppercase',flex:1 }}>Joint Transaction History</h3>
+          <div style={{ position:'relative' }}>
+            <Search size={12} color="var(--gray-400)" style={{ position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',pointerEvents:'none' }}/>
+            <input placeholder="Search…" value={txSearch} onChange={e=>setTxSearch(e.target.value)}
+              style={{ border:'1px solid #e2e8f0',borderRadius:7,padding:'7px 10px 7px 28px',fontSize:11,color:'var(--navy)',fontFamily:'DM Sans,sans-serif',outline:'none',width:140 }}/>
+          </div>
+          <button onClick={downloadCSV} style={{ display:'flex',alignItems:'center',gap:5,padding:'7px 12px',background:'rgba(59,130,246,0.1)',border:'1px solid rgba(59,130,246,0.2)',borderRadius:7,cursor:'pointer',fontSize:11,fontWeight:700,color:'#3b82f6',whiteSpace:'nowrap' }}>
+            <Download size={12}/> Export CSV
+          </button>
         </div>
-        {allTxns.length===0 ? (
+        {filteredTxns.length===0 ? (
           <div style={{ padding:'40px',textAlign:'center',color:'var(--gray-400)',fontSize:13 }}>No transactions yet</div>
-        ) : allTxns.map((t,i) => {
+        ) : filteredTxns.map((t,i) => {
           const ty = TYPE_STYLE[t.type]||TYPE_STYLE.wallet_funding;
           const st = STATUS_STYLE[(t.status||'').toLowerCase()]||STATUS_STYLE.pending;
           const Icon = ty.icon;
           return (
-            <div key={t.id||i} style={{ padding:'14px 22px',borderBottom:i<allTxns.length-1?'1px solid var(--gray-100)':'none',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap',transition:'background 0.15s' }}
+            <div key={t.id||i} style={{ padding:'14px 22px',borderBottom:i<filteredTxns.length-1?'1px solid var(--gray-100)':'none',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap',transition:'background 0.15s' }}
               onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'}
               onMouseLeave={e=>e.currentTarget.style.background='transparent'}
             >

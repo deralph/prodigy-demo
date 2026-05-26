@@ -12,7 +12,7 @@ export class ActivityService {
     // Return recent activity log entries for this client
     const activities = await this.prisma.activityLog.findMany({
       where: { clientId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { occurredAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit,
     });

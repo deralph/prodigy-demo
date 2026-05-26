@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Wallet, ArrowUpRight, ArrowDownLeft, Plus, X, Copy, Check } from 'lucide-react';
+import { Wallet, ArrowUpRight, ArrowDownLeft, Plus, X, Copy, Check, Download, Filter, Phone, MessageCircle, Mail } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 
 const fmt = n => '₦' + Number(n).toLocaleString('en-NG');
@@ -17,16 +17,37 @@ const STATUS_STYLE = {
 
 export default function CashAccount() {
   const { user, walletBalance, pendingBalance, transactions, allTransactions, addTransaction } = useAppStore();
-  const [fundOpen, setFundOpen]   = useState(false);
-  const [amount, setAmount]       = useState('');
-  const [copied, setCopied]       = useState(false);
-  const [fundStep, setFundStep]   = useState(1);
+  const [fundOpen, setFundOpen]     = useState(false);
+  const [amount, setAmount]         = useState('');
+  const [copied, setCopied]         = useState(false);
+  const [fundStep, setFundStep]     = useState(1);
+  const [filterType, setFilterType] = useState('all');
+  const [contactOpen, setContactOpen] = useState(false);
 
   const myTxns = allTransactions.filter(t => t.client === user?.name);
   const allTxns = [
     ...transactions.map(t => ({ ...t, _source:'wallet' })),
     ...myTxns.map(t => ({ ...t, _source:'investment' })),
   ].sort((a,b) => new Date(b.date) - new Date(a.date));
+
+  const filteredTxns = filterType === 'all' ? allTxns
+    : filterType === 'inflow'  ? allTxns.filter(t => t._source === 'wallet' || t.type === 'redemption')
+    : allTxns.filter(t => t.type === 'subscription');
+
+  const downloadCSV = () => {
+    const headers = ['Date','Reference','Description','Type','Amount','Status'];
+    const rows = allTxns.map(t => {
+      const ty = TYPE_STYLE[t.type] || TYPE_STYLE.wallet_funding;
+      const dir = ty.icon === ArrowDownLeft ? 'INFLOW' : 'OUTFLOW';
+      return [t.date||'', t.ref||'', (t.description||ty.label).replace(/,/g,' '), dir, t.amount, (t.status||'').toLowerCase()].join(',');
+    });
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type:'text/csv' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `cash-ledger-${user?.name?.replace(/\s/g,'-')||'account'}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
 
   const copy = (text) => {
     navigator.clipboard.writeText(text).catch(()=>{});
@@ -47,7 +68,7 @@ export default function CashAccount() {
     setFundOpen(false); setAmount(''); setFundStep(1);
   };
 
-  const ACCOUNT = { bank:'Prodigy MFB', acct:'0123456789', name:user?.name||'John Doe', sort:'000001' };
+  const ACCOUNT = { bank:'Prodigy MFB', acct: user?.accountNumber || '—', name: user?.name || user?.email || '—', sort:'000001' };
 
   return (
     <div>
@@ -94,17 +115,30 @@ export default function CashAccount() {
 
       {/* Transactions */}
       <div style={{ background:'white',borderRadius:14,border:'1px solid var(--gray-200)',overflow:'hidden' }} className="animate-in delay-3">
-        <div style={{ padding:'16px 22px',borderBottom:'1px solid var(--gray-100)' }}>
+        <div style={{ padding:'14px 22px',borderBottom:'1px solid var(--gray-100)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap' }}>
           <h3 style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:13,color:'var(--navy)',letterSpacing:'0.06em',textTransform:'uppercase' }}>Transaction History</h3>
+          <div style={{ display:'flex',gap:6,marginLeft:'auto',flexWrap:'wrap' }}>
+            <div style={{ display:'flex',background:'var(--gray-50)',borderRadius:7,border:'1px solid var(--gray-200)',overflow:'hidden' }}>
+              {[['all','All'],['inflow','Inflow'],['outflow','Outflow']].map(([k,l])=>(
+                <button key={k} onClick={()=>setFilterType(k)} style={{ padding:'6px 12px',border:'none',background:filterType===k?'var(--navy)':'transparent',color:filterType===k?'white':'var(--gray-400)',cursor:'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:10,letterSpacing:'0.04em' }}>{l}</button>
+              ))}
+            </div>
+            <button onClick={downloadCSV} style={{ display:'flex',alignItems:'center',gap:5,padding:'7px 12px',background:'var(--navy)',color:'white',border:'none',borderRadius:7,cursor:'pointer',fontSize:11,fontWeight:700 }}>
+              <Download size={12}/> CSV
+            </button>
+            <button onClick={()=>setContactOpen(true)} style={{ display:'flex',alignItems:'center',gap:5,padding:'7px 12px',background:'rgba(34,197,94,0.1)',color:'var(--green)',border:'1px solid rgba(34,197,94,0.2)',borderRadius:7,cursor:'pointer',fontSize:11,fontWeight:700 }}>
+              <Phone size={12}/> Contact Us
+            </button>
+          </div>
         </div>
-        {allTxns.length === 0 ? (
+        {filteredTxns.length === 0 ? (
           <div style={{ padding:'40px',textAlign:'center',color:'var(--gray-400)',fontSize:13 }}>No transactions yet</div>
-        ) : allTxns.map((t,i) => {
+        ) : filteredTxns.map((t,i) => {
           const ty = TYPE_STYLE[t.type] || TYPE_STYLE.wallet_funding;
           const st = STATUS_STYLE[(t.status||'').toLowerCase()] || STATUS_STYLE.pending;
           const Icon = ty.icon;
           return (
-            <div key={t.id||i} style={{ padding:'14px 22px',borderBottom:i<allTxns.length-1?'1px solid var(--gray-100)':'none',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap',transition:'background 0.15s' }}
+            <div key={t.id||i} style={{ padding:'14px 22px',borderBottom:i<filteredTxns.length-1?'1px solid var(--gray-100)':'none',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap',transition:'background 0.15s' }}
               onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'}
               onMouseLeave={e=>e.currentTarget.style.background='transparent'}
             >
@@ -125,6 +159,37 @@ export default function CashAccount() {
           );
         })}
       </div>
+
+      {/* Contact Us Modal */}
+      {contactOpen && (
+        <div style={{ position:'fixed',inset:0,background:'rgba(13,27,53,0.55)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:300,padding:20 }} onClick={()=>setContactOpen(false)}>
+          <div style={{ background:'white',borderRadius:20,width:'100%',maxWidth:400,overflow:'hidden',boxShadow:'0 32px 80px rgba(13,27,53,0.25)' }} onClick={e=>e.stopPropagation()}>
+            <div style={{ background:'var(--navy)',padding:'20px 24px',display:'flex',alignItems:'center',justifyContent:'space-between' }}>
+              <div style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:15,color:'white',textTransform:'uppercase' }}>Contact & Support</div>
+              <button onClick={()=>setContactOpen(false)} style={{ background:'none',border:'none',cursor:'pointer',color:'rgba(255,255,255,0.5)' }}><X size={18}/></button>
+            </div>
+            <div style={{ padding:'24px',display:'flex',flexDirection:'column',gap:12 }}>
+              <p style={{ fontSize:12,color:'var(--gray-400)',marginBottom:8 }}>Reach our team through any of these channels:</p>
+              {[
+                { icon:Mail,        label:'Email Support',     sub:'support@prodigyfinance.ng',     href:'mailto:support@prodigyfinance.ng',   bg:'rgba(59,130,246,0.08)', color:'#3b82f6' },
+                { icon:MessageCircle, label:'WhatsApp Chat',  sub:'+234 800 000 0000',              href:'https://wa.me/2348000000000',        bg:'rgba(34,197,94,0.08)',  color:'var(--green)' },
+                { icon:Phone,       label:'Call Us',           sub:'+234 800 000 0001',             href:'tel:+2348000000001',                bg:'rgba(13,27,53,0.06)',   color:'var(--navy)' },
+              ].map(c=>(
+                <a key={c.label} href={c.href} target="_blank" rel="noreferrer" style={{ display:'flex',alignItems:'center',gap:14,padding:'14px 16px',background:c.bg,border:`1px solid ${c.color}22`,borderRadius:12,textDecoration:'none',transition:'opacity 0.15s' }}
+                  onMouseEnter={e=>e.currentTarget.style.opacity='0.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+                  <div style={{ width:40,height:40,borderRadius:10,background:c.color,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
+                    <c.icon size={18} color="white"/>
+                  </div>
+                  <div>
+                    <div style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:13,color:'var(--navy)',marginBottom:2 }}>{c.label}</div>
+                    <div style={{ fontSize:11,color:'var(--gray-400)' }}>{c.sub}</div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Fund modal */}
       {fundOpen && (

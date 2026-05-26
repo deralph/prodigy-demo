@@ -8,6 +8,7 @@ import {
   RefreshCw, Building2, UserCog, BarChart
 } from 'lucide-react';
 import useAppStore, { ADMIN_PERMISSIONS, ROLE_LABELS, ROLE_COLORS } from '../../store/useAppStore';
+import ContactButton from '../ContactButton';
 
 const NAV_GROUPS = [
   {
@@ -226,6 +227,7 @@ export default function AdminLayout() {
           main { padding: 20px 16px !important; }
         }
       `}</style>
+      <ContactButton/>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import CorporateSidebar from './CorporateSidebar';
 import { Building2, Menu } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
+import ContactButton from '../ContactButton';
 
 export default function CorporateLayout() {
   const { toggleSidebar, user } = useAppStore();
@@ -27,6 +28,7 @@ export default function CorporateLayout() {
         .dashboard-main{flex:1;padding:28px 32px;background:var(--gray-50);overflow-y:auto;}
         @media(max-width:768px){.dashboard-content{margin-left:0!important;}.dashboard-main{padding:20px 16px!important;}.menu-toggle{display:flex!important;}}
       `}</style>
+      <ContactButton/>
     </div>
   );
 }

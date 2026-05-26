@@ -1,5 +1,14 @@
 import { Injectable } from '@nestjs/common';
+import { TransactionType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+
+const CREDIT_TYPES: TransactionType[] = [
+  TransactionType.WALLET_FUNDING,
+  TransactionType.REDEMPTION,
+  TransactionType.PRE_TERMINATION_PAYOUT,
+  TransactionType.DIVIDEND_PAYOUT,
+  TransactionType.LOAN_DISBURSEMENT,
+];
 
 @Injectable()
 export class StatementsService {
@@ -23,7 +32,8 @@ export class StatementsService {
     // Calculate running balance
     let balance = 0;
     const statement = transactions.reverse().map(t => {
-      balance += t.type === 'CREDIT' ? Number(t.amount) : -Number(t.amount);
+      const isCredit = CREDIT_TYPES.includes(t.type);
+      balance += isCredit ? Number(t.amountKobo) : -Number(t.amountKobo);
       return { ...t, runningBalance: balance };
     });
 

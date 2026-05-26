@@ -1,21 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Target, Plus, X, TrendingUp, Home, GraduationCap, Plane, Car, Briefcase, CheckCircle } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
+import EmptyState from '../../components/EmptyState';
 
 const fmt = n => '₦' + Number(n).toLocaleString('en-NG');
 
 const GOAL_ICONS = { Retirement:Briefcase, Education:GraduationCap, 'Home Purchase':Home, Travel:Plane, Vehicle:Car, Other:Target };
 const GOAL_COLORS = ['#22c55e','#3b82f6','#ec4899','#f97316','#8b5cf6','#e8b84b'];
 
-const INIT_GOALS = [
-  { id:'G-001', name:'Retirement Fund',    icon:'Retirement',   target:50000000, saved:12500000, deadline:'Dec 2030', color:'#22c55e', plan:'Prodigy Genesis' },
-  { id:'G-002', name:'Children Education', icon:'Education',    target:15000000, saved:6250000,  deadline:'Sep 2027', color:'#3b82f6', plan:'Prodigy Apex' },
-  { id:'G-003', name:'Family Home',        icon:'Home Purchase',target:30000000, saved:4000000,  deadline:'Jun 2028', color:'#ec4899', plan:'Prodigy Aura' },
-];
 
 export default function PersonalGoals() {
   const { plans } = useAppStore();
-  const [goals, setGoals]     = useState(INIT_GOALS);
+  const [goals, setGoals]     = useState([]);
+
+  useEffect(() => {
+    import('../../services/api').then(({ goalApi }) => {
+      goalApi?.findAll?.().then(data => {
+        if (data && Array.isArray(data)) setGoals(data);
+      }).catch(() => {});
+    }).catch(() => {});
+  }, []);
   const [newOpen, setNewOpen] = useState(false);
   const [form, setForm]       = useState({ name:'', icon:'Other', target:'', saved:'', deadline:'', planId:'', color:'#22c55e' });
 
@@ -50,7 +54,7 @@ export default function PersonalGoals() {
             <h2 style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:'clamp(22px,3vw,32px)',color:'white',letterSpacing:'-0.01em',marginBottom:6 }}>{fmt(totalSaved)} <span style={{ fontSize:16,color:'rgba(255,255,255,0.4)',fontWeight:400 }}>of {fmt(totalTarget)}</span></h2>
             <div style={{ fontSize:12,color:'rgba(255,255,255,0.5)',display:'flex',alignItems:'center',gap:5 }}>
               <TrendingUp size={12} color="var(--green)"/>
-              <span style={{ color:'var(--green)',fontWeight:600 }}>{Math.round((totalSaved/totalTarget)*100)}% Overall Progress Across {goals.length} Goals</span>
+              <span style={{ color:'var(--green)',fontWeight:600 }}>{goals.length === 0 ? '0 Goals Created' : `${Math.round((totalSaved/totalTarget)*100)}% Overall Progress Across ${goals.length} Goals`}</span>
             </div>
           </div>
           <button onClick={()=>setNewOpen(true)} style={{ display:'flex',alignItems:'center',gap:6,background:'var(--gold)',color:'var(--navy)',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:11,border:'none',borderRadius:8,padding:'10px 16px',cursor:'pointer',letterSpacing:'0.06em',flexShrink:0 }}>
@@ -63,6 +67,9 @@ export default function PersonalGoals() {
       </div>
 
       {/* Goal cards */}
+      {goals.length === 0 && (
+        <EmptyState icon={Target} title="No goals yet" message="Create your first investment goal to start tracking your financial milestones." action={{ label: 'Create Goal', onClick: () => setNewOpen(true) }} />
+      )}
       <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:16 }} className="animate-in delay-2">
         {goals.map(goal => {
           const Icon     = GOAL_ICONS[goal.icon] || Target;

@@ -74,10 +74,22 @@ export const authApi = {
     request('/auth/register/corporate', { method: 'POST', body: JSON.stringify(data) }),
   registerIndividual: (data) =>
     request('/auth/register/individual', { method: 'POST', body: JSON.stringify(data) }),
+  registerJoint: (data) =>
+    request('/auth/register/joint', { method: 'POST', body: JSON.stringify(data) }),
   forgotPassword: (email) =>
     request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
   getMe: () => request('/auth/me'),
   logout: () => request('/auth/logout', { method: 'POST' }),
+};
+
+/* ── NIBSS VERIFICATION ──────────────────────────────────── */
+export const nibssApi = {
+  verifyNin: (nin, expectedName) =>
+    request('/nibss/verify/nin', { method: 'POST', body: JSON.stringify({ nin, expectedName }) }),
+  verifyBvn: (bvn, expectedName) =>
+    request('/nibss/verify/bvn', { method: 'POST', body: JSON.stringify({ bvn, expectedName }) }),
+  verifyCac: (cacNumber, companyName) =>
+    request('/nibss/verify/cac', { method: 'POST', body: JSON.stringify({ cacNumber, companyName }) }),
 };
 
 /* ── CLIENTS (own profile) ───────────────────────────────── */
@@ -137,6 +149,9 @@ export const investmentApi = {
   requestRedemption: (id, reason) =>
     request(`/investments/${id}/redeem`, { method: 'POST', body: JSON.stringify({ reason }) }),
   getStatement: (id) => request(`/investments/${id}/statement`),
+  getCertificate: (id) => request(`/investments/${id}/certificate`),
+  requestPreTermination: (id, reason) =>
+    request(`/investments/${id}/preterminate`, { method: 'POST', body: JSON.stringify({ reason }) }),
 };
 
 export const adminInvestmentApi = {
@@ -146,6 +161,8 @@ export const adminInvestmentApi = {
   },
   book: (data) => request('/admin/investments/book', { method: 'POST', body: JSON.stringify(data) }),
   getStatement: (id) => request(`/admin/investments/${id}/statement`),
+  getCertificate: (id) => request(`/admin/investments/${id}/certificate`),
+  sell: (id, data) => request(`/admin/investments/${id}/sell`, { method: 'POST', body: JSON.stringify(data) }),
 };
 
 /* ── WALLET ──────────────────────────────────────────────── */
@@ -164,6 +181,29 @@ export const adminTransactionApi = {
     const qs = new URLSearchParams(params).toString();
     return request(`/admin/transactions${qs ? '?' + qs : ''}`);
   },
+  exportCsv: (params = {}) => {
+    const qs = new URLSearchParams({ ...params, format: 'csv' }).toString();
+    return request(`/admin/transactions/export${qs ? '?' + qs : ''}`);
+  },
+  inflowByProduct: () => request('/admin/transactions/inflow-by-product'),
+};
+
+/* ── REPORTS ─────────────────────────────────────────────── */
+export const reportsApi = {
+  getPortfolioReport: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/admin/reports/portfolio${qs ? '?' + qs : ''}`);
+  },
+  getInflowByProduct: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/admin/reports/inflow-by-product${qs ? '?' + qs : ''}`);
+  },
+  exportTransactionsCsv: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/admin/reports/transactions/export${qs ? '?' + qs : ''}`);
+  },
+  exportProductCsv: (productId) =>
+    request(`/admin/reports/products/${productId}/export`),
 };
 
 /* ── APPROVALS ───────────────────────────────────────────── */
@@ -220,10 +260,19 @@ export const adminDividendApi = {
   declare: (data) => request('/admin/dividends', { method: 'POST', body: JSON.stringify(data) }),
 };
 
-/* ── GOALS ───────────────────────────────────────────────── */
-export const goalApi = {
-  findAll: () => request('/goals/me'),
-  create: (data) => request('/goals', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id, data) => request(`/goals/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-  remove: (id) => request(`/goals/${id}`, { method: 'DELETE' }),
+/* ── JOINT ACCOUNTS ──────────────────────────────────────── */
+export const jointApi = {
+  register: (data) =>
+    request('/joint/register', { method: 'POST', body: JSON.stringify(data) }),
+  getHolders: (clientId) =>
+    request(`/joint/${clientId}/holders`),
+  updateHolderKyc: (clientId, holderEmail, status) =>
+    request(`/joint/${clientId}/holders/kyc`, { method: 'PATCH', body: JSON.stringify({ holderEmail, status }) }),
+  uploadHolderDoc: (clientId, holderIndex, docKey, file) => {
+    const fd = new FormData();
+    fd.append('holderIndex', holderIndex);
+    fd.append('docKey', docKey);
+    fd.append('file', file);
+    return request(`/joint/${clientId}/kyc/upload`, { method: 'POST', body: fd, headers: {} });
+  },
 };
