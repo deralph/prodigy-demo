@@ -45,8 +45,8 @@ export default function ContactButton() {
           <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             {[
               { icon: Mail,           label: 'Email Support',  sub: 'support@prodigyfinance.ng', href: 'mailto:support@prodigyfinance.ng', bg: 'rgba(59,130,246,0.08)', color: '#3b82f6' },
-              { icon: MessageCircle,  label: 'WhatsApp Chat',  sub: '+234 800 000 0000',          href: 'https://wa.me/2348000000000',     bg: 'rgba(34,197,94,0.08)',  color: '#22c55e' },
-              { icon: Phone,          label: 'Call Us',        sub: '+234 800 000 0001',          href: 'tel:+2348000000001',              bg: 'rgba(13,27,53,0.05)',   color: 'var(--navy)' },
+              { icon: MessageCircle,  label: 'WhatsApp Chat',  sub: '09163629178',                href: 'https://wa.me/2349163629178',     bg: 'rgba(34,197,94,0.08)',  color: '#22c55e' },
+              { icon: Phone,          label: 'Call Us',        sub: '09163629178',                href: 'tel:+2349163629178',              bg: 'rgba(13,27,53,0.05)',   color: 'var(--navy)' },
             ].map(c => (
               <a key={c.label} href={c.href} target="_blank" rel="noreferrer"
                 style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 13px', background: c.bg, borderRadius: 10, textDecoration: 'none', transition: 'opacity 0.15s' }}

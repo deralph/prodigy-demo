@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import * as bcrypt from 'bcrypt';
 import { RegisterCorporateDto } from './dto/register-corporate.dto';
 import { RegisterIndividualDto } from './dto/register-individual.dto';
@@ -17,6 +18,7 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
+    private notifications: NotificationsService,
   ) {}
 
   // ── Login ────────────────────────────────────────────────────────
@@ -72,6 +74,7 @@ export class AuthService {
           name: dto.entityName,
           email: dto.email,
           phone: dto.phone,
+          rcNumber: (dto as any).rcNumber,
         },
       });
 
@@ -90,6 +93,11 @@ export class AuthService {
       return { client, authUser };
     });
 
+    this.notifications.sendEmail(
+      dto.email,
+      'Welcome to Prodigy Finance',
+      `<p>Dear ${dto.entityName},</p><p>Your corporate account has been created on Prodigy Finance. Your Client ID is <strong>${result.client.clientRef}</strong>.</p><p>Please log in and complete your KYC to activate your account.</p><p>Best regards,<br/>Prodigy Finance Team</p>`,
+    ).catch(() => {});
     return { message: 'Corporate account created. Please complete KYC.', clientRef: result.client.clientRef };
   }
 
@@ -110,7 +118,9 @@ export class AuthService {
           status: 'PENDING_KYC',
           name: dto.primaryName,
           email: dto.email,
+          phone: dto.phone,
           secondaryName: isJoint ? dto.secondaryName : undefined,
+          secondaryEmail: isJoint ? dto.secondaryEmail : undefined,
           mandateType: isJoint ? 'AND' : undefined,
         },
       });
@@ -128,6 +138,22 @@ export class AuthService {
 
       return { client, authUser };
     });
+
+    this.notifications.sendEmail(
+      dto.email,
+      'Welcome to Prodigy Finance',
+      `<p>Dear ${dto.primaryName},</p><p>Your ${isJoint ? 'joint' : 'individual'} account has been created on Prodigy Finance. Your Client ID is <strong>${result.client.clientRef}</strong>.</p><p>Please log in and complete your KYC to activate your account.</p><p>Best regards,<br/>Prodigy Finance Team</p>`,
+    ).catch(() => {});
+
+    if (isJoint && dto.secondaryEmail) {
+      const magicToken = await this.generateMagicToken(result.authUser.id, result.client.clientRef);
+      const magicLink = `${process.env.FRONTEND_URL ?? 'http://localhost:5173'}/magic-login?token=${magicToken}`;
+      this.notifications.sendEmail(
+        dto.secondaryEmail,
+        'You have been added as a Joint Account Holder — Prodigy Finance',
+        `<p>Dear ${dto.secondaryName || 'Co-holder'},</p><p><strong>${dto.primaryName}</strong> has created a joint investment account with you on Prodigy Finance.</p><p>Your Account ID is <strong>${result.client.clientRef}</strong>.</p><p>Click the link below to accept, set your access credentials, and complete your KYC:</p><p><a href="${magicLink}" style="background:#0d1b35;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;">Access Your Joint Account</a></p><p>This link expires in 48 hours.</p><p>Best regards,<br/>Prodigy Finance Team</p>`,
+      ).catch(() => {});
+    }
 
     return { message: 'Account created. Please complete KYC.', clientRef: result.client.clientRef };
   }
@@ -167,7 +193,7 @@ export class AuthService {
       data: { otpCode: await bcrypt.hash(otp, 10), otpExpiry: expiry },
     });
 
-    // TODO: send OTP via Nodemailer (NotificationsService.sendOtpEmail)
+    this.notifications.sendOtpEmail(email, otp).catch(() => {});
     return { message: 'If that email exists, a reset link has been sent.' };
   }
 
@@ -201,6 +227,40 @@ export class AuthService {
     });
 
     return { accessToken, refreshToken };
+  }
+
+  // ── Magic link verification ────────────────────────────────────
+  async verifyMagicLink(token: string) {
+    let payload: any;
+    try {
+      payload = await this.jwt.verifyAsync(token, { secret: process.env.JWT_MAGIC_SECRET ?? process.env.JWT_SECRET });
+    } catch {
+      throw new UnauthorizedException('Magic link is invalid or expired');
+    }
+    const authUser = await this.prisma.authUser.findUnique({
+      where: { id: payload.sub },
+      include: { client: true },
+    });
+    if (!authUser) throw new UnauthorizedException('Account not found');
+    const tokens = await this.generateTokens(authUser.id, authUser.email, authUser.role);
+    return {
+      ...tokens,
+      user: {
+        id: authUser.id,
+        email: authUser.email,
+        role: authUser.role,
+        name: authUser.client?.name,
+        clientId: authUser.client?.clientRef,
+        clientType: authUser.client?.type ?? null,
+      },
+    };
+  }
+
+  private async generateMagicToken(authUserId: string, clientRef: string): Promise<string> {
+    return this.jwt.signAsync(
+      { sub: authUserId, clientRef },
+      { secret: process.env.JWT_MAGIC_SECRET ?? process.env.JWT_SECRET, expiresIn: '48h' },
+    );
   }
 
   private async generateClientRef(): Promise<string> {

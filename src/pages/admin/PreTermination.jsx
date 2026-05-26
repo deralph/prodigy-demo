@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { ArrowRight, AlertTriangle, CheckCircle, XCircle, Clock, Filter, Search, X, ShoppingCart } from 'lucide-react';
+import { ArrowRight, AlertTriangle, CheckCircle, XCircle, Clock, Filter, Search, X, ShoppingCart, Inbox } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
+import EmptyState from '../../components/EmptyState';
 
 const fmt = n => '₦' + Number(n).toLocaleString('en-NG');
 
@@ -180,9 +181,12 @@ export default function PreTermination() {
           );
         })}
         {filtered.length === 0 && (
-          <div style={{ background:'white',borderRadius:12,border:'1px solid var(--gray-200)',padding:'40px',textAlign:'center',color:'var(--gray-400)',fontSize:13 }}>
-            No pre-termination requests match the current filters
-          </div>
+          <EmptyState
+            icon={Inbox}
+            title={preTermQueue.length === 0 ? "No pre-termination requests" : "No matching requests"}
+            message={preTermQueue.length === 0 ? "Pre-termination requests will appear here when clients request early exit from their investments." : "Try adjusting your filters."}
+            compact
+          />
         )}
       </div>
 

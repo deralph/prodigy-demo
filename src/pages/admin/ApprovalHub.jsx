@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { CheckCircle, XCircle, Eye, Filter, X, FileText, User, ExternalLink, Download } from 'lucide-react';
+import { CheckCircle, XCircle, Eye, Filter, X, FileText, User, ExternalLink, Download, Inbox } from 'lucide-react';
 import useAppStore, { KYC_REQUIREMENTS } from '../../store/useAppStore';
+import EmptyState from '../../components/EmptyState';
 import StatusBadge from '../../components/shared/StatusBadge';
 
 const fmt = n => '₦' + Number(n).toLocaleString('en-NG');
@@ -97,7 +98,12 @@ export default function ApprovalHub() {
       {/* Approvals list */}
       <div style={{ background:'white',borderRadius:14,border:'1px solid var(--gray-200)',overflow:'hidden' }} className="animate-in delay-3">
         {filtered.length === 0 ? (
-          <div style={{ padding:'40px',textAlign:'center',color:'var(--gray-400)',fontSize:13 }}>No approvals match this filter</div>
+          <EmptyState
+            icon={Inbox}
+            title={approvals.length === 0 ? "No approvals yet" : "No matching approvals"}
+            message={approvals.length === 0 ? "Approval requests will appear here when clients submit KYC, investments, or staff loans." : "Try changing your filter criteria."}
+            compact
+          />
         ) : filtered.map((a,i)=>(
           <div key={a.id} style={{ padding:'16px 20px',borderBottom:i<filtered.length-1?'1px solid var(--gray-100)':'none',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap',transition:'background 0.15s' }}
             onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'}

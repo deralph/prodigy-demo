@@ -1,23 +1,33 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Download, FileText, FileBarChart, FileCheck, CreditCard } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
+import EmptyState from '../../components/EmptyState';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import useAppStore from '../../store/useAppStore';
 
-const portfolioData = [
-  { name: 'Prodigy Aura', value: 403000, color: '#e8b84b' },
-  { name: 'Prodigy Flex', value: 212000, color: '#3b6ef8' },
-  { name: 'Prodigy Genesis', value: 900000, color: '#22c55e' },
-  { name: 'Prodigy Liquidity', value: 125478, color: '#8b5cf6' },
-];
+const CHART_COLORS = ['#e8b84b','#3b6ef8','#22c55e','#8b5cf6','#f97316','#ec4899','#10b981'];
 
-const reports = [
+const REPORT_TYPES = [
   { icon: FileBarChart, title: 'Consolidated Portfolio Summary', desc: 'Complete portfolio capital deployment records', color: '#3b6ef8' },
-  { icon: FileText, title: 'Initial Subscriptions Ledger', desc: 'Complete initial capital deployment records', color: '#22c55e' },
-  { icon: FileCheck, title: 'Redemption & Exit Analytics', desc: 'Full exit cycle documentation', color: '#f97316' },
-  { icon: CreditCard, title: 'Tax Compliance & Credit Ledger', desc: 'Tax compliance documentation', color: '#8b5cf6' },
+  { icon: FileText,     title: 'Initial Subscriptions Ledger',   desc: 'Complete initial capital deployment records', color: '#22c55e' },
+  { icon: FileCheck,    title: 'Redemption & Exit Analytics',    desc: 'Full exit cycle documentation',              color: '#f97316' },
+  { icon: CreditCard,   title: 'Tax Compliance & Credit Ledger', desc: 'Tax compliance documentation',               color: '#8b5cf6' },
 ];
 
 export default function Reports() {
+  const { clientInvestments } = useAppStore();
+
+  const portfolioData = useMemo(() => {
+    const byPlan = {};
+    clientInvestments.forEach((inv, i) => {
+      const name = inv.plan?.name || inv.planName || `Investment ${i+1}`;
+      byPlan[name] = (byPlan[name] || 0) + (inv.principalAmount || inv.amount || 0);
+    });
+    return Object.entries(byPlan).map(([name, value], i) => ({
+      name, value, color: CHART_COLORS[i % CHART_COLORS.length],
+    }));
+  }, [clientInvestments]);
+
   return (
     <div>
       <PageHeader title="Portfolio Intelligence Vault" subtitle="Bespoke Asset Management System V2.0" />
@@ -38,6 +48,7 @@ export default function Reports() {
               </PieChart>
             </ResponsiveContainer>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {portfolioData.length === 0 && <EmptyState icon={FileBarChart} title="No investment data" message="Your portfolio allocation will appear here once investments are booked." compact />}
               {portfolioData.map(p => (
                 <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: p.color, flexShrink: 0 }} />
@@ -59,7 +70,7 @@ export default function Reports() {
           </h3>
           <p style={{ fontSize: 10, color: 'var(--gray-400)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 20 }}>Certified Administrative Documentation Vault</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {reports.map(r => (
+            {REPORT_TYPES.map(r => (
               <div key={r.title} style={{
                 border: '1px solid var(--gray-200)', borderRadius: 10, padding: 14,
                 cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', gap: 8,
@@ -79,21 +90,22 @@ export default function Reports() {
         </div>
       </div>
 
-      {/* Bespoke Mandate Banner */}
-      <div style={{
-        background: 'var(--navy)', borderRadius: 12, padding: '20px 28px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16,
-      }} className="animate-in delay-3">
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <span style={{ background: 'var(--gold)', color: 'var(--navy)', fontSize: 9, fontWeight: 800, letterSpacing: '0.1em', padding: '3px 8px', borderRadius: 4 }}>✓ VERIFIED CORP BESPOKE MANDATE</span>
+      {clientInvestments.length > 0 && (
+        <div style={{
+          background: 'var(--navy)', borderRadius: 12, padding: '20px 28px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16,
+        }} className="animate-in delay-3">
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ background: 'var(--gold)', color: 'var(--navy)', fontSize: 9, fontWeight: 800, letterSpacing: '0.1em', padding: '3px 8px', borderRadius: 4 }}>✓ CORPORATE INVESTMENT PORTFOLIO</span>
+            </div>
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>{clientInvestments.length} active investment{clientInvestments.length !== 1 ? 's' : ''} · Total: ₦{clientInvestments.reduce((s,i) => s+(i.principalAmount||i.amount||0),0).toLocaleString('en-NG')}</p>
           </div>
-          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>Negotiated Rate: 18.5% P.A. | Custom Liquidation Cycle</p>
+          <button className="btn-gold" style={{ fontSize: 12 }}>
+            <Download size={13} /> Export Report
+          </button>
         </div>
-        <button className="btn-gold" style={{ fontSize: 12 }}>
-          <Download size={13} /> Term Sheet
-        </button>
-      </div>
+      )}
 
       <style>{`
         @media(max-width:900px){

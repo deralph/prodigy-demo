@@ -47,7 +47,7 @@ export default function OnboardingLogin() {
   const [loading, setLoading]   = useState(false);
 
   // Apply form
-  const [applyForm, setApplyForm] = useState({ entityName:'', email:'', password:'', cacNumber:'', cacDigits:'' });
+  const [applyForm, setApplyForm] = useState({ entityName:'', email:'', password:'', phone:'', rcNumber:'', cacNumber:'', cacDigits:'' });
   const [kycUploads, setKycUploads] = useState({});
   const [kycSubmitted, setKycSubmitted] = useState(false);
   const [createStep, setCreateStep] = useState('form');
@@ -80,7 +80,23 @@ export default function OnboardingLogin() {
         setTokens(res);
         const me = await authApi.getMe();
         const role = me.role?.toLowerCase() || 'individual';
-        login({ ...me, role, email, name: me.name || me.companyName || email });
+        const c = me.client || {};
+        login({
+          ...me,
+          role,
+          email,
+          name:           c.name           || me.adminUser?.name  || me.name  || email,
+          clientId:       c.clientRef       || me.adminUser?.adminRef || me.clientId,
+          adminRole:      (me.adminUser?.role ?? null)?.toLowerCase() ?? null,
+          clientType:     c.type            ?? null,
+          phone:          c.phone           ?? null,
+          rcNumber:       c.rcNumber        ?? null,
+          taxId:          c.taxId           ?? null,
+          secondaryName:  c.secondaryName   ?? null,
+          secondaryEmail: c.secondaryEmail  ?? null,
+          mandateType:    c.mandateType      ?? null,
+          client:         c,
+        });
         if (role === 'admin')            navigate('/admin');
         else if (role === 'corporate')   navigate('/corporate/treasury');
         else if (role === 'individual')  navigate('/individual/portfolio');
@@ -288,10 +304,30 @@ export default function OnboardingLogin() {
                   </div>
                 </div>
                 <div>
+                  <div style={{ fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--gray-400)', marginBottom:7 }}>Phone Number</div>
+                  <div style={{ position:'relative' }}>
+                    <Phone size={14} color="var(--gray-400)" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }} />
+                    <input type="tel" placeholder="+234 800 000 0000" value={applyForm.phone}
+                      onChange={e => setApplyForm(f => ({...f, phone: e.target.value}))} style={inputStyle}
+                      onFocus={e => e.target.style.borderColor='var(--navy)'}
+                      onBlur={e => e.target.style.borderColor='#d1d5db'} />
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--gray-400)', marginBottom:7 }}>RC Number</div>
+                  <div style={{ position:'relative' }}>
+                    <FileText size={14} color="var(--gray-400)" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }} />
+                    <input type="text" placeholder="RC123456" value={applyForm.rcNumber}
+                      onChange={e => setApplyForm(f => ({...f, rcNumber: e.target.value}))} style={inputStyle}
+                      onFocus={e => e.target.style.borderColor='var(--navy)'}
+                      onBlur={e => e.target.style.borderColor='#d1d5db'} />
+                  </div>
+                </div>
+                <div>
                   <div style={{ fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--gray-400)', marginBottom:7 }}>Secure Password</div>
                   <div style={{ position:'relative' }}>
                     <Lock size={14} color="var(--gray-400)" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }} />
-                    <input type="password" placeholder="••••••••••" value={applyForm.password}
+                    <input type="password" placeholder="min 8 characters" value={applyForm.password}
                       onChange={e => setApplyForm(f => ({...f, password: e.target.value}))} style={inputStyle}
                       onFocus={e => e.target.style.borderColor='var(--navy)'}
                       onBlur={e => e.target.style.borderColor='#d1d5db'} />
@@ -365,15 +401,24 @@ export default function OnboardingLogin() {
                   <div style={{ marginTop:4, fontSize:11, color:'var(--gray-400)', fontWeight:600 }}>
                     {Object.keys(kycUploads).length}/{kycDocs.length} documents uploaded (optional)
                   </div>
-                  <button onClick={() => {
-                    (isCorp ? kycApi.uploadCorporateDocs(kycUploads) : kycApi.uploadIndividualDocs(kycUploads)).catch(() => {});
-                    setKycSubmitted(true);
-                  }} style={{
+                  {error && <div style={{ fontSize:12, color:'var(--red)', background:'rgba(239,68,68,0.08)', padding:'10px 12px', borderRadius:8 }}>{error}</div>}
+                  <button onClick={async () => {
+                    setLoading(true); setError('');
+                    try {
+                      await authApi.registerCorporate({ entityName: applyForm.entityName, email: applyForm.email, password: applyForm.password, phone: applyForm.phone, rcNumber: applyForm.rcNumber });
+                      kycApi.uploadCorporateDocs(kycUploads).catch(() => {});
+                      setKycSubmitted(true);
+                    } catch(err) {
+                      const msg = err?.message || '';
+                      setError(msg.toLowerCase().includes('already') ? 'An account with this email already exists.' : 'Registration failed. Please try again.');
+                    }
+                    setLoading(false);
+                  }} disabled={loading} style={{
                     background:'var(--navy)', color:'white', fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:13,
                     letterSpacing:'0.08em', border:'none', borderRadius:10, padding:'14px', cursor:'pointer',
                     display:'flex', alignItems:'center', justifyContent:'center', gap:8, marginTop:4,
                   }}>
-                    CREATE ACCOUNT <ArrowRight size={15} />
+                    {loading ? 'Creating Account…' : <> CREATE ACCOUNT <ArrowRight size={15} /> </>}
                   </button>
                 </div>
               )}
@@ -415,12 +460,13 @@ function buildJointDocs(n) {
 }
 
 function IndividualCreate({ onBack }) {
-  const { registerJointAccount } = useAppStore();
   const [accountType, setAccountType] = useState('single');
   const [step, setStep] = useState('form'); // 'form' | 'verify' | 'kyc' | 'done'
+  const [regLoading, setRegLoading] = useState(false);
+  const [regError, setRegError]   = useState('');
 
   /* ── Single account state ── */
-  const [singleForm, setSingleForm] = useState({ name:'', email:'', password:'', nin:'', bvn:'' });
+  const [singleForm, setSingleForm] = useState({ name:'', email:'', phone:'', password:'', nin:'', bvn:'' });
   const [singleVerified, setSingleVerified] = useState(false);
   const [singleVerifying, setSingleVerifying] = useState(false);
   const [singleVerifyErr, setSingleVerifyErr] = useState('');
@@ -468,7 +514,7 @@ function IndividualCreate({ onBack }) {
   };
 
   /* ── Validation ── */
-  const singleValid = singleForm.name && isGmail(singleForm.email) && singleForm.password.length >= 6;
+  const singleValid = singleForm.name && isGmail(singleForm.email) && singleForm.password.length >= 8;
   const jointFormValid = holders.every(h => h.name && isGmail(h.email) && h.phone) && (holders[0]?.password?.length >= 6);
   const allHoldersVerified = holders.every(h => h.verified);
   const jointDocs = buildJointDocs(holderCount);
@@ -542,17 +588,42 @@ function IndividualCreate({ onBack }) {
             </div>
           ))}
           <div style={{ fontSize:11, color:'var(--gray-400)', fontWeight:600 }}>{Object.keys(kycUploads).length}/{docList.length} documents uploaded (optional)</div>
-          <button onClick={() => {
-            if (accountType === 'joint') {
-              registerJointAccount({ holders: holders.map(h=>({ name:h.name, email:h.email, phone:h.phone })), mandate, phone: holders[0].phone, address:'' });
+          {regError && <div style={{ fontSize:12, color:'var(--red)', background:'rgba(239,68,68,0.08)', padding:'10px 12px', borderRadius:8 }}>{regError}</div>}
+          <button onClick={async () => {
+            setRegLoading(true); setRegError('');
+            try {
+              if (accountType === 'joint') {
+                await authApi.registerIndividual({
+                  accountType: 'joint',
+                  primaryName: holders[0].name,
+                  email: holders[0].email,
+                  password: holders[0].password || '',
+                  secondaryName: holders[1]?.name,
+                  secondaryEmail: holders[1]?.email,
+                  phone: holders[0].phone,
+                });
+              } else {
+                await authApi.registerIndividual({
+                  accountType: 'single',
+                  primaryName: singleForm.name,
+                  email: singleForm.email,
+                  phone: singleForm.phone,
+                  password: singleForm.password,
+                });
+              }
+              kycApi.uploadIndividualDocs(kycUploads).catch(() => {});
+              setStep('done');
+            } catch(err) {
+              const msg = err?.message || '';
+              setRegError(msg.toLowerCase().includes('already') ? 'An account with this email already exists.' : 'Registration failed. Please try again.');
             }
-            setStep('done');
-          }} style={{
+            setRegLoading(false);
+          }} disabled={regLoading} style={{
             background:'var(--navy)', color:'white', fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:13,
             letterSpacing:'0.08em', border:'none', borderRadius:10, padding:'14px', cursor:'pointer',
             display:'flex', alignItems:'center', justifyContent:'center', gap:8, marginTop:4,
           }}>
-            CREATE ACCOUNT <ArrowRight size={15} />
+            {regLoading ? 'Creating Account…' : <> CREATE ACCOUNT <ArrowRight size={15} /> </>}
           </button>
         </div>
       </div>
@@ -686,10 +757,17 @@ function IndividualCreate({ onBack }) {
             {singleForm.email && !isGmail(singleForm.email) && <div style={{ fontSize:11, color:'var(--red)', marginTop:4 }}>Only Gmail addresses are accepted (@gmail.com)</div>}
           </div>
           <div>
+            <div style={{ fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--gray-400)', marginBottom:7 }}>Phone Number</div>
+            <div style={{ position:'relative' }}>
+              <Phone size={14} color="var(--gray-400)" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }} />
+              <input type="tel" placeholder="+234 800 000 0000" value={singleForm.phone} onChange={e=>setSingleForm(f=>({...f,phone:e.target.value}))} style={iStyle} onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='#d1d5db'} />
+            </div>
+          </div>
+          <div>
             <div style={{ fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--gray-400)', marginBottom:7 }}>Secure Password</div>
             <div style={{ position:'relative' }}>
               <Lock size={14} color="var(--gray-400)" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }} />
-              <input type="password" placeholder="min 6 characters" value={singleForm.password} onChange={e=>setSingleForm(f=>({...f,password:e.target.value}))} style={iStyle} onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='#d1d5db'} />
+              <input type="password" placeholder="min 8 characters" value={singleForm.password} onChange={e=>setSingleForm(f=>({...f,password:e.target.value}))} style={iStyle} onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='#d1d5db'} />
             </div>
           </div>
           <div style={{ fontSize:11, color:'#1d4ed8', background:'rgba(59,130,246,0.07)', padding:'10px 12px', borderRadius:8, display:'flex', alignItems:'flex-start', gap:6 }}>

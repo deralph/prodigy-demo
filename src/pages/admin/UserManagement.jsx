@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ADMIN_PERMISSIONS, ROLE_LABELS, ROLE_COLORS } from '../../store/useAppStore';
-import { Shield, Plus, Lock, Unlock, Trash2, UserCheck, UserX, X } from 'lucide-react';
+import { Shield, Plus, Lock, Unlock, Trash2, UserCheck, UserX, X, Users } from 'lucide-react';
+import EmptyState from '../../components/EmptyState';
 import useAppStore from '../../store/useAppStore';
 
 const ROLES = Object.keys(ROLE_LABELS);
@@ -78,6 +79,14 @@ export default function UserManagement() {
         </div>
       )}
 
+      {visible.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="No admin users yet"
+          message="Admin users will appear here once created. As Super Admin, you can add operations, compliance, and finance team members."
+          action={isSuperAdmin ? { label: 'Add First Admin', onClick: () => setShowAdd(true) } : null}
+        />
+      ) : (
       <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:18 }}>
         {visible.map((u,i)=>{
           const perms = ADMIN_PERMISSIONS[u.adminRole] || [];
@@ -133,6 +142,7 @@ export default function UserManagement() {
           );
         })}
       </div>
+      )}
 
       {/* Add User Modal */}
       {showAdd && (

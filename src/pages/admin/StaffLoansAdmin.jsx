@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Eye, Building2, Users, TrendingDown, CheckCircle, Download } from 'lucide-react';
+import { ArrowLeft, Eye, Building2, Users, TrendingDown, CheckCircle, Download, Briefcase } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
+import EmptyState from '../../components/EmptyState';
 import StatusBadge from '../../components/shared/StatusBadge';
 
 const fmt = n => '₦' + Number(n).toLocaleString('en-NG');
@@ -67,6 +68,13 @@ export default function StaffLoansAdmin() {
           </div>
 
           {/* Entity cards */}
+          {corpLoanEntities.length === 0 ? (
+            <EmptyState
+              icon={Briefcase}
+              title="No staff loan entities yet"
+              message="Corporate staff loan programs will appear here once companies enroll their employees."
+            />
+          ) : (
           <div style={{ display:'flex',flexDirection:'column',gap:14 }} className="animate-in delay-2">
             {corpLoanEntities.map((ent,i)=>(
               <div key={ent.id} style={{ background:'white',borderRadius:14,border:'1px solid var(--gray-200)',overflow:'hidden',transition:'all 0.2s' }}
@@ -103,6 +111,7 @@ export default function StaffLoansAdmin() {
               </div>
             ))}
           </div>
+          )}
         </>
       ) : (
         <>

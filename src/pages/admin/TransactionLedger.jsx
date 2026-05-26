@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Download, Search, Layers, Filter, X, TrendingUp, TrendingDown, BarChart2 } from 'lucide-react';
+import { Download, Search, Layers, Filter, X, TrendingUp, TrendingDown, BarChart2, FileText } from 'lucide-react';
+import EmptyState from '../../components/EmptyState';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
 import useAppStore from '../../store/useAppStore';
 import StatusBadge from '../../components/shared/StatusBadge';
@@ -255,6 +256,16 @@ export default function TransactionLedger() {
           </div>
         )}
       </div>
+
+      {/* Empty state when no transactions */}
+      {allTransactions.length === 0 && (
+        <EmptyState
+          icon={FileText}
+          title="No transactions yet"
+          message="Transactions will appear here once clients begin funding wallets, subscribing to plans, or requesting redemptions."
+          compact
+        />
+      )}
 
       {/* Ledger table / grouped view */}
       {viewMode === 'by_product' ? (

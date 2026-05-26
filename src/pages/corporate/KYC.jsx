@@ -1,23 +1,32 @@
 import React, { useState } from 'react';
-import { Calendar, RefreshCw, Upload, CheckCircle, PenLine, FileText, AlertCircle, X } from 'lucide-react';
+import { Calendar, RefreshCw, Upload, CheckCircle, PenLine, FileText, AlertCircle, X, Users } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
+import EmptyState from '../../components/EmptyState';
+import useAppStore from '../../store/useAppStore';
 
-const directors = [
-  { name: 'Chukwuma Adeyemi', role: 'Managing Director (Signatory A)', expiry: '2027-10-12', avatar: 'CA' },
-  { name: 'Oluwaseun Fatunase', role: 'Finance Director (Signatory B)', expiry: '2026-05-15', avatar: 'OF' },
-  { name: 'Ibrahim Bello', role: 'Non-Exec Director', expiry: '2030-01-01', avatar: 'IB' },
-];
-
-const kycItems = [
-  { label: 'CAC Certificate', status: 'Verified', color: 'var(--green)' },
-  { label: 'Tax ID / TIN',    status: 'Verified', color: 'var(--green)' },
-  { label: 'SCUML',           status: 'Verified', color: 'var(--green)' },
-  { label: 'Utility Bill',    status: 'Verified', color: 'var(--green)' },
-  { label: 'MEMART',          status: 'Verified', color: 'var(--green)' },
-  { label: 'Sig. Mandate',    status: 'Pending',  color: 'var(--gold)' },
+const KYC_DOC_LABELS = [
+  { key: 'cacCert',       label: 'CAC Certificate' },
+  { key: 'taxId',         label: 'Tax ID / TIN' },
+  { key: 'scuml',         label: 'SCUML' },
+  { key: 'utilityBill',   label: 'Utility Bill' },
+  { key: 'memart',        label: 'MEMART' },
+  { key: 'sigMandate',    label: 'Sig. Mandate' },
 ];
 
 export default function KYC() {
+  const { user } = useAppStore();
+  const kycRecord = user?.client?.kycRecord || {};
+
+  const kycItems = KYC_DOC_LABELS.map(d => {
+    const url = kycRecord[d.key];
+    const approved = !!url;
+    return { label: d.label, status: approved ? 'Verified' : 'Pending', color: approved ? 'var(--green)' : 'var(--gold)' };
+  });
+
+  const directorsList = user?.directors || [];
+  const primaryHolder = user?.name ? [{ name: user.name, role: 'Primary Signatory', expiry: '—', avatar: (user.name||'?').slice(0,2).toUpperCase() }] : [];
+  const secondaryHolder = user?.secondaryName ? [{ name: user.secondaryName, role: 'Secondary Signatory', expiry: '—', avatar: (user.secondaryName||'?').slice(0,2).toUpperCase() }] : [];
+  const directors = [...primaryHolder, ...secondaryHolder, ...directorsList];
   const [sigFile, setSigFile]           = useState(null);
   const [sigDrawOpen, setSigDrawOpen]   = useState(false);
   const [uploadedDocs, setUploadedDocs] = useState({});
@@ -53,6 +62,7 @@ export default function KYC() {
               <span className="badge-verified" style={{ marginLeft: 'auto' }}>Status: Verified</span>
             </div>
             <div style={{ padding: '8px 0' }}>
+              {directors.length === 0 && <EmptyState icon={Users} title="No signatories on record" message="Registered directors and signatories will appear here after KYC approval." />}
               {directors.map((d, i) => (
                 <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '18px 24px', borderBottom: i < directors.length - 1 ? '1px solid var(--gray-100)' : 'none', transition: 'background 0.15s' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-50)'}

@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Req, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -59,5 +59,11 @@ export class AuthController {
   @ApiOperation({ summary: 'Invalidate refresh token' })
   logout(@Req() req: any) {
     return this.authService.logout(req.user.sub);
+  }
+
+  @Get('magic-login')
+  @ApiOperation({ summary: 'Exchange magic link token for session tokens (joint secondary holder)' })
+  magicLogin(@Query('token') token: string) {
+    return this.authService.verifyMagicLink(token);
   }
 }

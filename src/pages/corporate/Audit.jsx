@@ -1,26 +1,24 @@
 import React, { useState } from 'react';
-import { Lock, CheckCircle, Download, Link2 } from 'lucide-react';
+import { Lock, CheckCircle, Download, Link2, Users, FileText } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
-
-const groupA = [
-  { name: 'Chukwuma Adeyemi', signed: true },
-  { name: 'Amina Yusuf', signed: false },
-];
-const groupB = [
-  { name: 'Oluwaseun Fatunase', signed: true },
-];
-
-const certificates = [
-  { name: 'Prodigy Aura', date: 'Oct 13, 2024' },
-  { name: 'Prodigy Flex-Tenure Note', date: 'Oct 13, 2024' },
-  { name: 'Prodigy Bonds', date: 'Oct 13, 2024' },
-  { name: 'Prodigy Liquidity Fund', date: 'Oct 13, 2024' },
-  { name: 'Verified Corp Fund', date: 'Oct 13, 2024' },
-];
+import EmptyState from '../../components/EmptyState';
+import useAppStore from '../../store/useAppStore';
 
 export default function Audit() {
-  const [auditEmail, setAuditEmail] = useState('nofatunase@ijaware.net');
+  const { user, clientInvestments } = useAppStore();
+  const [auditEmail, setAuditEmail] = useState(user?.email || '');
   const [linkGenerated, setLinkGenerated] = useState(false);
+
+  const mandateType = user?.mandateType || 'AND';
+  const primaryName = user?.name || '—';
+  const secondaryName = user?.secondaryName;
+
+  const groupA = primaryName ? [{ name: primaryName, signed: true }] : [];
+  const groupB = secondaryName ? [{ name: secondaryName, signed: false }] : [];
+  const certificates = clientInvestments.map(inv => ({
+    name: inv.plan?.name || inv.planName || inv.id,
+    date: inv.maturityDate ? new Date(inv.maturityDate).toLocaleDateString('en-NG', { day:'2-digit', month:'short', year:'numeric' }) : (inv.createdAt ? new Date(inv.createdAt).toLocaleDateString('en-NG', { day:'2-digit', month:'short', year:'numeric' }) : '—'),
+  }));
 
   return (
     <div>
@@ -34,7 +32,7 @@ export default function Audit() {
               <h3 style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 13, color: 'var(--navy)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>
                 Signatory Mandate Control
               </h3>
-              <p style={{ fontSize: 11, color: 'var(--gray-400)' }}>Any two from Group A or One A · One B</p>
+              <p style={{ fontSize: 11, color: 'var(--gray-400)' }}>{mandateType === 'OR' ? 'Either holder may authorise' : 'Both holders must authorise'}</p>
             </div>
             <Lock size={16} color="var(--red)" />
           </div>
@@ -42,8 +40,8 @@ export default function Audit() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
             {/* Group A */}
             <div>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gray-400)', marginBottom: 14 }}>Group A Signatories</div>
-              {groupA.map(s => (
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gray-400)', marginBottom: 14 }}>Primary Holder</div>
+              {groupA.length === 0 ? <EmptyState icon={Users} title="No primary holder" compact /> : groupA.map(s => (
                 <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy)' }}>{s.name}</span>
                   <span style={{
@@ -59,16 +57,16 @@ export default function Audit() {
             </div>
             {/* Group B */}
             <div>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gray-400)', marginBottom: 14 }}>Group B Signatories</div>
-              {groupB.map(s => (
-                <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy)' }}>{s.name}</span>
-                  <span style={{
-                    fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
-                    color: 'var(--green)', background: 'rgba(34,197,94,0.1)', padding: '3px 8px', borderRadius: 4,
-                  }}>Signature</span>
-                </div>
-              ))}
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gray-400)', marginBottom: 14 }}>Secondary Holder</div>
+              {groupB.length === 0
+                ? <EmptyState icon={Users} title="No secondary holder" message="Joint accounts will show the co-holder here." compact />
+                : groupB.map(s => (
+                  <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy)' }}>{s.name}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: s.signed ? 'var(--green)' : 'var(--gold)', background: s.signed ? 'rgba(34,197,94,0.1)' : 'rgba(232,184,75,0.1)', padding: '3px 8px', borderRadius: 4 }}>{ s.signed ? 'Verified' : 'Pending' }</span>
+                  </div>
+                ))
+              }
             </div>
           </div>
         </div>
@@ -105,6 +103,7 @@ export default function Audit() {
           </h3>
           <CheckCircle size={16} color="var(--green)" />
         </div>
+        {certificates.length === 0 && <EmptyState icon={FileText} title="No certificates yet" message="Investment confirmation certificates will appear here once you have active investments." />}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16 }}>
           {certificates.map(cert => (
             <div key={cert.name} style={{

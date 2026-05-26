@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TrendingUp, Clock, DollarSign, Shield, ChevronRight, X, ArrowUpRight } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 import { productApi, investmentApi } from '../../services/api';
+import EmptyState from '../../components/EmptyState';
 
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 
@@ -32,6 +33,9 @@ export default function Products() {
       </div>
 
       {/* Product Cards Grid */}
+      {plans.length === 0 && (
+        <EmptyState icon={TrendingUp} title="No investment products yet" message="Investment products will appear here once they are set up by the Prodigy Finance team." />
+      )}
       <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))',gap:18 }} className="animate-in delay-1">
         {plans.map((plan, idx) => (
           <div key={plan.id} className={`animate-in delay-${Math.min(idx+1,4)}`}

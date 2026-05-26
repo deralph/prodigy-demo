@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Wallet, Users, ShieldCheck, Globe, FileText, TrendingUp, LogOut, X, Menu, Package, BookOpen } from 'lucide-react';
+import { LayoutDashboard, Wallet, Users, ShieldCheck, Globe, FileText, TrendingUp, LogOut, X, Menu, Package, BookOpen, User } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 
 const navItems = [
@@ -13,10 +13,11 @@ const navItems = [
   { to:'/corporate/risk',        icon:TrendingUp,      label:'Risk Strategy' },
   { to:'/corporate/ledger',      icon:BookOpen,        label:'Ledger' },
   { to:'/corporate/products',    icon:Package,         label:'Products' },
+  { to:'/corporate/profile',      icon:User,            label:'My Profile' },
 ];
 
 export default function CorporateSidebar() {
-  const { sidebarOpen, closeSidebar, logout } = useAppStore();
+  const { sidebarOpen, closeSidebar, logout, user } = useAppStore();
   const navigate = useNavigate();
   return (
     <>
@@ -30,6 +31,12 @@ export default function CorporateSidebar() {
             </div>
             <button onClick={closeSidebar} className="sidebar-close" style={{ background:'none',border:'none',color:'rgba(255,255,255,0.4)',cursor:'pointer' }}><X size={16} /></button>
           </div>
+          {user?.name && (
+            <div style={{ marginTop:12, paddingTop:12, borderTop:'1px solid rgba(255,255,255,0.07)' }}>
+              <div style={{ fontSize:12, fontWeight:700, color:'white', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{user.name}</div>
+              {user?.rcNumber && <div style={{ fontSize:9, color:'rgba(255,255,255,0.35)', letterSpacing:'0.1em', marginTop:2 }}>RC: {user.rcNumber}</div>}
+            </div>
+          )}
         </div>
         <nav style={{ flex:1,padding:'14px 12px',display:'flex',flexDirection:'column',gap:3 }}>
           {navItems.map(({ to, icon:Icon, label }) => (

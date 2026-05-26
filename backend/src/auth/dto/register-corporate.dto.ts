@@ -19,4 +19,9 @@ export class RegisterCorporateDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @ApiPropertyOptional({ example: 'RC123456' })
+  @IsOptional()
+  @IsString()
+  rcNumber?: string;
 }

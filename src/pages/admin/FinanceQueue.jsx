@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { CheckCircle, XCircle, DollarSign, Clock, ArrowRight } from 'lucide-react';
+import { CheckCircle, XCircle, DollarSign, Clock, ArrowRight, Inbox } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
+import EmptyState from '../../components/EmptyState';
 
 const fmt = n => '₦' + Number(n).toLocaleString('en-NG');
 
@@ -96,9 +97,12 @@ export default function FinanceQueue() {
           </div>
         ))}
         {financeQueue.length === 0 && (
-          <div style={{ background:'white',borderRadius:12,border:'1px solid var(--gray-200)',padding:'40px',textAlign:'center',color:'var(--gray-400)',fontSize:13 }}>
-            Finance queue is empty
-          </div>
+          <EmptyState
+            icon={Inbox}
+            title="Finance queue is empty"
+            message="Pre-termination and redemption requests will appear here when clients submit them."
+            compact
+          />
         )}
       </div>
 

@@ -109,44 +109,181 @@ const useAppStore = create((set, get) => ({
     set({ isLoadingData: true });
     try {
       const api = await import('../services/api');
+      const user = get().user;
       // Products (available to all)
       api.productApi.findAll().then(data => {
         if (data && Array.isArray(data)) set({ plans: data });
       }).catch(() => {});
-      // User: Wallet
-      api.walletApi.getWallet().then(data => {
-        if (data) set({ walletBalance: data.balance || 0, pendingBalance: data.pending || 0 });
-      }).catch(() => {});
-      api.walletApi.getTransactions().then(data => {
-        if (data && Array.isArray(data)) set({ transactions: data });
-      }).catch(() => {});
-      // User investments (individual / corporate / joint)
-      api.investmentApi.getMyInvestments().then(data => {
-        if (data && Array.isArray(data)) set({ clientInvestments: data });
-      }).catch(() => {});
-      // Admin-only: try to load admin data (silently fails for regular users)
-      const user = get().user;
-      if (user?.role === 'admin') {
-        api.adminClientApi.findAll().then(data => {
-          if (data && Array.isArray(data)) set({ clients: data });
+      // User: Wallet & Investments (only for non-admin users)
+      if (user?.role !== 'admin') {
+        api.walletApi.getWallet().then(data => {
+          if (data) set({ walletBalance: data.balance || 0, pendingBalance: data.pending || 0 });
         }).catch(() => {});
-        api.adminApprovalApi.findAll().then(data => {
-          if (data && Array.isArray(data)) set({ approvals: data });
+        api.walletApi.getTransactions().then(data => {
+          if (data && Array.isArray(data)) set({ transactions: data });
         }).catch(() => {});
-        api.adminInvestmentApi.findAll().then(data => {
+        api.investmentApi.getMyInvestments().then(data => {
           if (data && Array.isArray(data)) set({ clientInvestments: data });
         }).catch(() => {});
+      }
+      // Admin-only: try to load admin data (silently fails for regular users)
+      if (user?.role === 'admin') {
+        api.adminClientApi.findAll().then(data => {
+          if (data && Array.isArray(data)) {
+            // Transform Prisma Client fields to frontend format
+            const transformed = data.map(c => ({
+              id: c.id,
+              clientId: c.clientRef,
+              clientRef: c.clientRef,
+              name: c.name,
+              email: c.email,
+              phone: c.phone,
+              address: c.address,
+              type: c.type?.toLowerCase(),
+              status: c.status === 'ACTIVE' ? 'verified' : c.status === 'SUSPENDED' ? 'suspended' : 'pending',
+              kyc: c.kycRecord?.status === 'APPROVED' ? 'approved' : c.kycRecord?.status === 'PENDING' ? 'pending' : 'flagged',
+              kycRecord: c.kycRecord,
+              balance: Number(c.walletBalance || 0) / 100, // kobo to naira
+              walletBalance: Number(c.walletBalance || 0) / 100,
+              pendingBalance: Number(c.pendingBalance || 0) / 100,
+              joined: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-GB') : '—',
+              createdAt: c.createdAt,
+              secondaryName: c.secondaryName,
+              secondaryEmail: c.secondaryEmail,
+              mandateType: c.mandateType,
+              rcNumber: c.rcNumber,
+              taxId: c.taxId,
+            }));
+            set({ clients: transformed });
+          }
+        }).catch(() => {});
+        api.adminApprovalApi.findAll().then(data => {
+          if (data && Array.isArray(data)) {
+            const transformed = data.map(a => ({
+              id: a.id,
+              approvalRef: a.approvalRef,
+              type: (a.type?.toLowerCase() === 'kyc' ? 'kyc_approval' : a.type?.toLowerCase()) || 'subscription',
+              status: a.status?.toLowerCase() || 'pending',
+              clientName: a.client?.name || '—',
+              clientId: a.client?.clientRef,
+              client: a.client,
+              details: a.details ? (typeof a.details === 'string' ? a.details : JSON.stringify(a.details)) : '—',
+              amount: a.amountKobo ? Number(a.amountKobo) / 100 : null,
+              date: a.submittedAt ? new Date(a.submittedAt).toLocaleDateString('en-GB') : '—',
+              submittedAt: a.submittedAt,
+              priority: a.details?.priority || 'medium',
+              reviewedBy: a.reviewedById,
+              reviewedAt: a.reviewedAt,
+              reviewNotes: a.reviewNotes,
+              investmentId: a.investmentId,
+              productId: a.productId,
+              product: a.product,
+            }));
+            set({ approvals: transformed });
+          }
+        }).catch(() => {});
+        api.adminInvestmentApi.findAll().then(data => {
+          if (data && Array.isArray(data)) {
+            const transformed = data.map(inv => ({
+              id: inv.id,
+              investRef: inv.investRef,
+              clientId: inv.client?.clientRef || inv.clientId,
+              clientName: inv.client?.name,
+              client: inv.client,
+              plan: inv.product?.name || inv.planName,
+              planId: inv.productId || inv.planId,
+              product: inv.product,
+              amount: Number(inv.principalKobo || inv.principalAmount || inv.amount || 0) / 100,
+              principalAmount: Number(inv.principalKobo || inv.principalAmount || 0) / 100,
+              roi: inv.roiRate || inv.roi || inv.product?.roiMin,
+              tenor: inv.tenorDays || inv.tenor,
+              tenorDays: inv.tenorDays,
+              status: inv.status?.toLowerCase(),
+              valueDate: inv.valueDate ? new Date(inv.valueDate).toLocaleDateString('en-GB') : '—',
+              maturityDate: inv.maturityDate ? new Date(inv.maturityDate).toLocaleDateString('en-GB') : '—',
+              tax: inv.withholdingTax || 0,
+              autoRollover: inv.autoRollover,
+              notes: inv.notes,
+              createdAt: inv.createdAt,
+              history: inv.history,
+            }));
+            set({ clientInvestments: transformed });
+          }
+        }).catch(() => {});
         api.adminTransactionApi.findAll().then(data => {
-          if (data && Array.isArray(data)) set({ allTransactions: data });
+          if (data && Array.isArray(data)) {
+            const transformed = data.map(t => ({
+              id: t.id,
+              txnRef: t.txnRef,
+              client: t.client?.name,
+              clientId: t.client?.clientRef,
+              clientType: t.client?.type?.toLowerCase(),
+              type: t.type?.toLowerCase(),
+              amount: Number(t.amountKobo || t.amount || 0) / 100,
+              status: t.status?.toLowerCase(),
+              date: t.createdAt ? new Date(t.createdAt).toLocaleDateString('en-GB') : '—',
+              reference: t.paystackRef || t.txnRef,
+              description: t.description,
+              bankName: t.bankName,
+              bankAcctNo: t.bankAcctNo,
+              bankAcctName: t.bankAcctName,
+              createdAt: t.createdAt,
+              processedAt: t.processedAt,
+            }));
+            set({ allTransactions: transformed });
+          }
         }).catch(() => {});
         api.adminFinanceQueueApi.findAll().then(data => {
-          if (data && Array.isArray(data)) set({ financeQueue: data });
+          if (data && Array.isArray(data)) {
+            const transformed = data.map(fq => ({
+              id: fq.id,
+              fqRef: fq.fqRef,
+              type: fq.type,
+              status: fq.status?.toLowerCase(),
+              clientId: fq.client?.clientRef,
+              client: fq.client?.name,
+              amount: Number(fq.amountKobo || 0) / 100,
+              penalty: Number(fq.penaltyKobo || 0) / 100,
+              notes: fq.notes,
+              preTermId: fq.preTermId,
+              preTermination: fq.preTermination,
+              createdAt: fq.createdAt,
+              approvedAt: fq.approvedAt,
+              rejectedAt: fq.rejectedAt,
+              rejectionReason: fq.rejectionReason,
+            }));
+            set({ financeQueue: transformed });
+          }
         }).catch(() => {});
         api.adminPreTermApi.findAll().then(data => {
-          if (data && Array.isArray(data)) set({ preTermQueue: data });
+          if (data && Array.isArray(data)) {
+            const transformed = data.map(pt => ({
+              id: pt.id,
+              preTermRef: pt.preTermRef,
+              investmentId: pt.investmentId,
+              investment: pt.investment,
+              clientId: pt.client?.clientRef,
+              client: pt.client?.name,
+              status: pt.status?.toLowerCase().replace('pending_ops', 'pending').replace('approved_ops', 'approved_ops').replace('pending_finance', 'pending'),
+              amount: Number(pt.requestedAmountKobo || 0) / 100,
+              penalty: Number(pt.penaltyKobo || 0) / 100,
+              netPayout: Number(pt.netPayoutKobo || 0) / 100,
+              reason: pt.reason,
+              requestedAt: pt.requestedAt,
+              opsApprovedAt: pt.opsApprovedAt,
+              financeApprovedAt: pt.financeApprovedAt,
+              disbursedAt: pt.disbursedAt,
+              rejectedAt: pt.rejectedAt,
+              rejectionReason: pt.rejectionReason,
+            }));
+            set({ preTermQueue: transformed });
+          }
         }).catch(() => {});
         api.adminDividendApi.findAll().then(data => {
           if (data && Array.isArray(data)) set({ dividends: data });
+        }).catch(() => {});
+        api.adminStaffLoanApi.getAllEntities().then(data => {
+          if (data && Array.isArray(data)) set({ corpLoanEntities: data });
         }).catch(() => {});
       }
     } catch { /* Backend offline */ }

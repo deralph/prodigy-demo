@@ -1,15 +1,10 @@
-import React, { useState } from 'react';
-import { BookOpen, Upload, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { BookOpen, Upload, X, Users } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
+import EmptyState from '../../components/EmptyState';
+import { staffLoanApi } from '../../services/api';
 
-const activeLoans = [
-  { name: 'Abiola Johnson', id: 'PP-001', principal: '₦150,000', dept: 'HR', progress: 44 },
-  { name: 'Sarah Alabi',    id: 'PP-002', principal: '₦1,000,000', dept: 'FIN', progress: 76 },
-];
-const closedLoans = [
-  { name: 'Emeka Okafor', id: 'PP-002', settled: '₦500,000',   status: 'Settled',     statusColor: 'var(--green)' },
-  { name: 'Grace Idowu',  id: 'PP-003', settled: '₦0,125,000', status: 'Terminated',  statusColor: 'var(--red)' },
-];
+const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 
 const tenorOptions = ['1 MONTH','3 MONTHS','6 MONTHS','12 MONTHS','18 MONTHS','24 MONTHS'];
 
@@ -173,22 +168,35 @@ function LoanApplicationModal({ onClose }) {
 /* ── Staff Loans Page ────────────────────────────────────── */
 export default function StaffLoans() {
   const [showModal, setShowModal] = useState(false);
+  const [loans, setLoans]         = useState([]);
+  const [loading, setLoading]     = useState(true);
+
+  useEffect(() => {
+    staffLoanApi.getMyLoans()
+      .then(data => { if (Array.isArray(data)) setLoans(data); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const activeLoans = loans.filter(l => l.status === 'active' || l.status === 'performing');
+  const closedLoans = loans.filter(l => l.status !== 'active' && l.status !== 'performing');
+  const totalPrincipal = activeLoans.reduce((s, l) => s + (l.amount || l.principal || 0), 0);
 
   return (
     <div>
-      <PageHeader title="Employee Benefits Hub" subtitle="Bespoke Asset Management System V2.0" />
+      <PageHeader title="Employee Staff Loans" subtitle="Bespoke Asset Management System V2.0" />
 
       {/* Stats Row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 20, marginBottom: 24 }}>
         <div className="card animate-in delay-1">
           <div style={{ fontSize: 10, color: 'var(--gray-400)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>Active Loan Portfolio</div>
-          <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 28, color: 'var(--navy)', marginBottom: 6 }}>₦12,450,000</div>
-          <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 600 }}>↑ 100% Repayment Rate</div>
+          <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 28, color: 'var(--navy)', marginBottom: 6 }}>{loading ? '—' : fmt(totalPrincipal)}</div>
+          <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 600 }}>{activeLoans.length} active loan{activeLoans.length !== 1 ? 's' : ''}</div>
         </div>
 
         <div className="card animate-in delay-2">
           <div style={{ fontSize: 10, color: 'var(--gray-400)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>Total Beneficiaries</div>
-          <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 28, color: 'var(--navy)', marginBottom: 6 }}>42 Employees</div>
+          <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 28, color: 'var(--navy)', marginBottom: 6 }}>{loading ? '—' : loans.length} Employee{loans.length !== 1 ? 's' : ''}</div>
           <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>Across all departments</div>
         </div>
 
@@ -221,20 +229,20 @@ export default function StaffLoans() {
               </tr>
             </thead>
             <tbody>
-              {activeLoans.map(l => (
+              {activeLoans.length === 0 ? (
+                <tr><td colSpan={4}><EmptyState icon={Users} title="No active loans" message="Active staff loan applications will appear here." compact /></td></tr>
+              ) : activeLoans.map(l => (
                 <tr key={l.id} style={{ borderTop: '1px solid var(--gray-100)' }}>
                   <td style={{ padding: '14px 16px' }}>
-                    <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--navy)' }}>{l.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>{l.id}</div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--navy)' }}>{l.staffName || l.name || '—'}</div>
+                    <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>{l.staffId || l.id}</div>
                   </td>
-                  <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--navy)' }}>{l.principal}</td>
+                  <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--navy)' }}>{fmt(l.amount || l.principal)}</td>
                   <td style={{ padding: '14px 16px' }}>
-                    <span style={{ fontSize: 10, background: 'var(--navy)', color: 'white', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>{l.dept}</span>
+                    <span style={{ fontSize: 10, background: 'var(--navy)', color: 'white', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>{l.department || l.dept || 'N/A'}</span>
                   </td>
                   <td style={{ padding: '14px 16px' }}>
-                    <div style={{ width: 60, height: 4, background: 'var(--gray-100)', borderRadius: 2 }}>
-                      <div style={{ width: `${l.progress}%`, height: '100%', background: 'var(--green)', borderRadius: 2 }} />
-                    </div>
+                    <span style={{ fontSize: 10, color: 'var(--green)', fontWeight: 700 }}>{l.status}</span>
                   </td>
                 </tr>
               ))}
@@ -257,15 +265,17 @@ export default function StaffLoans() {
               </tr>
             </thead>
             <tbody>
-              {closedLoans.map(l => (
+              {closedLoans.length === 0 ? (
+                <tr><td colSpan={3}><EmptyState icon={BookOpen} title="No closed loans" message="Settled or terminated loans will appear here." compact /></td></tr>
+              ) : closedLoans.map(l => (
                 <tr key={l.id} style={{ borderTop: '1px solid var(--gray-100)' }}>
                   <td style={{ padding: '14px 16px' }}>
-                    <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--navy)' }}>{l.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>{l.id}</div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--navy)' }}>{l.staffName || l.name || '—'}</div>
+                    <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>{l.staffId || l.id}</div>
                   </td>
-                  <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--navy)' }}>{l.settled}</td>
+                  <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--navy)' }}>{fmt(l.settledAmount || l.amount || 0)}</td>
                   <td style={{ padding: '14px 16px' }}>
-                    <span style={{ fontSize: 10, color: l.statusColor, background: `${l.statusColor}18`, padding: '3px 8px', borderRadius: 4, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    <span style={{ fontSize: 10, color: l.status === 'settled' ? 'var(--green)' : 'var(--red)', background: l.status === 'settled' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', padding: '3px 8px', borderRadius: 4, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                       {l.status}
                     </span>
                   </td>

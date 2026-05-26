@@ -3,6 +3,10 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
+// Prisma / PostgreSQL can return BigInt for count/sequence values;
+// JSON.stringify has no built-in support for BigInt — coerce to Number.
+(BigInt.prototype as any).toJSON = function () { return Number(this); };
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 

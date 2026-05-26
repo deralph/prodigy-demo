@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Clock, Download, Search } from 'lucide-react';
+import { Clock, Download, Search, FileText } from 'lucide-react';
 import useAppStore, { ROLE_COLORS } from '../../store/useAppStore';
+import EmptyState from '../../components/EmptyState';
 
 const catColor = { kyc:'#8b5cf6', compliance:'#ef4444', finance:'#22c55e', investment:'#e8b84b', operations:'#3b82f6', audit:'#f97316', system:'#0d1b35' };
 
@@ -64,7 +65,12 @@ export default function AuditTrail() {
 
       <div style={{ background:'white',borderRadius:14,border:'1px solid var(--gray-200)',overflow:'hidden' }} className="animate-in delay-3">
         {filtered.length === 0 ? (
-          <div style={{ padding:'40px',textAlign:'center',color:'var(--gray-400)',fontSize:13 }}>No audit entries match your filter</div>
+          <EmptyState
+            icon={FileText}
+            title={auditLog.length === 0 ? "No audit entries yet" : "No matching entries"}
+            message={auditLog.length === 0 ? "Audit log entries will appear here as admin actions are recorded." : "Try adjusting your filters."}
+            compact
+          />
         ) : filtered.map((a,i)=>(
           <div key={a.id} style={{ padding:'15px 22px',borderBottom:i<filtered.length-1?'1px solid var(--gray-100)':'none',display:'flex',alignItems:'flex-start',gap:14,transition:'background 0.15s' }}
             onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'}

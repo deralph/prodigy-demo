@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Eye, Edit, Ban, CheckCircle, X, Wallet, TrendingUp, FileText, User, Phone, MapPin, Calendar, Save } from 'lucide-react';
+import { Search, Eye, Edit, Ban, CheckCircle, X, Wallet, TrendingUp, FileText, User, Phone, MapPin, Calendar, Save, Users } from 'lucide-react';
 import useAppStore, { KYC_REQUIREMENTS } from '../../store/useAppStore';
 import { adminClientApi, adminTransactionApi } from '../../services/api';
+import EmptyState from '../../components/EmptyState';
 import StatusBadge from '../../components/shared/StatusBadge';
 
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
@@ -139,7 +140,14 @@ export default function ClientManagement() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={7} style={{ padding:'40px',textAlign:'center',color:'var(--gray-400)',fontSize:13 }}>No clients found</td></tr>
+                <tr><td colSpan={7}>
+                  <EmptyState
+                    icon={Users}
+                    title={clients.length === 0 ? "No clients yet" : "No matching clients"}
+                    message={clients.length === 0 ? "Client accounts will appear here once they register through the onboarding portal." : "Try adjusting your search or filters."}
+                    compact
+                  />
+                </td></tr>
               )}
             </tbody>
           </table>

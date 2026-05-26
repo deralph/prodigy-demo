@@ -55,7 +55,7 @@ function JointInvestmentDrawer({ inv, plans, user, client, onClose }) {
       `Issue Date      : ${date}`,
       '',
       '── JOINT ACCOUNT HOLDERS ────────────────────────────',
-      ...holders.map((h,i)=>`Holder ${i+1}        : ${h.name} · ${(100/holders.length).toFixed(2)}% share`),
+      ...holders.map((h,i)=>`Holder ${i+1}        : ${h.name} · ${i===0?'Primary':'Secondary'} Holder`),
       `Mandate         : ${client?.mandate||'AND'}`,
       '',
       '── INVESTMENT DETAILS ───────────────────────────────',
@@ -131,7 +131,7 @@ function JointInvestmentDrawer({ inv, plans, user, client, onClose }) {
                 {holders.map((h,i)=>(
                   <div key={i} style={{ display:'flex',alignItems:'center',gap:8,padding:'8px 0',borderBottom:'1px solid var(--gray-50)' }}>
                     <div style={{ width:24,height:24,borderRadius:'50%',background:color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'white',flexShrink:0 }}>{h.name.charAt(0)}</div>
-                    <div style={{ flex:1 }}><span style={{ fontSize:12,fontWeight:600,color:'var(--navy)' }}>{h.name}</span> <span style={{ fontSize:10,color:'var(--gray-400)' }}>· {(100/holders.length).toFixed(2)}% share</span></div>
+                    <div style={{ flex:1 }}><span style={{ fontSize:12,fontWeight:600,color:'var(--navy)' }}>{h.name}</span> <span style={{ fontSize:10,color:'var(--gray-400)' }}>{i===0?'· Primary Holder':'· Secondary Holder'}</span></div>
                     <span style={{ fontSize:10,fontWeight:700,color:'var(--green)',background:'rgba(34,197,94,0.1)',padding:'2px 8px',borderRadius:4 }}>Joint Holder</span>
                   </div>
                 ))}

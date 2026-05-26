@@ -129,7 +129,6 @@ export default function AccessControl() {
                   <div style={{ height:'100%',width:`${pct}%`,background:pct===100?'var(--green)':HOLDER_COLORS[i],borderRadius:3,transition:'width 0.4s' }}/>
                 </div>
                 <div style={{ fontSize:10,color:pct===100?'var(--green)':'var(--gold)',fontWeight:700 }}>KYC {pct}% {pct===100?'✓ Authorised':'— Locked'}</div>
-                <div style={{ fontSize:9,color:'var(--gray-400)',marginTop:2 }}>{(100/n).toFixed(2)}% equal share</div>
               </div>
             );
           })}
@@ -162,7 +161,7 @@ export default function AccessControl() {
             <h3 style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:12,color:'var(--navy)',letterSpacing:'0.06em',textTransform:'uppercase',marginBottom:1 }}>
               {activeHolder.name} — KYC Documents
             </h3>
-            <div style={{ fontSize:10,color:'var(--gray-400)' }}>{activeHolder.email} · {(100/n).toFixed(2)}% equal share</div>
+            <div style={{ fontSize:10,color:'var(--gray-400)' }}>{activeHolder.email}</div>
           </div>
           <span style={{ fontSize:11,fontWeight:700,color:HOLDER_COLORS[activeIdx] }}>{uploadedCount}/{HOLDER_DOCS.length} uploaded</span>
         </div>
@@ -210,7 +209,6 @@ export default function AccessControl() {
       <div style={{ background:'rgba(232,184,75,0.08)',border:'1px solid rgba(232,184,75,0.25)',borderRadius:10,padding:'14px 18px',marginTop:18,fontSize:12,color:'var(--navy)',lineHeight:1.7 }} className="animate-in delay-3">
         <div style={{ fontWeight:700,marginBottom:6,display:'flex',alignItems:'center',gap:6 }}><Users size={13}/> Joint Account Policy</div>
         <ul style={{ margin:0,paddingLeft:18 }}>
-          <li>All {n} holders share the account equally — <strong>{(100/n).toFixed(2)}% each</strong>.</li>
           <li>Mandate type (<strong>{mandate}</strong>) is permanently set at account creation and governs all liquidation and withdrawal decisions.</li>
           <li>Under <strong>AND mandate</strong>: all {n} signatories must approve liquidation and withdrawals.</li>
           <li>Under <strong>OR mandate</strong>: any single signatory can independently authorise transactions.</li>

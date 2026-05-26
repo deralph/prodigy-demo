@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import PageHeader from '../../components/PageHeader';
+import EmptyState from '../../components/EmptyState';
+import { TrendingUp } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 
 const RISK_DETAILS = {
@@ -12,59 +14,85 @@ const RISK_DETAILS = {
   vcf:      { vol:'Customized. Risk profile is bespoke to each corporate mandate and negotiated terms.', cap:'CUSTOMIZED. Structured specifically for corporate treasury objectives with negotiated ROI and bespoke liquidation cycle.', icon:'🏢', color:'#6366f1' },
 };
 
+const RISK_DOT_COLORS = ['#22c55e','#f97316','#3b82f6','#8b5cf6','#ec4899','#0d1b35','#6366f1','#e8b84b'];
+
 export default function RiskStrategy() {
-  const { plans } = useAppStore();
+  const { plans, clientInvestments } = useAppStore();
+
+  const totalBalance = useMemo(() =>
+    clientInvestments.reduce((s,i) => s + (i.principalAmount || i.amount || 0), 0)
+  , [clientInvestments]);
+
+  const tableRows = useMemo(() =>
+    clientInvestments.map((inv, idx) => {
+      const balance = inv.principalAmount || inv.amount || 0;
+      const weight  = totalBalance > 0 ? ((balance / totalBalance) * 100).toFixed(1) + '%' : '—';
+      const plan    = inv.plan || {};
+      return {
+        name:      plan.name || inv.planName || `Investment ${idx+1}`,
+        roi:       plan.roi  ? `${plan.roi}% ROI` : '—',
+        risk:      plan.riskCategory || 'N/A',
+        riskColor: '#6366f1',
+        balance:   '₦' + Number(balance).toLocaleString('en-NG'),
+        weight,
+        dot:       RISK_DOT_COLORS[idx % RISK_DOT_COLORS.length],
+      };
+    })
+  , [clientInvestments, totalBalance]);
+
+  const avgRoi = useMemo(() => {
+    const withRoi = clientInvestments.filter(i => i.plan?.roi);
+    if (!withRoi.length) return null;
+    return (withRoi.reduce((s,i) => s + Number(i.plan.roi), 0) / withRoi.length).toFixed(1);
+  }, [clientInvestments]);
+
   return (
     <div>
-      <PageHeader title="Methodology & Methodology Registry" subtitle="Bespoke Asset Management System V2.0" />
+      <PageHeader title="Risk & Strategy Registry" subtitle="Bespoke Asset Management System V2.0" />
 
       {/* Summary table */}
       <div className="card animate-in delay-1" style={{ padding:0, overflow:'hidden', marginBottom:24 }}>
         <div style={{ padding:'18px 24px', borderBottom:'1px solid var(--gray-100)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <h3 style={{ fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:13, color:'var(--navy)', letterSpacing:'0.06em', textTransform:'uppercase' }}>Executive Investment Summary</h3>
           <div style={{ textAlign:'right' }}>
-            <div style={{ fontSize:9, color:'var(--gray-400)', letterSpacing:'0.1em', textTransform:'uppercase' }}>Consolidated ROI</div>
-            <div style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:20, color:'var(--navy)' }}>23.4%</div>
+            <div style={{ fontSize:9, color:'var(--gray-400)', letterSpacing:'0.1em', textTransform:'uppercase' }}>Avg. ROI</div>
+            <div style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:20, color:'var(--navy)' }}>{avgRoi ? `${avgRoi}%` : '—'}</div>
           </div>
         </div>
-        <div style={{ overflowX:'auto' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead>
-              <tr style={{ background:'var(--gray-50)' }}>
-                {['Product','ROI','Risk','Balance (₦)','Weight'].map(h => (
-                  <th key={h} style={{ padding:'10px 18px', textAlign:'left', fontSize:10, color:'var(--gray-400)', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', whiteSpace:'nowrap' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                { name:'Prodigy Apex',         roi:'20% ROI',     risk:'LOW',         riskColor:'#22c55e',  balance:'₦50,000,000',   weight:'16.8%', dot:'#22c55e' },
-                { name:'Prodigy Flexi-Tenure', roi:'12-18% ROI',  risk:'LOW-MEDIUM',  riskColor:'#84cc16',  balance:'₦15,000,000',   weight:'5.0%',  dot:'#f97316' },
-                { name:'Prodigy Aura',          roi:'16% ROI',     risk:'MEDIUM',      riskColor:'#f97316',  balance:'₦20,000,000',   weight:'6.7%',  dot:'#3b82f6' },
-                { name:'Prodigy Vantage',       roi:'FX LINKED',   risk:'MEDIUM-HIGH', riskColor:'#ef4444',  balance:'₦12,500,000',   weight:'4.2%',  dot:'#8b5cf6' },
-                { name:'Prodigy Genesis',       roi:'25-33% ROI',  risk:'MEDIUM',      riskColor:'#f97316',  balance:'₦100,000,000',  weight:'33.6%', dot:'#ec4899' },
-                { name:'Prodigy Liquidity',     roi:'15% ROI',     risk:'VERY LOW',    riskColor:'#22c55e',  balance:'₦25,450,670',   weight:'8.5%',  dot:'#0d1b35' },
-                { name:'Verified Corp Fund',    roi:'BESPOKE ROI', risk:'CUSTOMIZED',  riskColor:'#8b5cf6',  balance:'₦75,000,000',   weight:'25.2%', dot:'#6366f1' },
-              ].map(p => (
-                <tr key={p.name} style={{ borderTop:'1px solid var(--gray-100)', transition:'background 0.15s' }}
-                  onMouseEnter={e=>e.currentTarget.style.background='var(--gray-50)'}
-                  onMouseLeave={e=>e.currentTarget.style.background='transparent'}
-                >
-                  <td style={{ padding:'14px 18px' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <span style={{ width:8, height:8, borderRadius:'50%', background:p.dot, display:'inline-block' }} />
-                      <span style={{ fontSize:13, fontWeight:600, color:'var(--navy)' }}>{p.name}</span>
-                    </div>
-                  </td>
-                  <td style={{ padding:'14px 18px' }}><span style={{ fontSize:12, fontWeight:700, color:'var(--green)' }}>{p.roi}</span></td>
-                  <td style={{ padding:'14px 18px' }}><span style={{ fontSize:10, fontWeight:700, color:p.riskColor, background:`${p.riskColor}18`, padding:'3px 8px', borderRadius:4, letterSpacing:'0.06em' }}>{p.risk}</span></td>
-                  <td style={{ padding:'14px 18px', fontSize:13, color:'var(--navy)', fontWeight:500 }}>{p.balance}</td>
-                  <td style={{ padding:'14px 18px', fontSize:13, color:'var(--gray-600)' }}>{p.weight}</td>
+        {tableRows.length === 0
+          ? <EmptyState icon={TrendingUp} title="No investments" message="Your booked investment positions will appear in this executive summary." />
+          : (
+          <div style={{ overflowX:'auto' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead>
+                <tr style={{ background:'var(--gray-50)' }}>
+                  {['Product','ROI','Risk','Balance (₦)','Weight'].map(h => (
+                    <th key={h} style={{ padding:'10px 18px', textAlign:'left', fontSize:10, color:'var(--gray-400)', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', whiteSpace:'nowrap' }}>{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {tableRows.map(p => (
+                  <tr key={p.name} style={{ borderTop:'1px solid var(--gray-100)', transition:'background 0.15s' }}
+                    onMouseEnter={e=>e.currentTarget.style.background='var(--gray-50)'}
+                    onMouseLeave={e=>e.currentTarget.style.background='transparent'}
+                  >
+                    <td style={{ padding:'14px 18px' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <span style={{ width:8, height:8, borderRadius:'50%', background:p.dot, display:'inline-block' }} />
+                        <span style={{ fontSize:13, fontWeight:600, color:'var(--navy)' }}>{p.name}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding:'14px 18px' }}><span style={{ fontSize:12, fontWeight:700, color:'var(--green)' }}>{p.roi}</span></td>
+                    <td style={{ padding:'14px 18px' }}><span style={{ fontSize:10, fontWeight:700, color:p.riskColor, background:`${p.riskColor}18`, padding:'3px 8px', borderRadius:4, letterSpacing:'0.06em' }}>{p.risk}</span></td>
+                    <td style={{ padding:'14px 18px', fontSize:13, color:'var(--navy)', fontWeight:500 }}>{p.balance}</td>
+                    <td style={{ padding:'14px 18px', fontSize:13, color:'var(--gray-600)' }}>{p.weight}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Risk Strategy heading */}

@@ -1,19 +1,35 @@
 import { Controller, Post, Body } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiTags, ApiProperty } from '@nestjs/swagger';
+import { IsString, IsNotEmpty, MinLength } from 'class-validator';
 import { NibssService, VerificationResult } from './nibss.service';
 
 class VerifyNinDto {
+  @ApiProperty({ example: '12345678901' })
+  @IsString() @IsNotEmpty()
   nin: string;
+
+  @ApiProperty({ example: 'John Doe' })
+  @IsString() @MinLength(2)
   expectedName: string;
 }
 
 class VerifyBvnDto {
+  @ApiProperty({ example: '22345678901' })
+  @IsString() @IsNotEmpty()
   bvn: string;
+
+  @ApiProperty({ example: 'Jane Doe' })
+  @IsString() @MinLength(2)
   expectedName: string;
 }
 
 class VerifyCacDto {
+  @ApiProperty({ example: 'RC123456' })
+  @IsString() @IsNotEmpty()
   cacNumber: string;
+
+  @ApiProperty({ example: 'Prodigy Holdings Ltd' })
+  @IsString() @MinLength(2)
   companyName: string;
 }
 

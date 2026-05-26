@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { RefreshCw, TrendingUp } from 'lucide-react';
+import { RefreshCw, TrendingUp, TrendingUp as TrendingUpIcon } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
+import EmptyState from '../../components/EmptyState';
 
 const fmt = n => '₦' + Number(n).toLocaleString('en-NG');
 
@@ -68,7 +69,16 @@ export default function InterestAccruals() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(inv => {
+              {filtered.length === 0 ? (
+                <tr><td colSpan={7}>
+                  <EmptyState
+                    icon={TrendingUpIcon}
+                    title="No active investments"
+                    message="Interest accruals will appear here once clients have active investments."
+                    compact
+                  />
+                </td></tr>
+              ) : filtered.map(inv => {
                 const plan    = plans.find(p => p.id === inv.planId);
                 const dailyR  = plan ? (parseFloat(plan.roi)/100/365) : 0;
                 const valueDate = new Date(inv.valueDateRaw || inv.valueDate);

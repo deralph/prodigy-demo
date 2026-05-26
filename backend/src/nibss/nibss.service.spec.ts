@@ -46,8 +46,8 @@ describe('NibssService', () => {
       expect(result.message).toMatch(/name is required/i);
     });
 
-    it('returns verified=false when expectedName is too short', async () => {
-      const result = await service.verifyNin('12345678901', 'Jo');
+    it('returns verified=false when expectedName is too short (< 2 chars)', async () => {
+      const result = await service.verifyNin('12345678901', 'J');
       expect(result.verified).toBe(false);
     });
 
@@ -79,7 +79,7 @@ describe('NibssService', () => {
       expect(result.number).toBe('22345678901');
     });
 
-    it('returns verified=false when name is missing', async () => {
+    it('returns verified=false when name is empty', async () => {
       const result = await service.verifyBvn('22345678901', '');
       expect(result.verified).toBe(false);
       expect(result.message).toMatch(/name is required/i);
@@ -113,8 +113,8 @@ describe('NibssService', () => {
       expect(result.message).toMatch(/name is required/i);
     });
 
-    it('returns verified=false when company name is too short', async () => {
-      const result = await service.verifyCac('RC123456', 'AB');
+    it('returns verified=false when company name is too short (< 2 chars)', async () => {
+      const result = await service.verifyCac('RC123456', 'A');
       expect(result.verified).toBe(false);
     });
 

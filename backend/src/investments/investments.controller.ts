@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Body, UseGuards, Req, Query } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, UseGuards, Req, Query, BadRequestException } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { InvestmentsService } from './investments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -15,18 +15,27 @@ export class InvestmentsController {
   @Get('me')
   @ApiOperation({ summary: 'Get own investment portfolio' })
   getMyInvestments(@Req() req: any) {
+    if (!req.user.clientDbId) {
+      throw new BadRequestException('Admin users do not have investments. Please use a client account.');
+    }
     return this.investmentsService.getMyInvestments(req.user.clientDbId);
   }
 
   @Post('subscribe')
   @ApiOperation({ summary: 'Subscribe to an investment product' })
   subscribe(@Req() req: any, @Body() body: any) {
+    if (!req.user.clientDbId) {
+      throw new BadRequestException('Admin users cannot subscribe to investments. Please use a client account.');
+    }
     return this.investmentsService.subscribe(req.user.clientDbId, body);
   }
 
   @Post(':id/redeem')
   @ApiOperation({ summary: 'Request early redemption (pre-termination)' })
   requestRedemption(@Req() req: any, @Param('id') id: string, @Body('reason') reason: string) {
+    if (!req.user.clientDbId) {
+      throw new BadRequestException('Admin users cannot redeem investments. Please use a client account.');
+    }
     return this.investmentsService.requestRedemption(req.user.clientDbId, id, reason);
   }
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { BarChart3, Wallet, Shield, Clock, LogOut, X, Menu, Package, BookOpen } from 'lucide-react';
+import { BarChart3, Wallet, Shield, Clock, LogOut, X, Menu, Package, BookOpen, User } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 import ContactButton from '../ContactButton';
 
@@ -11,6 +11,7 @@ const navItems = [
   { to:'/individual/activity',  icon:Clock,     label:'Activity Log' },
   { to:'/individual/ledger',    icon:BookOpen,  label:'Ledger' },
   { to:'/individual/products',  icon:Package,   label:'Products' },
+  { to:'/individual/profile',    icon:User,      label:'My Profile' },
 ];
 
 export default function IndividualLayout() {

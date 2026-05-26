@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { BarChart3, Wallet, Users, Lock, FileText, LogOut, X, Menu, Package, BookOpen } from 'lucide-react';
+import { BarChart3, Wallet, Users, Lock, FileText, LogOut, X, Menu, Package, BookOpen, User } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 import ContactButton from '../ContactButton';
 
@@ -12,6 +12,7 @@ const navItems = [
   { to:'/joint/statements',  icon:FileText,  label:'Joint Statements' },
   { to:'/joint/ledger',      icon:BookOpen,  label:'Ledger' },
   { to:'/joint/products',    icon:Package,   label:'Products' },
+  { to:'/joint/profile',      icon:User,      label:'My Profile' },
 ];
 
 export default function JointLayout() {

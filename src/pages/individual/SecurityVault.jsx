@@ -15,7 +15,7 @@ export default function SecurityVault() {
   const docs    = KYC_REQUIREMENTS.individual;
 
   const [docStates, setDocStates] = useState(() =>
-    Object.fromEntries(docs.map((d,i) => [d.key, i < 3 ? 'uploaded' : 'pending']))
+    Object.fromEntries(docs.map(d => [d.key, 'pending']))
   );
   const [uploading, setUploading] = useState(null);
   const [viewDoc, setViewDoc]     = useState(null);
@@ -139,7 +139,7 @@ export default function SecurityVault() {
               </div>
               <div style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:14,color:'var(--navy)',marginBottom:6 }}>Document Verified</div>
               <div style={{ fontSize:12,color:'var(--gray-400)',marginBottom:16 }}>This document has been successfully uploaded and is under compliance review</div>
-              {[['Document',viewDoc.label],['Status','Uploaded'],['Submitted','Apr 22, 2024'],['Reviewed by','Compliance Team']].map(([l,v])=>(
+              {[['Document',viewDoc.label],['Status','Uploaded'],['Submitted',new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})],['Reviewed by','Compliance Team']].map(([l,v])=>(
                 <div key={l} style={{ display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid var(--gray-100)' }}>
                   <span style={{ fontSize:11,color:'var(--gray-400)' }}>{l}</span>
                   <span style={{ fontSize:12,fontWeight:600,color:'var(--navy)' }}>{v}</span>

@@ -31,7 +31,7 @@ export class NibssService {
       };
     }
 
-    if (!expectedName || expectedName.trim().length < 3) {
+    if (!expectedName || expectedName.trim().length < 2) {
       return {
         verified: false,
         message: 'Full name is required for NIN verification.',
@@ -71,7 +71,7 @@ export class NibssService {
       };
     }
 
-    if (!expectedName || expectedName.trim().length < 3) {
+    if (!expectedName || expectedName.trim().length < 2) {
       return {
         verified: false,
         message: 'Full name is required for BVN verification.',
@@ -109,7 +109,7 @@ export class NibssService {
       };
     }
 
-    if (!companyName || companyName.trim().length < 3) {
+    if (!companyName || companyName.trim().length < 2) {
       return {
         verified: false,
         message: 'Company name is required for CAC verification.',

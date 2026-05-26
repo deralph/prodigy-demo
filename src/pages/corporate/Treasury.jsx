@@ -444,6 +444,12 @@ export default function Treasury() {
   const totalAUM = PORTFOLIO.reduce((s,p) => s + p.balance, 0);
   const fmtAUM = n => '₦' + Number(n).toLocaleString('en-NG', { minimumFractionDigits:2, maximumFractionDigits:2 });
 
+  const GROWTH_DATA = useMemo(() => MONTHS.map((month, mi) => ({
+    month,
+    aum: Math.round(totalAUM * (0.7 + 0.3 * ((mi + 1) / 12))),
+    ret: Math.round(totalAUM * 0.0015 * (mi + 1)),
+  })), [totalAUM]);
+
   return (
     <div>
       <PageHeader title="Treasury Portfolio Overview" subtitle="Bespoke Asset Management System V2.0"/>

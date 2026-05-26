@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Plus, Save, Edit2, X } from 'lucide-react';
+import { Plus, Save, Edit2, X, Package } from 'lucide-react';
+import EmptyState from '../../components/EmptyState';
 import useAppStore from '../../store/useAppStore';
 
 const COLORS = ['#e8b84b','#3b82f6','#22c55e','#8b5cf6','#f97316','#ec4899','#0d1b35','#06b6d4'];
@@ -142,6 +143,14 @@ export default function ProductSetup() {
       )}
 
       {/* Product cards */}
+      {plans.length === 0 ? (
+        <EmptyState
+          icon={Package}
+          title="No products configured yet"
+          message="Investment products will appear here once added. Use the 'New Product' button to add your first product."
+          action={{ label: 'Add First Product', onClick: () => setShowAdd(true) }}
+        />
+      ) : (
       <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',gap:16 }} className="animate-in delay-1">
         {plans.map(p=>(
           <div key={p.id} style={{ background:'white',borderRadius:14,border:'1px solid var(--gray-200)',overflow:'hidden',transition:'all 0.2s' }}
@@ -183,6 +192,7 @@ export default function ProductSetup() {
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }

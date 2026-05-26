@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Download, Search } from 'lucide-react';
+import { ArrowLeft, Download, Search, Users } from 'lucide-react';
+import EmptyState from '../../components/EmptyState';
 import useAppStore from '../../store/useAppStore';
 
 const fmt = n => '₦' + Number(n).toLocaleString('en-NG');
@@ -55,6 +56,14 @@ export default function ClientInvestments() {
               style={{ width:'100%',border:'1px solid var(--gray-200)',borderRadius:9,padding:'10px 12px 10px 36px',fontFamily:'DM Sans,sans-serif',fontSize:13,outline:'none',background:'white' }}
               onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='var(--gray-200)'}/>
           </div>
+          {filteredClients.length === 0 ? (
+            <EmptyState
+              icon={Users}
+              title={clients.length === 0 ? "No clients yet" : "No matching clients"}
+              message={clients.length === 0 ? "Client accounts will appear here once they complete registration." : "Try adjusting your search."}
+              compact
+            />
+          ) : (
           <div style={{ background:'white',borderRadius:14,border:'1px solid var(--gray-200)',overflow:'hidden' }} className="animate-in delay-2">
             {filteredClients.map((c,i)=>{
               const count   = clientInvestments.filter(inv=>inv.clientId===c.clientId).length;
@@ -82,6 +91,7 @@ export default function ClientInvestments() {
               );
             })}
           </div>
+          )}
         </>
       ) : (
         <>
@@ -119,7 +129,16 @@ export default function ClientInvestments() {
                   ))}
                 </tr></thead>
                 <tbody>
-                  {invs.filter(i=>planFilter==='all'||i.planId===planFilter).map(i=>(
+                  {invs.filter(i=>planFilter==='all'||i.planId===planFilter).length === 0 ? (
+                    <tr><td colSpan={8}>
+                      <EmptyState
+                        icon={Users}
+                        title="No investments yet"
+                        message="This client has not made any investments yet."
+                        compact
+                      />
+                    </td></tr>
+                  ) : invs.filter(i=>planFilter==='all'||i.planId===planFilter).map(i=>(
                     <tr key={i.id} style={{ borderTop:'1px solid var(--gray-100)',transition:'background 0.15s' }}
                       onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'}
                       onMouseLeave={e=>e.currentTarget.style.background='transparent'}

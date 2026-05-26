@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Search, TrendingUp, Calendar, DollarSign, Eye, X } from 'lucide-react';
+import { Search, TrendingUp, Calendar, DollarSign, Eye, X, FileText } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
+import EmptyState from '../../components/EmptyState';
 import StatusBadge from '../../components/shared/StatusBadge';
 
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
@@ -114,7 +115,14 @@ export default function BookedInstruments() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={10} style={{ padding:'40px',textAlign:'center',color:'var(--gray-400)',fontSize:13 }}>No booked instruments found</td></tr>
+                <tr><td colSpan={10}>
+                  <EmptyState
+                    icon={FileText}
+                    title={clientInvestments.length === 0 ? "No booked instruments" : "No matching instruments"}
+                    message={clientInvestments.length === 0 ? "Investment instruments will appear here once clients subscribe to products." : "Try adjusting your search or filters."}
+                    compact
+                  />
+                </td></tr>
               )}
             </tbody>
           </table>

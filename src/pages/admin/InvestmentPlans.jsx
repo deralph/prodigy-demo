@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Edit, Save, X, TrendingUp } from 'lucide-react';
+import { Edit, Save, X, TrendingUp, Package } from 'lucide-react';
+import EmptyState from '../../components/EmptyState';
 import useAppStore from '../../store/useAppStore';
 
 export default function InvestmentPlans() {
@@ -24,6 +25,13 @@ export default function InvestmentPlans() {
         <p style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.1em',textTransform:'uppercase',marginTop:4 }}>Edit ROI, minimums, lock-ins and descriptions</p>
       </div>
 
+      {plans.length === 0 ? (
+        <EmptyState
+          icon={Package}
+          title="No investment plans yet"
+          message="Investment products will appear here once configured in the system."
+        />
+      ) : (
       <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(340px,1fr))',gap:18 }}>
         {plans.map((plan, i) => {
           const isEdit = editing === plan.id;
@@ -104,6 +112,7 @@ export default function InvestmentPlans() {
           );
         })}
       </div>
+      )}
     </div>
   );
 }

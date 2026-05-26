@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Gift, Check, ChevronRight } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
+import EmptyState from '../../components/EmptyState';
 
 const fmt = n => '₦' + Number(n).toLocaleString('en-NG');
 
@@ -127,7 +128,12 @@ export default function DividendDeclaration() {
               <div style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:12,color:'var(--navy)',letterSpacing:'0.08em',textTransform:'uppercase' }}>Declaration History</div>
             </div>
             {dividends.length === 0 ? (
-              <div style={{ padding:'20px',textAlign:'center',color:'var(--gray-400)',fontSize:12 }}>No dividends declared yet</div>
+              <EmptyState
+                icon={Gift}
+                title="No dividends declared yet"
+                message="Dividend declarations will appear here once declared by admin."
+                compact
+              />
             ) : dividends.map((d,i)=>(
               <div key={d.id} style={{ padding:'14px 18px',borderBottom:i<dividends.length-1?'1px solid var(--gray-100)':'none',display:'flex',alignItems:'center',justifyContent:'space-between' }}>
                 <div>
