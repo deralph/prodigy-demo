@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import useAppStore from '../store/useAppStore';
+import { authApi, setTokens } from '../services/api';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -15,10 +16,16 @@ export default function Login() {
     setError('');
     if (!email || !password) { setError('Please fill in all fields.'); return; }
     setLoading(true);
-    await new Promise(r => setTimeout(r, 900));
-    login({ email, name: 'Admin User', role: 'admin' });
-    navigate('/dashboard/treasury');
-    setLoading(false);
+    try {
+      const res = await authApi.login(email, password);
+      setTokens({ accessToken: res.accessToken, refreshToken: res.refreshToken });
+      login(res.user);
+      navigate('/dashboard/treasury');
+    } catch (e) {
+      setError(e?.message || 'Login failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
