@@ -20,8 +20,8 @@ const NAV_GROUPS = [
   {
     group: 'Operations',
     items: [
-      { to:'/admin/book',         icon:BookOpen,        label:'Book Instrument',    key:'book_instrument' },
-      { to:'/admin/booked',       icon:TrendingUp,      label:'Booked Instruments', key:'book_instrument' },
+      // { to:'/admin/book',         icon:BookOpen,        label:'Book Instrument',    key:'book_instrument' },
+      // { to:'/admin/booked',       icon:TrendingUp,      label:'Booked Instruments', key:'book_instrument' },
       { to:'/admin/approvals',    icon:CheckSquare,     label:'Approval Hub',       key:'approval_hub' },
       { to:'/admin/pretermination',icon:AlertTriangle,  label:'Pre-Termination',    key:'pretermination' },
       { to:'/admin/clients',      icon:Users,           label:'Client Management',  key:'clients' },
@@ -33,9 +33,9 @@ const NAV_GROUPS = [
     items: [
       { to:'/admin/products',     icon:Layers,          label:'Product Setup',      key:'product_setup' },
       { to:'/admin/plans',        icon:TrendingUp,      label:'Investment Plans',   key:'plans' },
-      { to:'/admin/dividends',    icon:Gift,            label:'Dividend Declaration',key:'dividends' },
+      // { to:'/admin/dividends',    icon:Gift,            label:'Dividend Declaration',key:'dividends' },
       { to:'/admin/accruals',     icon:RefreshCw,       label:'Interest Accruals',  key:'accruals' },
-      { to:'/admin/eod',          icon:GitMerge,        label:'EOD Run',            key:'eod' },
+      // { to:'/admin/eod',          icon:GitMerge,        label:'EOD Run',            key:'eod' },
     ]
   },
   {

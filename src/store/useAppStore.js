@@ -159,6 +159,7 @@ const useAppStore = create((set, get) => ({
       const user = get().user;
       // Products (available to all)
       api.productApi.findAll().then(data => {
+        // console.log(data)
         if (data && Array.isArray(data)) set({ plans: data.map(mapProduct) });
       }).catch(() => {});
       // User: Wallet & Investments (only for non-admin users)
