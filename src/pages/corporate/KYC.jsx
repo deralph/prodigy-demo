@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { Calendar, RefreshCw, Upload, CheckCircle, PenLine, FileText, AlertCircle, X, Users } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Calendar, RefreshCw, Upload, CheckCircle, PenLine, FileText, X, Users, ExternalLink } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import EmptyState from '../../components/EmptyState';
 import useAppStore from '../../store/useAppStore';
+import { kycApi } from '../../services/api';
 
 const KYC_DOC_LABELS = [
   { key: 'cacCert',       label: 'CAC Certificate' },
@@ -27,28 +28,75 @@ export default function KYC() {
   const primaryHolder = user?.name ? [{ name: user.name, role: 'Primary Signatory', expiry: '—', avatar: (user.name||'?').slice(0,2).toUpperCase() }] : [];
   const secondaryHolder = user?.secondaryName ? [{ name: user.secondaryName, role: 'Secondary Signatory', expiry: '—', avatar: (user.secondaryName||'?').slice(0,2).toUpperCase() }] : [];
   const directors = [...primaryHolder, ...secondaryHolder, ...directorsList];
-  const [sigFile, setSigFile]           = useState(null);
-  const [sigDrawOpen, setSigDrawOpen]   = useState(false);
-  const [uploadedDocs, setUploadedDocs] = useState({});
-  const [saved, setSaved]               = useState(false);
+  const [docData, setDocData]         = useState({});
+  const [sigFile, setSigFile]          = useState(null);
+  const [sigDrawOpen, setSigDrawOpen]  = useState(false);
+  const [uploading, setUploading]      = useState(null);
+  const [toast, setToast]              = useState(null);
+  const fileRefs = useRef({});
 
-  const handleDocUpload = (key, file) => {
-    setUploadedDocs(prev => ({ ...prev, [key]: file }));
+  const showToast = (type, msg) => { setToast({ type, msg }); setTimeout(() => setToast(null), 4000); };
+
+  useEffect(() => {
+    kycApi.getMyKyc()
+      .then(data => {
+        const map = {};
+        (data?.documents || []).forEach(d => { map[d.key] = d; });
+        setDocData(map);
+      })
+      .catch(() => {});
+  }, []);
+
+  const getStatus = key => docData[key]?.status || 'NOT_UPLOADED';
+
+  const handleDocUpload = async (key, file) => {
+    if (!file) return;
+    setUploading(key);
+    try {
+      const result = await kycApi.uploadDocument(key, file);
+      setDocData(prev => ({
+        ...prev,
+        [key]: { ...prev[key], status: 'UPLOADED', fileName: file.name, fileUrl: result?.fileUrl || null },
+      }));
+      showToast('success', `${file.name} uploaded successfully.`);
+    } catch (e) {
+      showToast('error', e.message || 'Upload failed. Please try again.');
+    } finally {
+      setUploading(null);
+      if (fileRefs.current[key]) fileRefs.current[key].value = '';
+    }
   };
 
-  const handleSigUpload = (e) => {
+  const handleSigUpload = async (e) => {
     const file = e.target.files?.[0];
-    if (file) { setSigFile(file); setSaved(true); setTimeout(() => setSaved(false), 3000); }
+    if (!file) return;
+    setSigFile(file);
+    try {
+      await kycApi.uploadDocument('sig_upload', file);
+      showToast('success', 'Signature uploaded successfully.');
+    } catch (e) {
+      showToast('error', e.message || 'Signature upload failed.');
+    }
   };
 
   const additionalDocs = [
-    { key: 'utility_bill', label: 'Utility Bill', hint: 'Not older than 3 months · PDF/JPG/PNG' },
+    { key: 'utility_bill', label: 'Utility Bill',        hint: 'Not older than 3 months · PDF/JPG/PNG' },
     { key: 'directors_id', label: "Directors' Valid ID", hint: 'Government-issued ID for all directors' },
+    { key: 'cac_cert',     label: 'CAC Certificate',     hint: 'Certificate of Incorporation · PDF' },
+    { key: 'tax_id',       label: 'Tax ID / TIN',        hint: 'Federal Inland Revenue Service · PDF' },
+    { key: 'scuml',        label: 'SCUML Certificate',   hint: 'Special Control Unit against ML · PDF' },
+    { key: 'memart',       label: 'MEMART',               hint: 'Memorandum & Articles of Association · PDF' },
   ];
 
   return (
     <div>
       <PageHeader title="Corporate KYC Registry" subtitle="Bespoke Asset Management System V2.0" />
+
+      {toast && (
+        <div style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 8, background: toast.type === 'success' ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', border: `1px solid ${toast.type === 'success' ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`, color: toast.type === 'success' ? 'var(--green)' : 'var(--red)', fontSize: 13, fontWeight: 600 }}>
+          {toast.type === 'success' ? '✓ ' : '✗ '}{toast.msg}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 24, alignItems: 'start' }}>
         {/* Directors Panel */}
@@ -119,26 +167,40 @@ export default function KYC() {
             </div>
           </div>
 
-          {/* Additional Documents Upload */}
+          {/* Supporting Documents Upload */}
           <div className="card animate-in delay-3" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--gray-100)', display: 'flex', alignItems: 'center', gap: 8 }}>
               <FileText size={15} color="var(--navy)" />
               <h3 style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 13, color: 'var(--navy)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Supporting Documents</h3>
             </div>
             <div style={{ padding: '8px 0' }}>
-              {additionalDocs.map((doc, i) => (
-                <div key={doc.key} style={{ padding: '14px 24px', borderBottom: i < additionalDocs.length - 1 ? '1px solid var(--gray-100)' : 'none', display:'flex', alignItems:'center', gap:14 }}>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:13, fontWeight:700, color:'var(--navy)', marginBottom:2 }}>{doc.label}</div>
-                    <div style={{ fontSize:11, color:'var(--gray-400)' }}>{doc.hint}</div>
-                    {uploadedDocs[doc.key] && <div style={{ fontSize:11, color:'var(--green)', fontWeight:600, marginTop:3 }}>✓ {uploadedDocs[doc.key].name}</div>}
+              {additionalDocs.map((doc, i) => {
+                const status = getStatus(doc.key);
+                const info   = docData[doc.key];
+                const isUpl  = uploading === doc.key;
+                const uploaded = ['UPLOADED', 'VERIFIED'].includes(status);
+                const canView  = info?.fileUrl && !info.fileUrl.startsWith('pending-cloud-upload://');
+                return (
+                  <div key={doc.key} style={{ padding: '14px 24px', borderBottom: i < additionalDocs.length - 1 ? '1px solid var(--gray-100)' : 'none', display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--navy)', marginBottom: 2 }}>{doc.label}</div>
+                      <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>{doc.hint}</div>
+                      {info?.fileName && <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 600, marginTop: 3 }}>✓ {info.fileName}</div>}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {canView && (
+                        <a href={info.fileUrl} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: 'rgba(13,27,53,0.06)', color: 'var(--navy)', borderRadius: 7, fontSize: 11, fontWeight: 700, textDecoration: 'none' }}>
+                          <ExternalLink size={11} /> View
+                        </a>
+                      )}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: uploaded ? 'rgba(34,197,94,0.1)' : 'var(--navy)', color: uploaded ? 'var(--green)' : 'white', borderRadius: 8, cursor: isUpl ? 'not-allowed' : 'pointer', fontSize: 11, fontWeight: 700 }}>
+                        <input ref={el => fileRefs.current[doc.key] = el} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} disabled={isUpl} onChange={e => handleDocUpload(doc.key, e.target.files?.[0] || null)} />
+                        {isUpl ? <>Uploading…</> : uploaded ? <><CheckCircle size={12} /> {status === 'VERIFIED' ? 'Verified' : 'Replace'}</> : <><Upload size={12} /> Upload</>}
+                      </label>
+                    </div>
                   </div>
-                  <label style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', background: uploadedDocs[doc.key] ? 'rgba(34,197,94,0.1)' : 'var(--navy)', color: uploadedDocs[doc.key] ? 'var(--green)' : 'white', borderRadius:8, cursor:'pointer', fontSize:11, fontWeight:700 }}>
-                    <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display:'none' }} onChange={e => handleDocUpload(doc.key, e.target.files?.[0]||null)} />
-                    {uploadedDocs[doc.key] ? <><CheckCircle size={12}/> Uploaded</> : <><Upload size={12}/> Upload</>}
-                  </label>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -147,17 +209,22 @@ export default function KYC() {
         <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
           <div style={{ background: 'var(--navy)', borderRadius: 12, padding: 24 }} className="animate-in delay-2">
             <h3 style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 12, color: 'white', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 20 }}>
-              Corporate Entity KYC
+              KYC Document Status
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 22 }}>
-              {kycItems.map(item => (
-                <div key={item.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 12 }}>
-                  <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>{item.label}</span>
-                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: item.color, background: item.status === 'Verified' ? 'rgba(34,197,94,0.15)' : 'rgba(232,184,75,0.15)', padding: '3px 8px', borderRadius: 4 }}>
-                    {item.status}
-                  </span>
-                </div>
-              ))}
+              {KYC_DOC_LABELS.map(d => {
+                const st = getStatus(d.key);
+                const isV = st === 'VERIFIED'; const isU = st === 'UPLOADED';
+                const col = isV ? 'var(--green)' : isU ? '#3b82f6' : 'var(--gold)';
+                const bg  = isV ? 'rgba(34,197,94,0.15)' : isU ? 'rgba(59,130,246,0.15)' : 'rgba(232,184,75,0.15)';
+                const lbl = isV ? 'Verified' : isU ? 'Under Review' : 'Pending';
+                return (
+                  <div key={d.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 12 }}>
+                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>{d.label}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: col, background: bg, padding: '3px 8px', borderRadius: 4 }}>{lbl}</span>
+                  </div>
+                );
+              })}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 12 }}>
                 <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>Signature</span>
                 <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: sigFile ? 'var(--green)' : 'var(--gold)', background: sigFile ? 'rgba(34,197,94,0.15)' : 'rgba(232,184,75,0.15)', padding: '3px 8px', borderRadius: 4 }}>
@@ -165,11 +232,10 @@ export default function KYC() {
                 </span>
               </div>
             </div>
-            {saved && <div style={{ background:'rgba(34,197,94,0.15)', borderRadius:7, padding:'8px 12px', marginBottom:12, fontSize:11, color:'var(--green)', fontWeight:600 }}>✓ Document saved successfully</div>}
-            <button style={{ width: '100%', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: 'white', borderRadius: 8, padding: '12px', cursor: 'pointer', fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'background 0.2s' }}
+            <button onClick={() => kycApi.getMyKyc().then(data => { const map = {}; (data?.documents || []).forEach(d => { map[d.key] = d; }); setDocData(map); }).catch(() => {})} style={{ width: '100%', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: 'white', borderRadius: 8, padding: '12px', cursor: 'pointer', fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'background 0.2s' }}
               onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.18)'}
               onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}>
-              <RefreshCw size={13} /> Update Documents
+              <RefreshCw size={13} /> Refresh Status
             </button>
           </div>
 

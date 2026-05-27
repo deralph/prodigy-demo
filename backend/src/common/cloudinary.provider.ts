@@ -19,6 +19,11 @@ export async function uploadToCloudinary(
   file: Express.Multer.File,
   folder = 'prodigy-kyc',
 ): Promise<{ url: string; publicId: string }> {
+  if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+    // Cloudinary not configured — return a placeholder so metadata is still saved in DB
+    const publicId = `${folder}/${Date.now()}-${file.originalname.replace(/\s+/g, '_')}`;
+    return { url: `pending-cloud-upload://${publicId}`, publicId };
+  }
   ensureConfigured();
   return new Promise((resolve, reject) => {
     cloudinary.uploader

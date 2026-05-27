@@ -129,6 +129,7 @@ export const kycApi = {
     return request('/kyc/individual/upload', { method: 'POST', body: fd });
   },
   // Admin
+  getClientKyc: (clientId) => request(`/kyc/client/${clientId}`),
   getComplianceBoard: () => request('/kyc/compliance-board'),
   approveKyc: (clientId) => request(`/kyc/${clientId}/approve`, { method: 'POST' }),
   rejectKyc: (clientId, reason) =>
@@ -173,6 +174,8 @@ export const walletApi = {
     const qs = new URLSearchParams(params).toString();
     return request(`/wallet/me/transactions${qs ? '?' + qs : ''}`);
   },
+  initiatePayment: (amountKobo) =>
+    request('/wallet/fund/initiate', { method: 'POST', body: JSON.stringify({ amountKobo }) }),
   requestWithdrawal: (data) =>
     request('/wallet/withdraw', { method: 'POST', body: JSON.stringify(data) }),
 };

@@ -40,7 +40,7 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     });
 
-    const tokens = await this.generateTokens(authUser.id, authUser.email, authUser.role);
+    const tokens = await this.generateTokens(authUser.id, authUser.email, authUser.role, authUser.clientId, authUser.adminUserId);
 
     return {
       accessToken: tokens.accessToken,
@@ -177,7 +177,7 @@ export class AuthService {
     if (!authUser || !authUser.refreshToken) throw new UnauthorizedException();
     const valid = await bcrypt.compare(refreshToken, authUser.refreshToken);
     if (!valid) throw new UnauthorizedException();
-    return this.generateTokens(authUser.id, authUser.email, authUser.role);
+    return this.generateTokens(authUser.id, authUser.email, authUser.role, authUser.clientId, authUser.adminUserId);
   }
 
   // ── Forgot password (sends OTP) ──────────────────────────────────
@@ -207,8 +207,8 @@ export class AuthService {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────
-  private async generateTokens(userId: string, email: string, role: string) {
-    const payload = { sub: userId, email, role };
+  private async generateTokens(userId: string, email: string, role: string, clientId?: string | null, adminUserId?: string | null) {
+    const payload = { sub: userId, email, role, clientId: clientId ?? null, adminUserId: adminUserId ?? null };
     const [accessToken, refreshToken] = await Promise.all([
       this.jwt.signAsync(payload, {
         secret: process.env.JWT_SECRET,
@@ -242,7 +242,7 @@ export class AuthService {
       include: { client: true },
     });
     if (!authUser) throw new UnauthorizedException('Account not found');
-    const tokens = await this.generateTokens(authUser.id, authUser.email, authUser.role);
+    const tokens = await this.generateTokens(authUser.id, authUser.email, authUser.role, authUser.clientId, authUser.adminUserId);
     return {
       ...tokens,
       user: {

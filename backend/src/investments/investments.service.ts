@@ -18,12 +18,26 @@ export class InvestmentsService {
   // Client: subscribe to a product
   async subscribe(clientDbId: string, dto: {
     productId: string;
-    principalKobo: bigint;
-    tenorDays: number;
-    valueDate: Date;
+    // Accept either principalKobo (bigint) or amount (Naira, from frontend)
+    principalKobo?: bigint;
+    amount?: number;
+    tenorDays?: number;
+    tenor?: string;          // e.g. "3 months" from frontend
+    valueDate?: Date | string;
     autoRollover?: boolean;
     notes?: string;
   }) {
+    // Normalise amount → kobo
+    const principalKobo: bigint = dto.principalKobo != null
+      ? BigInt(dto.principalKobo)
+      : BigInt(Math.round((dto.amount ?? 0) * 100));
+
+    // Normalise tenorDays
+    const tenorDays: number = dto.tenorDays ?? this.parseTenorDays(dto.tenor) ?? 30;
+
+    // Normalise valueDate
+    const valueDate: Date = dto.valueDate ? new Date(dto.valueDate) : new Date();
+
     const client = await this.prisma.client.findUnique({ where: { id: clientDbId } });
     if (!client) throw new NotFoundException('Client not found');
     if (client.status !== 'ACTIVE') throw new ForbiddenException('Account must be active to invest. Please complete KYC.');
@@ -31,34 +45,77 @@ export class InvestmentsService {
     const product = await this.prisma.product.findUnique({ where: { id: dto.productId } });
     if (!product) throw new NotFoundException('Product not found');
     if (product.status !== 'ACTIVE') throw new BadRequestException('Product is not currently available');
-    if (dto.principalKobo < product.minInvestKobo) {
-      throw new BadRequestException(`Minimum investment is ${product.minInvestKobo} kobo`);
+    if (principalKobo < product.minInvestKobo) {
+      throw new BadRequestException(`Minimum investment is ₦${Number(product.minInvestKobo) / 100}`);
+    }
+
+    // ── Wallet balance check ────────────────────────────────────────────────
+    if (client.walletBalance < principalKobo) {
+      throw new BadRequestException(
+        `Insufficient wallet balance. Available: ₦${Number(client.walletBalance) / 100}. Required: ₦${Number(principalKobo) / 100}.`,
+      );
     }
 
     const investRef = await this.generateInvestRef();
     const maturityDate = product.lockInDays
-      ? addDays(dto.valueDate, product.lockInDays)
-      : addDays(dto.valueDate, dto.tenorDays);
+      ? addDays(valueDate, product.lockInDays)
+      : addDays(valueDate, tenorDays);
 
-    return this.prisma.investment.create({
-      data: {
-        investRef,
-        clientId: clientDbId,
-        productId: dto.productId,
-        status: 'PENDING_APPROVAL',
-        principalKobo: dto.principalKobo,
-        roiRate: product.roiMin,
-        tenorDays: dto.tenorDays,
-        valueDate: dto.valueDate,
-        maturityDate,
-        autoRollover: dto.autoRollover ?? false,
-        notes: dto.notes,
-        history: {
-          create: { action: 'Subscription Submitted', note: 'Awaiting ops approval' },
+    // ── Atomic: deduct wallet + create subscription txn + create investment ─
+    return this.prisma.$transaction(async (tx) => {
+      // Deduct from wallet; move to pendingBalance until admin approves
+      await tx.client.update({
+        where: { id: clientDbId },
+        data: {
+          walletBalance: { decrement: principalKobo },
+          pendingBalance: { increment: principalKobo },
         },
-      },
-      include: { product: true },
+      });
+
+      // Record the subscription as a wallet transaction
+      await tx.walletTransaction.create({
+        data: {
+          txnRef: `WAL-SUB-${Date.now()}`,
+          clientId: clientDbId,
+          type: 'SUBSCRIPTION',
+          status: 'SUCCESSFUL',
+          amountKobo: principalKobo,
+          description: `Investment subscription: ${product.name}`,
+          processedAt: new Date(),
+        },
+      });
+
+      return tx.investment.create({
+        data: {
+          investRef,
+          clientId: clientDbId,
+          productId: dto.productId,
+          status: 'PENDING_APPROVAL',
+          principalKobo,
+          roiRate: product.roiMin,
+          tenorDays,
+          valueDate,
+          maturityDate,
+          autoRollover: dto.autoRollover ?? false,
+          notes: dto.notes,
+          history: {
+            create: { action: 'Subscription Submitted', note: 'Awaiting ops approval' },
+          },
+        },
+        include: { product: true },
+      });
     });
+  }
+
+  private parseTenorDays(tenor?: string): number | null {
+    if (!tenor) return null;
+    const n = parseFloat(tenor);
+    const s = tenor.toLowerCase();
+    if (s.includes('year'))  return Math.round(n * 365);
+    if (s.includes('month')) return Math.round(n * 30);
+    if (s.includes('week'))  return Math.round(n * 7);
+    if (s.includes('day'))   return Math.round(n);
+    return isNaN(n) ? null : Math.round(n);
   }
 
   // Client: request redemption (creates pre-termination)

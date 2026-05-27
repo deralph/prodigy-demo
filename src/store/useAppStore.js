@@ -45,6 +45,38 @@ const INITIAL_STATE = {
 
 
 
+/* ── Product + AdminUser mappers (shared between fetchApiData & mutations) ── */
+const mapProduct = (p) => {
+  const roiMin = Number(p.roiMin ?? 0);
+  const roiMax = Number(p.roiMax ?? roiMin);
+  return {
+    ...p,
+    roi:       roiMin === roiMax ? `${roiMin}%` : `${roiMin}% \u2013 ${roiMax}%`,
+    roiNum:    roiMax,
+    minInvest: Number(p.minInvestKobo ?? 0) / 100,
+    lockIn:    p.lockInDays ? `${p.lockInDays} day${p.lockInDays === 1 ? '' : 's'}` : '\u2014',
+    desc:      p.description || '',
+    tag:       p.isNegotiated ? 'Negotiable' : undefined,
+    color:     p.color || '#3b82f6',
+  };
+};
+
+const mapAdminUser = (u) => ({
+  ...u,
+  adminRole: u.role?.toLowerCase() || 'operations',
+  status:    u.status?.toLowerCase() || 'active',
+});
+
+const mapWalletTxn = (t) => ({
+  ...t,
+  amount:      Number(t.amountKobo ?? 0) / 100,
+  type:        t.type?.toLowerCase()   || 'wallet_funding',
+  status:      t.status?.toLowerCase() || 'pending',
+  date:        t.createdAt ? new Date(t.createdAt).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : '—',
+  ref:         t.txnRef || t.paystackRef || t.id,
+  description: t.description || 'Transaction',
+});
+
 /* ── KYC documents ──────────────────────────────────────────── */
 export const KYC_REQUIREMENTS = {
   corporate: [
@@ -80,10 +112,22 @@ export const KYC_REQUIREMENTS = {
 
 
 
+/* ── Synchronously restore session from localStorage ────────── */
+const _restoredUser = (() => {
+  try {
+    const tokens = localStorage.getItem('prodigy_tokens');
+    const user   = localStorage.getItem('prodigy_user');
+    if (!tokens || !user) return null;
+    const t = JSON.parse(tokens);
+    if (!t?.accessToken) return null;
+    return JSON.parse(user);
+  } catch { return null; }
+})();
+
 /* ── Store ──────────────────────────────────────────────────── */
 const useAppStore = create((set, get) => ({
-  user: null,
-  isAuthenticated: false,
+  user: _restoredUser,
+  isAuthenticated: !!_restoredUser,
   sidebarOpen: false,
   isLoadingData: false,
 
@@ -92,6 +136,7 @@ const useAppStore = create((set, get) => ({
 
   // Auth — with API integration
   login: (userData) => {
+    console.log("userData : ",userData)
     localStorage.setItem('prodigy_user', JSON.stringify(userData));
     set({ user: userData, isAuthenticated: true });
     const store = get();
@@ -114,15 +159,18 @@ const useAppStore = create((set, get) => ({
       const user = get().user;
       // Products (available to all)
       api.productApi.findAll().then(data => {
-        if (data && Array.isArray(data)) set({ plans: data });
+        if (data && Array.isArray(data)) set({ plans: data.map(mapProduct) });
       }).catch(() => {});
       // User: Wallet & Investments (only for non-admin users)
       if (user?.role !== 'admin') {
         api.walletApi.getWallet().then(data => {
-          if (data) set({ walletBalance: data.balance || 0, pendingBalance: data.pending || 0 });
+          if (data) set({
+            walletBalance:  Number(data.walletBalance  ?? 0) / 100,
+            pendingBalance: Number(data.pendingBalance ?? 0) / 100,
+          });
         }).catch(() => {});
         api.walletApi.getTransactions().then(data => {
-          if (data && Array.isArray(data)) set({ transactions: data });
+          if (data && Array.isArray(data)) set({ transactions: data.map(mapWalletTxn) });
         }).catch(() => {});
         api.investmentApi.getMyInvestments().then(data => {
           if (data && Array.isArray(data)) set({ clientInvestments: data });
@@ -288,7 +336,7 @@ const useAppStore = create((set, get) => ({
           if (data && Array.isArray(data)) set({ corpLoanEntities: data });
         }).catch(() => {});
         api.adminUserApi.findAll().then(data => {
-          if (data && Array.isArray(data)) set({ adminUsers: data });
+          if (data && Array.isArray(data)) set({ adminUsers: data.map(mapAdminUser) });
         }).catch(() => {});
       }
     } catch { /* Backend offline */ }
@@ -300,6 +348,21 @@ const useAppStore = create((set, get) => ({
     walletBalance: s.walletBalance + txn.amount,
     transactions: [txn, ...s.transactions],
   })),
+
+  refreshWallet: async () => {
+    const api = await import('../services/api');
+    try {
+      const [wallet, txns] = await Promise.all([
+        api.walletApi.getWallet().catch(() => null),
+        api.walletApi.getTransactions().catch(() => null),
+      ]);
+      if (wallet) set({
+        walletBalance:  Number(wallet.walletBalance  ?? 0) / 100,
+        pendingBalance: Number(wallet.pendingBalance ?? 0) / 100,
+      });
+      if (txns && Array.isArray(txns)) set({ transactions: txns.map(mapWalletTxn) });
+    } catch {}
+  },
 
   // Admin: update a plan
   updatePlan: (id, patch) => {
@@ -313,7 +376,7 @@ const useAppStore = create((set, get) => ({
     try {
       const created = await api.productApi.create(plan);
       if (created) {
-        set((s) => ({ plans: [...s.plans, created] }));
+        set((s) => ({ plans: [...s.plans, mapProduct(created)] }));
       }
       return created;
     } catch (err) {
@@ -450,7 +513,7 @@ const useAppStore = create((set, get) => ({
     try {
       const created = await api.adminUserApi.create(u);
       if (created) {
-        set((s) => ({ adminUsers: [...s.adminUsers, created] }));
+        set((s) => ({ adminUsers: [...s.adminUsers, mapAdminUser(created)] }));
       }
       return created;
     } catch (err) {
@@ -464,7 +527,7 @@ const useAppStore = create((set, get) => ({
       const updated = await api.adminUserApi.update(id, patch);
       if (updated) {
         set((s) => ({
-          adminUsers: s.adminUsers.map(u => u.id === id ? { ...u, ...updated } : u),
+          adminUsers: s.adminUsers.map(u => u.id === id ? mapAdminUser({ ...u, ...updated }) : u),
         }));
       }
       return updated;

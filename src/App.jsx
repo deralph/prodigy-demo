@@ -67,21 +67,18 @@ function ProtectedRoute({ children, allowedRoles }) {
 
 /* ── Session restore on page load ───────────────────────── */
 function SessionRestore() {
-  const { isAuthenticated, login, logout } = useAppStore();
+  const { isAuthenticated, login, fetchApiData } = useAppStore();
   useEffect(() => {
-    if (isAuthenticated) return;
     const tokens = getTokens();
     if (!tokens?.accessToken) return;
-    // Restore from localStorage cache immediately (no DB hit)
-    const cachedUser = localStorage.getItem('prodigy_user');
-    if (cachedUser) {
-      try {
-        const userData = JSON.parse(cachedUser);
-        login(userData);
-        return;
-      } catch {}
+
+    if (isAuthenticated) {
+      // Store was pre-populated from localStorage — just trigger data load
+      fetchApiData();
+      return;
     }
-    // No cache — fetch from backend
+
+    // Fallback: no cached user — fetch from backend
     authApi.getMe()
       .then(me => {
         if (me) {

@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { InvestmentsController } from './investments.controller';
+import { InvestmentsController, AdminInvestmentsController } from './investments.controller';
 import { InvestmentsService } from './investments.service';
 
 @Module({
-  controllers: [InvestmentsController],
+  controllers: [InvestmentsController, AdminInvestmentsController],
   providers: [InvestmentsService],
   exports: [InvestmentsService],
 })

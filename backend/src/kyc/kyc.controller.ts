@@ -69,6 +69,14 @@ export class KycController {
 
   // ── Admin ────────────────────────────────────────────────────────
 
+  @Get('client/:clientId')
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  @ApiOperation({ summary: 'Admin: get KYC for a specific client' })
+  getClientKyc(@Param('clientId') clientId: string) {
+    return this.kycService.getMyKyc(clientId);
+  }
+
   @Get('compliance-board')
   @UseGuards(RolesGuard)
   @Roles('admin')

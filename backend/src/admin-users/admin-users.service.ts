@@ -2,6 +2,27 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 
+function toEnumRole(role: string): string {
+  const map: Record<string, string> = {
+    super_admin: 'SUPER_ADMIN',
+    operations: 'OPERATIONS',
+    compliance: 'COMPLIANCE',
+    finance: 'FINANCE',
+    audit: 'AUDIT',
+    investment: 'INVESTMENT',
+  };
+  return map[role?.toLowerCase()] || 'OPERATIONS';
+}
+
+function toEnumStatus(status: string): string {
+  const map: Record<string, string> = {
+    active: 'ACTIVE',
+    locked: 'LOCKED',
+    deleted: 'DELETED',
+  };
+  return map[status?.toLowerCase()] || 'ACTIVE';
+}
+
 @Injectable()
 export class AdminUsersService {
   constructor(private readonly prisma: PrismaService) {}
@@ -24,7 +45,7 @@ export class AdminUsersService {
           adminRef,
           name: data.name,
           email: data.email,
-          role: data.role as any,
+          role: toEnumRole(data.role) as any,
           status: 'ACTIVE',
         },
       });
@@ -45,8 +66,8 @@ export class AdminUsersService {
   async update(id: string, data: any) {
     const updateData: any = {};
     if (data.name) updateData.name = data.name;
-    if (data.role) updateData.role = data.role;
-    if (data.status) updateData.status = data.status;
+    if (data.role) updateData.role = toEnumRole(data.role) as any;
+    if (data.status) updateData.status = toEnumStatus(data.status) as any;
     if (data.department) updateData.department = data.department;
 
     return this.prisma.adminUser.update({

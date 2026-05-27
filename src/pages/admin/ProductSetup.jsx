@@ -172,9 +172,9 @@ export default function ProductSetup() {
               </div>
               <div style={{ display:'flex',flexDirection:'column',gap:5,marginBottom:12 }}>
                 {[
-                  ['Min. Investment', `₦${Number(p.minAmount).toLocaleString('en-NG')}`],
-                  ['Lock-In',        p.lockIn],
-                  ['Tax Rate',       `${p.taxRate}%`],
+                  ['Min. Investment', p.minInvest > 0 ? `₦${Number(p.minInvest).toLocaleString('en-NG')}` : 'Negotiable'],
+                  ['Lock-In',        p.lockIn || '—'],
+                  ['ROI p.a.',       p.roi || '—'],
                 ].map(([l,v])=>(
                   <div key={l} style={{ display:'flex',justifyContent:'space-between',fontSize:11 }}>
                     <span style={{ color:'var(--gray-400)' }}>{l}</span>
@@ -182,7 +182,7 @@ export default function ProductSetup() {
                   </div>
                 ))}
               </div>
-              <div style={{ fontSize:11,color:'var(--gray-500)',lineHeight:1.5,marginBottom:10 }}>{p.description}</div>
+              <div style={{ fontSize:11,color:'var(--gray-500)',lineHeight:1.5,marginBottom:10 }}>{p.desc || p.description}</div>
               <div style={{ display:'flex',gap:5,flexWrap:'wrap' }}>
                 {(p.clientTypes||['corporate','individual','joint']).map(ct=>(
                   <span key={ct} style={{ fontSize:9,fontWeight:700,color:p.color,background:`${p.color}12`,padding:'3px 8px',borderRadius:4,letterSpacing:'0.06em',textTransform:'capitalize' }}>{ct}</span>

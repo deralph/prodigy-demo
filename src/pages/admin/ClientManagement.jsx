@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Eye, Edit, Ban, CheckCircle, X, Wallet, TrendingUp, FileText, User, Phone, MapPin, Calendar, Save, Users } from 'lucide-react';
+import { Search, Eye, Edit, Ban, CheckCircle, X, Wallet, TrendingUp, FileText, User, Phone, MapPin, Calendar, Save, Users, ExternalLink } from 'lucide-react';
 import useAppStore, { KYC_REQUIREMENTS } from '../../store/useAppStore';
-import { adminClientApi, adminTransactionApi } from '../../services/api';
+import { adminClientApi, adminTransactionApi, kycApi } from '../../services/api';
 import EmptyState from '../../components/EmptyState';
 import StatusBadge from '../../components/shared/StatusBadge';
 
@@ -17,6 +17,8 @@ export default function ClientManagement() {
   const [editModal, setEditModal] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [saveMsg, setSaveMsg] = useState('');
+  const [kycDocs, setKycDocs] = useState(null);
+  const [kycLoading, setKycLoading] = useState(false);
 
   const filtered = clients.filter(c => {
     const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) || c.email.toLowerCase().includes(search.toLowerCase());
@@ -62,7 +64,18 @@ export default function ClientManagement() {
   const openDetail = (c) => {
     setSelected(c);
     setDetailTab('info');
+    setKycDocs(null);
   };
+
+  useEffect(() => {
+    if (detailTab === 'kyc' && selected?.id) {
+      setKycLoading(true);
+      kycApi.getClientKyc(selected.id)
+        .then(data => setKycDocs(data))
+        .catch(() => setKycDocs(null))
+        .finally(() => setKycLoading(false));
+    }
+  }, [detailTab, selected?.id]);
 
   return (
     <div>
@@ -306,35 +319,60 @@ export default function ClientManagement() {
 
               {/* ── KYC Documents Tab ── */}
               {detailTab === 'kyc' && (() => {
-                const docs = getKycDocs(selected.type);
+                const docs = kycDocs?.documents || [];
+                const overall = kycDocs?.kycRecord?.status || selected.kyc || 'PENDING';
                 return (
                   <div>
-                    <div style={{ marginBottom:14 }}>
-                      <div style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:4 }}>KYC Status</div>
-                      <StatusBadge status={selected.kyc}/>
+                    <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--gray-400)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>KYC Status</div>
+                        <StatusBadge status={overall === 'APPROVED' ? 'approved' : overall === 'REJECTED' ? 'rejected' : 'pending'} />
+                      </div>
+                      {kycDocs?.kycRecord?.submittedAt && (
+                        <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>Submitted {new Date(kycDocs.kycRecord.submittedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                      )}
                     </div>
-                    <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
-                      {docs.map(doc => {
-                        const isApproved = selected.kyc === 'approved';
-                        return (
-                          <div key={doc.key} style={{
-                            display:'flex',alignItems:'center',justifyContent:'space-between',
-                            background: isApproved ? 'rgba(34,197,94,0.04)' : '#f8fafc',
-                            border:`1px solid ${isApproved ? 'rgba(34,197,94,0.2)' : 'var(--gray-200)'}`,
-                            borderRadius:10,padding:'12px 16px',
-                          }}>
-                            <div style={{ display:'flex',alignItems:'center',gap:10 }}>
-                              <FileText size={14} color={isApproved ? 'var(--green)' : 'var(--gray-400)'}/>
-                              <div>
-                                <div style={{ fontSize:12,fontWeight:600,color:'var(--navy)' }}>{doc.label}</div>
-                                <div style={{ fontSize:10,color:'var(--gray-400)' }}>{doc.required ? 'Required' : 'Optional'}</div>
+
+                    {kycLoading ? (
+                      <div style={{ textAlign: 'center', padding: '30px', color: 'var(--gray-400)', fontSize: 13 }}>Loading KYC documents…</div>
+                    ) : docs.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '30px', color: 'var(--gray-400)', fontSize: 13 }}>No KYC documents found for this client.</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {docs.map(doc => {
+                          const canView = doc.fileUrl && !doc.fileUrl.startsWith('pending-cloud-upload://');
+                          const st = doc.status === 'VERIFIED' ? 'verified' : doc.status === 'UPLOADED' ? 'pending' : doc.status === 'REJECTED' ? 'rejected' : 'pending';
+                          const isApproved = st === 'verified';
+                          return (
+                            <div key={doc.key} style={{
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                              background: isApproved ? 'rgba(34,197,94,0.04)' : '#f8fafc',
+                              border: `1px solid ${isApproved ? 'rgba(34,197,94,0.2)' : 'var(--gray-200)'}`,
+                              borderRadius: 10, padding: '12px 16px',
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                                <FileText size={14} color={isApproved ? 'var(--green)' : 'var(--gray-400)'}/>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--navy)' }}>{doc.label || doc.docKey}</div>
+                                  <div style={{ fontSize: 10, color: 'var(--gray-400)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {doc.fileName ? doc.fileName : (doc.required ? 'Required' : 'Optional')}
+                                    {doc.uploadedAt && <> · {new Date(doc.uploadedAt).toLocaleDateString('en-GB')}</>}
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                                <StatusBadge status={st} />
+                                {canView && (
+                                  <a href={doc.fileUrl} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', background: 'rgba(59,130,246,0.1)', color: '#3b82f6', borderRadius: 6, fontSize: 10, fontWeight: 700, textDecoration: 'none' }}>
+                                    <ExternalLink size={10} /> View
+                                  </a>
+                                )}
                               </div>
                             </div>
-                            <StatusBadge status={isApproved ? 'verified' : selected.kyc === 'pending' ? 'pending' : 'pending'}/>
-                          </div>
-                        );
-                      })}
-                    </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })()}

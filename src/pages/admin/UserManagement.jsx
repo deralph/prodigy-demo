@@ -28,7 +28,7 @@ export default function UserManagement() {
   const handleAdd = async () => {
     if (!form.name || !form.email) return;
     try {
-      await addAdminUser({ ...form, role:'admin' });
+      await addAdminUser({ name: form.name, email: form.email, password: form.password, role: form.adminRole });
       logAction('Created Admin Account', form.email);
       setSaved('User added'); setTimeout(()=>setSaved(''),2500);
       setShowAdd(false); setForm(BLANK_FORM);
@@ -39,12 +39,12 @@ export default function UserManagement() {
 
   const toggleLock = (u) => {
     const next = u.status === 'locked' ? 'active' : 'locked';
-    updateAdminUser(u.email, { status: next });
+    updateAdminUser(u.id, { status: next });
     logAction(next==='locked'?'Locked User Account':'Unlocked User Account', u.email);
   };
 
   const handleDelete = (u) => {
-    updateAdminUser(u.email, { status: 'deleted' });
+    updateAdminUser(u.id, { status: 'deleted' });
     logAction('Deleted User Account', u.email);
     setConfirmDelete(null);
   };

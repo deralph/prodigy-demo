@@ -30,6 +30,20 @@ export class WalletController {
     return this.walletService.getTransactions(req.user.clientDbId, query);
   }
 
+  @Post('fund/initiate')
+  @ApiOperation({ summary: 'Initiate a Paystack wallet funding payment' })
+  async initiatePayment(@Req() req: any, @Body() body: { amountKobo: number }) {
+    if (!req.user.clientDbId) {
+      throw new BadRequestException('Admin users do not have a wallet.');
+    }
+    const amountKobo = BigInt(Math.round(body.amountKobo));
+    return this.walletService.initiatePaystackPayment(
+      req.user.clientDbId,
+      req.user.email,
+      amountKobo,
+    );
+  }
+
   @Post('withdraw')
   @ApiOperation({ summary: 'Request wallet withdrawal' })
   requestWithdrawal(@Req() req: any, @Body() body: any) {

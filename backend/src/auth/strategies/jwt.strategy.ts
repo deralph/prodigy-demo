@@ -1,11 +1,10 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
-  constructor(private prisma: PrismaService) {
+  constructor() {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -13,18 +12,14 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  async validate(payload: { sub: string; email: string; role: string }) {
-    const user = await this.prisma.authUser.findUnique({
-      where: { id: payload.sub },
-      select: { id: true, isActive: true, clientId: true },
-    });
-    if (!user || !user.isActive) throw new UnauthorizedException();
+  validate(payload: { sub: string; email: string; role: string; clientId?: string | null; adminUserId?: string | null }) {
     return {
       sub:        payload.sub,
       email:      payload.email,
       role:       payload.role,
-      clientDbId: user.clientId,   // Prisma Client.id — used by most controllers
-      clientId:   user.clientId,   // alias used by legacy & statements controllers
+      clientDbId: payload.clientId ?? null,
+      clientId:   payload.clientId ?? null,
+      adminUserId: payload.adminUserId ?? null,
     };
   }
 }

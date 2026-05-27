@@ -7,22 +7,41 @@ import EmptyState from '../../components/EmptyState';
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 
 export default function Products() {
-  const { plans, user } = useAppStore();
+  const { plans, user, walletBalance, refreshWallet } = useAppStore();
   const [selected, setSelected] = useState(null);
   const [subModal, setSubModal] = useState(null);
   const [subForm, setSubForm] = useState({ amount:'', tenor:'' });
   const [subSuccess, setSubSuccess] = useState(false);
+  const [subError, setSubError] = useState('');
+  const [subLoading, setSubLoading] = useState(false);
 
-  const handleSubscribe = () => {
+  const isAdmin = user?.role === 'admin';
+
+  const handleSubscribe = async () => {
     if (!subModal || !subForm.amount) return;
-    // Try backend
-    investmentApi.subscribe({
-      productId: subModal.id,
-      amount: parseFloat(subForm.amount),
-      tenor: subForm.tenor || undefined,
-    }).catch(() => {});
-    setSubSuccess(true);
-    setTimeout(() => { setSubSuccess(false); setSubModal(null); setSubForm({ amount:'', tenor:'' }); }, 2000);
+    const amount = parseFloat(subForm.amount);
+
+    // Wallet balance guard (skip for admin)
+    if (!isAdmin && amount > walletBalance) {
+      setSubError(`Insufficient balance. Available: ${fmt(walletBalance)}. Please fund your wallet first.`);
+      return;
+    }
+    setSubError('');
+    setSubLoading(true);
+    try {
+      await investmentApi.subscribe({
+        productId: subModal.id,
+        amount,
+        tenor: subForm.tenor || undefined,
+      });
+      await refreshWallet(); // Reflect deducted balance immediately
+      setSubSuccess(true);
+      setTimeout(() => { setSubSuccess(false); setSubModal(null); setSubForm({ amount:'', tenor:'' }); }, 2500);
+    } catch (err) {
+      setSubError(err.message || 'Subscription failed. Please try again.');
+    } finally {
+      setSubLoading(false);
+    }
   };
 
   return (
@@ -85,15 +104,15 @@ export default function Products() {
                 <div style={{ display:'flex',alignItems:'center',gap:7 }}>
                   <Shield size={12} color="var(--gray-400)"/>
                   <div>
-                    <div style={{ fontSize:8,color:'var(--gray-400)',letterSpacing:'0.1em',textTransform:'uppercase' }}>Tax Rate</div>
-                    <div style={{ fontSize:12,fontWeight:700,color:'var(--navy)' }}>{plan.taxRate}% WHT</div>
+                    <div style={{ fontSize:8,color:'var(--gray-400)',letterSpacing:'0.1em',textTransform:'uppercase' }}>Status</div>
+                    <div style={{ fontSize:12,fontWeight:700,color:'var(--navy)' }}>{plan.status === 'ACTIVE' ? 'Open' : 'Closed'}</div>
                   </div>
                 </div>
                 <div style={{ display:'flex',alignItems:'center',gap:7 }}>
                   <TrendingUp size={12} color="var(--gray-400)"/>
                   <div>
-                    <div style={{ fontSize:8,color:'var(--gray-400)',letterSpacing:'0.1em',textTransform:'uppercase' }}>Tenor</div>
-                    <div style={{ fontSize:12,fontWeight:700,color:'var(--navy)' }}>{plan.hasTenor ? 'Flexible' : 'Fixed'}</div>
+                    <div style={{ fontSize:8,color:'var(--gray-400)',letterSpacing:'0.1em',textTransform:'uppercase' }}>Type</div>
+                    <div style={{ fontSize:12,fontWeight:700,color:'var(--navy)' }}>{plan.isNegotiated ? 'Negotiable' : 'Fixed'}</div>
                   </div>
                 </div>
               </div>
@@ -134,9 +153,8 @@ export default function Products() {
                   ['ROI', selected.roi],
                   ['Minimum Investment', selected.minInvest > 0 ? fmt(selected.minInvest) : 'Negotiable'],
                   ['Lock-in Period', selected.lockIn],
-                  ['Tax Rate', `${selected.taxRate}% WHT`],
-                  ['Tenor Type', selected.hasTenor ? 'Flexible Tenor' : 'Fixed Tenor'],
-                  ...(selected.hasTenor && selected.tenorOptions.length > 0 ? [['Available Tenors', selected.tenorOptions.join(', ')]] : []),
+                  ['Type', selected.isNegotiated ? 'Negotiable Terms' : 'Fixed Terms'],
+                  ['Status', selected.status === 'ACTIVE' ? 'Open for Investment' : 'Closed'],
                 ].map(([l,v]) => (
                   <div key={l} style={{ display:'flex',justifyContent:'space-between',padding:'11px 0',borderBottom:'1px solid var(--gray-100)' }}>
                     <span style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.06em',textTransform:'uppercase' }}>{l}</span>
@@ -158,7 +176,7 @@ export default function Products() {
 
       {/* Subscribe Modal */}
       {subModal && (
-        <div style={{ position:'fixed',inset:0,background:'rgba(13,27,53,0.55)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:300,padding:20 }} onClick={()=>{setSubModal(null);setSubSuccess(false);}}>
+        <div style={{ position:'fixed',inset:0,background:'rgba(13,27,53,0.55)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:300,padding:20 }} onClick={()=>{setSubModal(null);setSubSuccess(false);setSubError('');}}>
           <div style={{ background:'white',borderRadius:20,width:'100%',maxWidth:440,overflow:'hidden',boxShadow:'0 32px 80px rgba(13,27,53,0.25)',animation:'modalIn 0.25s ease' }} onClick={e=>e.stopPropagation()}>
             <div style={{ background:subModal.color,padding:'20px 24px',display:'flex',alignItems:'center',justifyContent:'space-between' }}>
               <div>
@@ -178,6 +196,17 @@ export default function Products() {
                 </div>
               ) : (
                 <div style={{ display:'flex',flexDirection:'column',gap:16 }}>
+                  {!isAdmin && (
+                    <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',background:'rgba(13,27,53,0.03)',borderRadius:8,padding:'8px 12px',border:'1px solid var(--gray-200)' }}>
+                      <span style={{ fontSize:10,color:'var(--gray-400)',letterSpacing:'0.08em',textTransform:'uppercase' }}>Wallet Balance</span>
+                      <span style={{ fontSize:12,fontWeight:800,color:'var(--navy)',fontFamily:'Syne,sans-serif' }}>{fmt(walletBalance)}</span>
+                    </div>
+                  )}
+                  {subError && (
+                    <div style={{ background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.25)',borderRadius:8,padding:'10px 12px',fontSize:11,color:'#dc2626',lineHeight:1.4 }}>
+                      {subError}
+                    </div>
+                  )}
                   <div>
                     <div style={{ fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--gray-400)',marginBottom:6 }}>Investment Amount (₦)</div>
                     <input type="number" placeholder={subModal.minInvest > 0 ? `Min: ${fmt(subModal.minInvest)}` : 'Enter amount'}
@@ -209,14 +238,15 @@ export default function Products() {
                       )}
                     </div>
                   )}
-                  <button onClick={handleSubscribe} disabled={!subForm.amount || (subModal.minInvest > 0 && parseFloat(subForm.amount) < subModal.minInvest)}
+                  <button onClick={handleSubscribe}
+                    disabled={subLoading || !subForm.amount || (subModal.minInvest > 0 && parseFloat(subForm.amount) < subModal.minInvest) || (!isAdmin && parseFloat(subForm.amount) > walletBalance)}
                     style={{
                       background:subModal.color,color:'white',fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:12,
-                      border:'none',borderRadius:8,padding:'14px',cursor:'pointer',letterSpacing:'0.06em',
+                      border:'none',borderRadius:8,padding:'14px',cursor:subLoading?'not-allowed':'pointer',letterSpacing:'0.06em',
                       display:'flex',alignItems:'center',justifyContent:'center',gap:7,
-                      opacity:(!subForm.amount || (subModal.minInvest > 0 && parseFloat(subForm.amount) < subModal.minInvest)) ? 0.5 : 1,
+                      opacity:(subLoading || !subForm.amount || (subModal.minInvest > 0 && parseFloat(subForm.amount) < subModal.minInvest) || (!isAdmin && parseFloat(subForm.amount) > walletBalance)) ? 0.5 : 1,
                     }}>
-                    <ArrowUpRight size={14}/> SUBSCRIBE
+                    <ArrowUpRight size={14}/> {subLoading ? 'PROCESSING…' : 'SUBSCRIBE'}
                   </button>
                 </div>
               )}
