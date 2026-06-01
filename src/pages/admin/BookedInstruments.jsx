@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import PageHeader from '../../components/ui/PageHeader';
 import { Search, TrendingUp, Calendar, DollarSign, Eye, X, FileText } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 import EmptyState from '../../components/EmptyState';
@@ -26,10 +27,10 @@ export default function BookedInstruments() {
 
   return (
     <div>
-      <div style={{ marginBottom:24 }} className="animate-in">
-        <h1 style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:'clamp(18px,3vw,24px)',color:'var(--navy)',letterSpacing:'0.02em',textTransform:'uppercase' }}>Booked Instruments</h1>
-        <p style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.1em',textTransform:'uppercase',marginTop:4 }}>All investment instruments booked for clients</p>
-      </div>
+      <PageHeader
+        title="Booked Instruments"
+        subtitle="All investment instruments booked for clients"
+      />
 
       {/* Summary Cards */}
       <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:14,marginBottom:22 }} className="animate-in delay-1">

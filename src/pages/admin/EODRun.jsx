@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import PageHeader from '../../components/ui/PageHeader';
 import { PlayCircle, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 
@@ -39,10 +40,10 @@ export default function EODRun() {
 
   return (
     <div>
-      <div style={{ marginBottom:24 }} className="animate-in">
-        <h1 style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:'clamp(18px,3vw,24px)',color:'var(--navy)',letterSpacing:'0.02em',textTransform:'uppercase' }}>EOD Run</h1>
-        <p style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.1em',textTransform:'uppercase',marginTop:4 }}>End-of-day batch processing — run only once per trading day</p>
-      </div>
+      <PageHeader
+        title="EOD Run"
+        subtitle="End-of-day batch processing — run only once per trading day"
+      />
 
       {!isOps && (
         <div style={{ background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:10,padding:'14px 18px',marginBottom:20,display:'flex',alignItems:'center',gap:10 }}>

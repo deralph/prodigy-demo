@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import PageHeader from '../../components/ui/PageHeader';
 import { Edit, Save, X, TrendingUp, Package } from 'lucide-react';
 import EmptyState from '../../components/EmptyState';
 import useAppStore from '../../store/useAppStore';
@@ -20,10 +21,10 @@ export default function InvestmentPlans() {
 
   return (
     <div>
-      <div style={{ marginBottom:24 }} className="animate-in">
-        <h1 style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:'clamp(18px,3vw,24px)',color:'var(--navy)',letterSpacing:'0.02em',textTransform:'uppercase' }}>Investment Plans</h1>
-        <p style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.1em',textTransform:'uppercase',marginTop:4 }}>Edit ROI, minimums, lock-ins and descriptions</p>
-      </div>
+      <PageHeader
+        title="Investment Plans"
+        subtitle="Edit ROI, minimums, lock-ins and descriptions"
+      />
 
       {plans.length === 0 ? (
         <EmptyState

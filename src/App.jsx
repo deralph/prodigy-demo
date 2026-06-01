@@ -6,8 +6,6 @@ import { getTokens, authApi, clearTokens } from './services/api';
 import OnboardingLogin from './pages/onboarding/OnboardingLogin';
 import MagicLogin      from './pages/onboarding/MagicLogin';
 import Landing  from './pages/Landing';
-import Login    from './pages/Login';
-import Register from './pages/Register';
 
 import CorporateLayout from './components/corporate/CorporateLayout';
 import Treasury    from './pages/corporate/Treasury';
@@ -126,7 +124,6 @@ export default function App() {
         <Route path="/"            element={<Landing />} />
         <Route path="/login"       element={<OnboardingLogin />} />
         <Route path="/magic-login" element={<MagicLogin />} />
-        <Route path="/register"    element={<Register />} />
 
         {/* Corporate */}
         <Route path="/corporate" element={<ProtectedRoute allowedRoles={['corporate']}><CorporateLayout /></ProtectedRoute>}>

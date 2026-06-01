@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import PageHeader from '../../components/ui/PageHeader';
 import { Clock, Download, Filter, ArrowDownLeft, ArrowUpRight, RefreshCw } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 
@@ -38,10 +39,10 @@ export default function ActivityLog() {
 
   return (
     <div>
-      <div style={{ marginBottom:24 }} className="animate-in">
-        <h1 style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:'clamp(18px,3vw,24px)',color:'var(--navy)',letterSpacing:'0.02em',textTransform:'uppercase' }}>Activity Log</h1>
-        <p style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.1em',textTransform:'uppercase',marginTop:4 }}>Full Transaction History · Single Account</p>
-      </div>
+      <PageHeader
+        title="Activity Log"
+        subtitle="Full Transaction History · Single Account"
+      />
 
       {/* Stats */}
       <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:14,marginBottom:22 }} className="animate-in delay-1">

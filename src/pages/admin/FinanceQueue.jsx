@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import PageHeader from '../../components/ui/PageHeader';
 import { CheckCircle, XCircle, DollarSign, Clock, ArrowRight, Inbox } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 import EmptyState from '../../components/EmptyState';
@@ -39,10 +40,10 @@ export default function FinanceQueue() {
 
   return (
     <div>
-      <div style={{ marginBottom:24 }} className="animate-in">
-        <h1 style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:'clamp(18px,3vw,24px)',color:'var(--navy)',letterSpacing:'0.02em',textTransform:'uppercase' }}>Finance Queue</h1>
-        <p style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.1em',textTransform:'uppercase',marginTop:4 }}>Pre-termination & redemption disbursements awaiting finance approval</p>
-      </div>
+      <PageHeader
+        title="Finance Queue"
+        subtitle="Pre-termination & redemption disbursements awaiting finance approval"
+      />
 
       {!isFinance && (
         <div style={{ background:'rgba(232,184,75,0.1)',border:'1px solid rgba(232,184,75,0.3)',borderRadius:10,padding:'14px 18px',marginBottom:20,fontSize:13,color:'var(--navy)' }}>

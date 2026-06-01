@@ -6,11 +6,53 @@ import { setTokens } from '../../services/api';
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
+const ROLE_DESTINATIONS = {
+  joint:       '/joint/portfolio',
+  corporate:   '/corporate/treasury',
+  individual:  '/individual/portfolio',
+  admin:       '/admin',
+};
+
+/* ── Status screen ── */
+function StatusScreen({ status, message, email, onGoToLogin }) {
+  if (status === 'loading') return (
+    <>
+      <div style={{ width:56, height:56, borderRadius:'50%', background:'rgba(13,27,53,0.06)', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 20px' }}>
+        <Loader size={26} color="var(--navy)" style={{ animation:'spin 1s linear infinite' }}/>
+      </div>
+      <div style={{ fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:17, color:'var(--navy)', marginBottom:8 }}>Verifying your link…</div>
+      <p style={{ fontSize:13, color:'var(--gray-400)', lineHeight:1.6 }}>Please wait while we authenticate your joint account access.</p>
+    </>
+  );
+
+  if (status === 'success') return (
+    <>
+      <CheckCircle size={52} color="var(--green)" style={{ marginBottom:16 }}/>
+      <div style={{ fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:18, color:'var(--navy)', marginBottom:8 }}>Access Granted</div>
+      <p style={{ fontSize:13, color:'var(--gray-400)', lineHeight:1.6 }}>You have been authenticated as a joint account holder. Redirecting to your dashboard…</p>
+    </>
+  );
+
+  return (
+    <>
+      <XCircle size={52} color="var(--red)" style={{ marginBottom:16 }}/>
+      <div style={{ fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:18, color:'var(--navy)', marginBottom:8 }}>Link Invalid</div>
+      <p style={{ fontSize:13, color:'var(--gray-400)', lineHeight:1.6, marginBottom:20 }}>{message}</p>
+      <button
+        onClick={onGoToLogin}
+        style={{ background:'var(--navy)', color:'white', fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:12, border:'none', borderRadius:10, padding:'12px 28px', cursor:'pointer', letterSpacing:'0.06em' }}
+      >
+        Go to Login
+      </button>
+    </>
+  );
+}
+
 export default function MagicLogin() {
-  const [searchParams] = useSearchParams();
-  const navigate       = useNavigate();
-  const { login }      = useAppStore();
-  const [status, setStatus] = useState('loading'); // loading | success | error
+  const [searchParams]   = useSearchParams();
+  const navigate         = useNavigate();
+  const { login }        = useAppStore();
+  const [status,  setStatus]  = useState('loading');
   const [message, setMessage] = useState('');
 
   useEffect(() => {
@@ -22,13 +64,9 @@ export default function MagicLogin() {
       .then(data => {
         if (!data.accessToken) throw new Error(data.message || 'Invalid response');
         setTokens(data.accessToken, data.refreshToken);
-        login({
-          ...data.user,
-          name: data.user.name || data.user.email,
-          clientId: data.user.clientId,
-        });
+        login({ ...data.user, name: data.user.name || data.user.email, clientId: data.user.clientId });
         setStatus('success');
-        const dest = data.user.role === 'joint' ? '/joint/portfolio' : `/${data.user.role}`;
+        const dest = ROLE_DESTINATIONS[data.user.role] || `/${data.user.role}`;
         setTimeout(() => navigate(dest, { replace: true }), 1500);
       })
       .catch(err => { setStatus('error'); setMessage(err.message || 'Link is invalid or has expired.'); });
@@ -40,34 +78,9 @@ export default function MagicLogin() {
         <div style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:11, letterSpacing:'0.14em', textTransform:'uppercase', color:'var(--gold)', marginBottom:20 }}>
           Prodigy Finance · Joint Account
         </div>
-        {status === 'loading' && (
-          <>
-            <div style={{ width:56, height:56, borderRadius:'50%', background:'rgba(13,27,53,0.06)', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 20px' }}>
-              <Loader size={26} color="var(--navy)" style={{ animation:'spin 1s linear infinite' }}/>
-            </div>
-            <div style={{ fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:17, color:'var(--navy)', marginBottom:8 }}>Verifying your link…</div>
-            <p style={{ fontSize:13, color:'var(--gray-400)', lineHeight:1.6 }}>Please wait while we authenticate your joint account access.</p>
-          </>
-        )}
-        {status === 'success' && (
-          <>
-            <CheckCircle size={52} color="var(--green)" style={{ marginBottom:16 }}/>
-            <div style={{ fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:18, color:'var(--navy)', marginBottom:8 }}>Access Granted</div>
-            <p style={{ fontSize:13, color:'var(--gray-400)', lineHeight:1.6 }}>You have been authenticated as a joint account holder. Redirecting to your dashboard…</p>
-          </>
-        )}
-        {status === 'error' && (
-          <>
-            <XCircle size={52} color="var(--red)" style={{ marginBottom:16 }}/>
-            <div style={{ fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:18, color:'var(--navy)', marginBottom:8 }}>Link Invalid</div>
-            <p style={{ fontSize:13, color:'var(--gray-400)', lineHeight:1.6, marginBottom:20 }}>{message}</p>
-            <button onClick={() => navigate('/login', { replace:true })} style={{ background:'var(--navy)', color:'white', fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:12, border:'none', borderRadius:10, padding:'12px 28px', cursor:'pointer', letterSpacing:'0.06em' }}>
-              Go to Login
-            </button>
-          </>
-        )}
+        <StatusScreen status={status} message={message} onGoToLogin={() => navigate('/login', { replace:true })} />
       </div>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <style>{`@keyframes spin { to { transform:rotate(360deg) } }`}</style>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import React from 'react';
+import PageHeader from '../../components/ui/PageHeader';
 import { Users, Shield, CheckCircle, Clock, Info } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 
@@ -18,10 +19,10 @@ export default function SharedLegacy() {
 
   return (
     <div>
-      <div style={{ marginBottom:24 }} className="animate-in">
-        <h1 style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:'clamp(18px,3vw,24px)',color:'var(--navy)',letterSpacing:'0.02em',textTransform:'uppercase' }}>Joint Account Overview</h1>
-        <p style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.1em',textTransform:'uppercase',marginTop:4 }}>Shared ownership · Equal distribution · {n}-holder account</p>
-      </div>
+      <PageHeader
+        title="Joint Account Overview"
+        subtitle="Shared ownership · Equal distribution · {n}-holder account"
+      />
 
       {/* Policy banner */}
       <div style={{ background:'rgba(59,130,246,0.07)',border:'1px solid rgba(59,130,246,0.2)',borderRadius:10,padding:'12px 18px',marginBottom:18,display:'flex',alignItems:'flex-start',gap:10 }} className="animate-in">

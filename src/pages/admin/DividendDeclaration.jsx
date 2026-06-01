@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import PageHeader from '../../components/ui/PageHeader';
 import { Gift, Check, ChevronRight } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 import EmptyState from '../../components/EmptyState';
@@ -41,10 +42,10 @@ export default function DividendDeclaration() {
 
   return (
     <div>
-      <div style={{ marginBottom:24 }} className="animate-in">
-        <h1 style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:'clamp(18px,3vw,24px)',color:'var(--navy)',letterSpacing:'0.02em',textTransform:'uppercase' }}>Dividend Declaration</h1>
-        <p style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.1em',textTransform:'uppercase',marginTop:4 }}>Declare dividends per investment product</p>
-      </div>
+      <PageHeader
+        title="Dividend Declaration"
+        subtitle="Declare dividends per investment product"
+      />
 
       {success && (
         <div style={{ background:'rgba(34,197,94,0.1)',border:'1px solid rgba(34,197,94,0.3)',borderRadius:9,padding:'14px 18px',marginBottom:20,display:'flex',alignItems:'center',gap:10 }}>
