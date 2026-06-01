@@ -146,6 +146,7 @@ export function createMockPrisma() {
     client:      { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn() },
     kycRecord:   { create: jest.fn(), update: jest.fn(), findUnique: jest.fn() },
     kycDocument: { findMany: jest.fn(), upsert: jest.fn(), updateMany: jest.fn() },
+    identityVerification: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
     product:     { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), count: jest.fn() },
     investment:  { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn() },
     walletTransaction: { findMany: jest.fn(), create: jest.fn(), count: jest.fn() },

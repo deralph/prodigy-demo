@@ -9,9 +9,11 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import * as bcrypt from 'bcrypt';
+import { createHmac } from 'crypto';
 import { RegisterCorporateDto } from './dto/register-corporate.dto';
 import { RegisterIndividualDto } from './dto/register-individual.dto';
 import { LoginDto } from './dto/login.dto';
+import { NibssService } from '../nibss/nibss.service';
 
 @Injectable()
 export class AuthService {
@@ -19,6 +21,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private notifications: NotificationsService,
+    private nibssService: NibssService,
   ) {}
 
   // ── Login ────────────────────────────────────────────────────────
@@ -106,6 +109,21 @@ export class AuthService {
     const exists = await this.prisma.authUser.findUnique({ where: { email: dto.email } });
     if (exists) throw new ConflictException('Email already registered');
 
+    const identityInputs = this.getRegistrationIdentityInputs(dto);
+    await this.assertBvnReuseIsSafe(identityInputs);
+    const verifiedIdentities = await Promise.all(identityInputs.map(async (identity) => {
+      const result = await this.nibssService.verifyBvn(identity.bvn, identity.name, { email: identity.email, phone: identity.phone });
+      if (!result.verified) throw new BadRequestException(result.message);
+      return {
+        type: 'bvn',
+        identifierHash: this.hashSensitiveIdentifier(identity.bvn),
+        nameNormalized: this.normalizeIdentityName(identity.name),
+        provider: result.provider ?? 'qoreid',
+        providerReference: result.providerReference,
+        verifiedAt: result.verifiedAt,
+      };
+    }));
+
     const hash = await bcrypt.hash(dto.password, 12);
     const clientRef = await this.generateClientRef();
     const isJoint = dto.accountType === 'joint';
@@ -135,6 +153,9 @@ export class AuthService {
       });
 
       await tx.kycRecord.create({ data: { clientId: client.id } });
+      await Promise.all(verifiedIdentities.map((identity) => tx.identityVerification.create({
+        data: { ...identity, clientId: client.id },
+      })));
 
       return { client, authUser };
     });
@@ -156,6 +177,64 @@ export class AuthService {
     }
 
     return { message: 'Account created. Please complete KYC.', clientRef: result.client.clientRef };
+  }
+
+
+  private getRegistrationIdentityInputs(dto: RegisterIndividualDto) {
+    const primaryBvn = this.cleanBvn(dto.bvn);
+    const identities = dto.accountType === 'joint' && dto.holderIdentities?.length
+      ? dto.holderIdentities.map((holder, index) => ({
+          name: holder.name,
+          bvn: this.cleanBvn(holder.bvn),
+          email: holder.email,
+          phone: holder.phone,
+          holderIndex: index,
+        }))
+      : [{ name: dto.primaryName, bvn: primaryBvn, email: dto.email, phone: dto.phone, holderIndex: 0 }];
+
+    if (dto.accountType === 'single' && !primaryBvn) throw new BadRequestException('BVN is required for account authentication.');
+    if (dto.accountType === 'joint' && identities.length < 2) throw new BadRequestException('BVN is required for every joint account holder.');
+
+    const seen = new Map<string, string>();
+    for (const identity of identities) {
+      if (identity.bvn.length !== 11) throw new BadRequestException('BVN must be exactly 11 digits.');
+      const normalizedName = this.normalizeIdentityName(identity.name);
+      if (seen.has(identity.bvn)) {
+        throw new ConflictException('The same BVN cannot be used by multiple holders on one account.');
+      }
+      seen.set(identity.bvn, normalizedName);
+    }
+
+    return identities;
+  }
+
+  private async assertBvnReuseIsSafe(identities: Array<{ bvn: string; name: string }>) {
+    for (const identity of identities) {
+      const identifierHash = this.hashSensitiveIdentifier(identity.bvn);
+      const existing = await this.prisma.identityVerification.findMany({
+        where: { type: 'bvn', identifierHash },
+        select: { nameNormalized: true },
+      });
+      const normalizedName = this.normalizeIdentityName(identity.name);
+      const hasConflictingIdentity = existing.some((row) => row.nameNormalized !== normalizedName);
+      if (hasConflictingIdentity) {
+        throw new ConflictException('This BVN is already linked to a different customer profile.');
+      }
+    }
+  }
+
+  private hashSensitiveIdentifier(value: string): string {
+    const pepper = process.env.BVN_HASH_PEPPER ?? process.env.JWT_SECRET;
+    if (!pepper) throw new BadRequestException('BVN hashing secret is not configured.');
+    return createHmac('sha256', pepper).update(this.cleanBvn(value)).digest('hex');
+  }
+
+  private cleanBvn(value: string): string {
+    return (value ?? '').replace(/\D/g, '');
+  }
+
+  private normalizeIdentityName(value: string): string {
+    return (value ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
   }
 
   // ── Get current user ─────────────────────────────────────────────

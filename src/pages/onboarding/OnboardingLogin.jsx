@@ -28,7 +28,7 @@ async function verifyNibss(type, number, expectedName) {
     if (type === 'nin')      result = await nibssApi.verifyNin(clean, expectedName.trim());
     else if (type === 'bvn') result = await nibssApi.verifyBvn(clean, expectedName.trim());
     else if (type === 'cac') result = await nibssApi.verifyCac(clean, expectedName.trim());
-    if (result?.verified) return { ok: true, message: `${type.toUpperCase()} verified via NIBSS.` };
+    if (result?.verified) return { ok: true, message: `${type.toUpperCase()} verified via ${type === 'bvn' ? 'QoreID' : 'NIBSS'}.` };
     return { ok: false, message: result?.message || `${type.toUpperCase()} could not be verified.` };
   } catch {
     return { ok: false, message: 'Verification service unavailable. Ensure the server is running.' };
@@ -261,15 +261,15 @@ function IndividualCreate({ onBack }) {
   const [regError,   setRegError]     = useState('');
 
   /* ── Single state ── */
-  const [single, setSingle]         = useState({ name: '', email: '', phone: '', password: '', nin: '', bvn: '' });
+  const [single, setSingle]         = useState({ name: '', email: '', phone: '', password: '', bvn: '' });
   const [singleVer, setSingleVer]   = useState({ verified: false, verifying: false, error: '' });
 
   /* ── Joint state ── */
   const [holderCount, setHolderCount] = useState(2);
   const [mandate,     setMandate]     = useState('AND');
   const [holders, setHolders]         = useState([
-    { name: '', email: '', phone: '', nin: '', verified: false, verifying: false, verifyErr: '', password: '' },
-    { name: '', email: '', phone: '', nin: '', verified: false, verifying: false, verifyErr: '', password: '' },
+    { name: '', email: '', phone: '', bvn: '', verified: false, verifying: false, verifyErr: '', password: '' },
+    { name: '', email: '', phone: '', bvn: '', verified: false, verifying: false, verifyErr: '', password: '' },
   ]);
 
   const updHolder = (i, patch) => setHolders(prev => prev.map((h, idx) => idx === i ? { ...h, ...patch } : h));
@@ -277,7 +277,7 @@ function IndividualCreate({ onBack }) {
   const changeHolderCount = n => {
     setHolderCount(n);
     setHolders(prev => {
-      const blank = { name: '', email: '', phone: '', nin: '', verified: false, verifying: false, verifyErr: '', password: '' };
+      const blank = { name: '', email: '', phone: '', bvn: '', verified: false, verifying: false, verifyErr: '', password: '' };
       if (n > prev.length) return [...prev, ...Array(n - prev.length).fill(null).map(() => ({ ...blank }))];
       return prev.slice(0, n);
     });
@@ -285,13 +285,13 @@ function IndividualCreate({ onBack }) {
 
   const verifySingle = async () => {
     setSingleVer({ verified: false, verifying: true, error: '' });
-    const r = await verifyNibss('nin', single.nin, single.name);
+    const r = await verifyNibss('bvn', single.bvn, single.name);
     setSingleVer({ verifying: false, verified: r.ok, error: r.ok ? '' : r.message });
   };
 
   const verifyHolder = async i => {
     updHolder(i, { verifying: true, verifyErr: '', verified: false });
-    const r = await verifyNibss('nin', holders[i].nin, holders[i].name);
+    const r = await verifyNibss('bvn', holders[i].bvn, holders[i].name);
     updHolder(i, { verifying: false, verified: r.ok, verifyErr: r.ok ? '' : r.message });
   };
 
@@ -305,15 +305,15 @@ function IndividualCreate({ onBack }) {
     setRegLoading(true); setRegError('');
     try {
       if (accountType === 'joint') {
-        await authApi.registerIndividual({ accountType: 'joint', primaryName: holders[0].name, email: holders[0].email, password: holders[0].password || '', secondaryName: holders[1]?.name, secondaryEmail: holders[1]?.email, phone: holders[0].phone });
+        await authApi.registerIndividual({ accountType: 'joint', primaryName: holders[0].name, email: holders[0].email, password: holders[0].password || '', secondaryName: holders[1]?.name, secondaryEmail: holders[1]?.email, phone: holders[0].phone, bvn: holders[0].bvn, holderIdentities: holders.map(h => ({ name: h.name, bvn: h.bvn, email: h.email, phone: h.phone })) });
       } else {
-        await authApi.registerIndividual({ accountType: 'single', primaryName: single.name, email: single.email, phone: single.phone, password: single.password });
+        await authApi.registerIndividual({ accountType: 'single', primaryName: single.name, email: single.email, phone: single.phone, password: single.password, bvn: single.bvn });
       }
       kycApi.uploadIndividualDocs(uploads).catch(() => {});
       setStep('done');
     } catch (err) {
       const msg = err?.message || '';
-      setRegError(msg.toLowerCase().includes('already') ? 'An account with this email already exists.' : 'Registration failed. Please try again.');
+      setRegError(msg.toLowerCase().includes('bvn') ? msg : msg.toLowerCase().includes('already') ? 'An account with this email already exists.' : 'Registration failed. Please try again.');
     }
     setRegLoading(false);
   };
@@ -364,24 +364,21 @@ function IndividualCreate({ onBack }) {
     <div className="animate-in">
       <button onClick={() => setStep('form')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b6ef8', fontSize: 12, fontWeight: 700, marginBottom: 16, padding: 0 }}>← Back</button>
       <h2 style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 20, color: 'var(--navy)', marginBottom: 4 }}>IDENTITY VERIFICATION</h2>
-      <p style={{ fontSize: 10, color: 'var(--gray-400)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 16 }}>NIN verification via NIBSS</p>
+      <p style={{ fontSize: 10, color: 'var(--gray-400)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>BVN verification via QoreID</p>
+      <p style={{ fontSize: 11, color: 'var(--gray-500)', lineHeight: 1.5, marginBottom: 16 }}>Your BVN is used only to confirm your identity and prevent impersonation. We do not store the raw BVN; only a protected verification fingerprint is retained.</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <NibssVerifyField
-          label="NIN (11 digits)"
-          value={single.nin}
-          onChange={val => { setSingle(f => ({ ...f, nin: val })); setSingleVer({ verified: false, verifying: false, error: '' }); }}
+          label="BVN (11 digits)"
+          value={single.bvn}
+          onChange={val => { setSingle(f => ({ ...f, bvn: val })); setSingleVer({ verified: false, verifying: false, error: '' }); }}
           onVerify={verifySingle}
           verified={singleVer.verified}
           verifying={singleVer.verifying}
           error={singleVer.error}
-          placeholder="12345678901"
-          canVerify={single.nin.length === 11 && !!single.name}
+          placeholder="22345678901"
+          canVerify={single.bvn.length === 11 && !!single.name}
         />
-        <AuthInput label="BVN (optional)" type="text" placeholder="22345678901" value={single.bvn} onChange={e => setSingle(f => ({ ...f, bvn: e.target.value.replace(/\D/g, '').slice(0, 11) }))} />
         <AuthSubmitButton label="CONTINUE TO DOCUMENTS" disabled={!singleVer.verified} onClick={() => setStep('kyc')} />
-        <button onClick={() => setStep('kyc')} style={{ background: 'transparent', color: 'var(--gray-400)', fontFamily: 'DM Sans,sans-serif', fontWeight: 600, fontSize: 12, border: '1px dashed #d1d5db', borderRadius: 10, padding: '12px', cursor: 'pointer', textAlign: 'center' }}>
-          Skip — proceed with minimal access
-        </button>
       </div>
     </div>
   );
@@ -391,7 +388,8 @@ function IndividualCreate({ onBack }) {
     <div className="animate-in">
       <button onClick={() => setStep('form')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b6ef8', fontSize: 12, fontWeight: 700, marginBottom: 16, padding: 0 }}>← Back</button>
       <h2 style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 20, color: 'var(--navy)', marginBottom: 4 }}>IDENTITY VERIFICATION</h2>
-      <p style={{ fontSize: 10, color: 'var(--gray-400)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 16 }}>Verify NIN for all {holderCount} holders via NIBSS</p>
+      <p style={{ fontSize: 10, color: 'var(--gray-400)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>Verify BVN for all {holderCount} holders via QoreID</p>
+      <p style={{ fontSize: 11, color: 'var(--gray-500)', lineHeight: 1.5, marginBottom: 16 }}>Each holder’s BVN is used only for identity authentication and duplicate-account safety checks. Raw BVNs are not stored.</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {holders.map((h, i) => (
           <div key={i} style={{ background: '#f8fafc', borderRadius: 12, border: `1.5px solid ${HOLDER_COLORS[i]}30`, padding: '14px' }}>
@@ -399,16 +397,16 @@ function IndividualCreate({ onBack }) {
               {i === 0 ? 'Primary' : i === 1 ? 'Secondary' : 'Third'} Holder — {h.name || '(name required above)'}
             </div>
             <NibssVerifyField
-              label="NIN"
-              value={h.nin}
-              onChange={val => updHolder(i, { nin: val, verified: false, verifyErr: '' })}
+              label="BVN"
+              value={h.bvn}
+              onChange={val => updHolder(i, { bvn: val, verified: false, verifyErr: '' })}
               onVerify={() => verifyHolder(i)}
               verified={h.verified}
               verifying={h.verifying}
               error={h.verifyErr}
-              placeholder="NIN — 11 digits"
+              placeholder="BVN — 11 digits"
               accentColor={HOLDER_COLORS[i]}
-              canVerify={h.nin.length === 11 && !!h.name}
+              canVerify={h.bvn.length === 11 && !!h.name}
             />
           </div>
         ))}
@@ -428,9 +426,6 @@ function IndividualCreate({ onBack }) {
         </div>
 
         <AuthSubmitButton label="CONTINUE TO DOCUMENTS" disabled={!allHoldersVerified} onClick={() => setStep('kyc')} />
-        <button onClick={() => setStep('kyc')} style={{ background: 'transparent', color: 'var(--gray-400)', fontFamily: 'DM Sans,sans-serif', fontWeight: 600, fontSize: 12, border: '1px dashed #d1d5db', borderRadius: 10, padding: '12px', cursor: 'pointer', textAlign: 'center' }}>
-          Skip — proceed with minimal access
-        </button>
       </div>
     </div>
   );
