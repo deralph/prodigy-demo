@@ -93,7 +93,7 @@ describe('AuthService', () => {
           client: { create: jest.fn().mockResolvedValue({ ...MOCK.corporateClient, clientRef: 'CLI-001' }) },
           authUser: { create: jest.fn().mockResolvedValue(MOCK.authUser) },
           kycRecord: { create: jest.fn().mockResolvedValue({}) },
-          $executeRaw: jest.fn().mockResolvedValue(1),
+          identityVerification: { create: jest.fn().mockResolvedValue({}) },
         };
         return fn(txMock);
       });
@@ -122,7 +122,7 @@ describe('AuthService', () => {
           client: { create: jest.fn().mockResolvedValue({ ...MOCK.client, clientRef: 'CLI-002' }) },
           authUser: { create: jest.fn().mockResolvedValue(MOCK.authUser) },
           kycRecord: { create: jest.fn().mockResolvedValue({}) },
-          $executeRaw: jest.fn().mockResolvedValue(1),
+          identityVerification: { create: jest.fn().mockResolvedValue({}) },
         };
         return fn(txMock);
       });
@@ -140,7 +140,7 @@ describe('AuthService', () => {
           client: { create: jest.fn().mockResolvedValue({ ...MOCK.client, clientRef: 'CLI-003', type: 'JOINT' }) },
           authUser: { create: jest.fn().mockResolvedValue(MOCK.authUser) },
           kycRecord: { create: jest.fn().mockResolvedValue({}) },
-          $executeRaw: jest.fn().mockResolvedValue(1),
+          identityVerification: { create: jest.fn().mockResolvedValue({}) },
         };
         return fn(txMock);
       });

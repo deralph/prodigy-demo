@@ -9,7 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import * as bcrypt from 'bcrypt';
-import { createHmac, randomUUID } from 'crypto';
+import { createHmac } from 'crypto';
 import { RegisterCorporateDto } from './dto/register-corporate.dto';
 import { RegisterIndividualDto } from './dto/register-individual.dto';
 import { LoginDto } from './dto/login.dto';
@@ -153,7 +153,9 @@ export class AuthService {
       });
 
       await tx.kycRecord.create({ data: { clientId: client.id } });
-      await Promise.all(verifiedIdentities.map((identity) => this.createIdentityVerification(tx, client.id, identity)));
+      await Promise.all(verifiedIdentities.map((identity) => tx.identityVerification.create({
+        data: { ...identity, clientId: client.id },
+      })));
 
       return { client, authUser };
     });
@@ -209,45 +211,16 @@ export class AuthService {
   private async assertBvnReuseIsSafe(identities: Array<{ bvn: string; name: string }>) {
     for (const identity of identities) {
       const identifierHash = this.hashSensitiveIdentifier(identity.bvn);
-      const existing = await this.findIdentityVerificationsByHash(identifierHash);
+      const existing = await this.prisma.identityVerification.findMany({
+        where: { type: 'bvn', identifierHash },
+        select: { nameNormalized: true },
+      });
       const normalizedName = this.normalizeIdentityName(identity.name);
       const hasConflictingIdentity = existing.some((row) => row.nameNormalized !== normalizedName);
       if (hasConflictingIdentity) {
         throw new ConflictException('This BVN is already linked to a different customer profile.');
       }
     }
-  }
-
-  private findIdentityVerificationsByHash(identifierHash: string): Promise<Array<{ nameNormalized: string }>> {
-    return this.prisma.$queryRaw<Array<{ nameNormalized: string }>>`
-      SELECT "nameNormalized"
-      FROM "IdentityVerification"
-      WHERE "type" = 'bvn' AND "identifierHash" = ${identifierHash}
-    `;
-  }
-
-  private createIdentityVerification(
-    tx: { $executeRaw: typeof this.prisma.$executeRaw },
-    clientId: string,
-    identity: {
-      type: string;
-      identifierHash: string;
-      nameNormalized: string;
-      provider: string;
-      providerReference?: string;
-      verifiedAt: Date;
-    },
-  ) {
-    return tx.$executeRaw`
-      INSERT INTO "IdentityVerification" (
-        "id", "clientId", "type", "identifierHash", "nameNormalized",
-        "provider", "providerReference", "verifiedAt"
-      )
-      VALUES (
-        ${randomUUID()}, ${clientId}, ${identity.type}, ${identity.identifierHash}, ${identity.nameNormalized},
-        ${identity.provider}, ${identity.providerReference ?? null}, ${identity.verifiedAt}
-      )
-    `;
   }
 
   private hashSensitiveIdentifier(value: string): string {
