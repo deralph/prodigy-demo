@@ -82,7 +82,7 @@ export const authApi = {
   logout: () => request('/auth/logout', { method: 'POST' }),
 };
 
-/* ── NIBSS VERIFICATION ──────────────────────────────────── */
+/* ── IDENTITY VERIFICATION (BVN uses QoreID on the backend) ── */
 export const nibssApi = {
   verifyNin: (nin, expectedName) =>
     request('/nibss/verify/nin', { method: 'POST', body: JSON.stringify({ nin, expectedName }) }),

@@ -6,11 +6,13 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { NibssModule } from '../nibss/nibss.module';
 
 @Module({
   imports: [
     PassportModule,
     NotificationsModule,
+    NibssModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: process.env.JWT_EXPIRES_IN ?? '15m' },

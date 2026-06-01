@@ -159,6 +159,8 @@ export function createMockPrisma() {
     financeQueueItem: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
     dividendEntry: { findMany: jest.fn() },
     $transaction: jest.fn(),
+    $queryRaw: jest.fn().mockResolvedValue([]),
+    $executeRaw: jest.fn().mockResolvedValue(1),
     $connect:    jest.fn(),
     $disconnect: jest.fn(),
   };

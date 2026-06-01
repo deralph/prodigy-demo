@@ -64,7 +64,7 @@ describe('NibssService', () => {
       expect(result.verified).toBe(true);
       expect(result.type).toBe('bvn');
       expect(result.name).toBe('Jane Doe');
-      expect(result.number).toBe('22345678901');
+      expect(result.number).toBe('223*****01');
     });
 
     it('returns verified=false for BVN shorter than 11 digits', async () => {
@@ -76,7 +76,7 @@ describe('NibssService', () => {
     it('strips non-digit characters from BVN before validation', async () => {
       const result = await service.verifyBvn('2234-5678-901', 'Jane Doe');
       expect(result.verified).toBe(true);
-      expect(result.number).toBe('22345678901');
+      expect(result.number).toBe('223*****01');
     });
 
     it('returns verified=false when name is empty', async () => {
