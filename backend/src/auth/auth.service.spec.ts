@@ -3,6 +3,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
+import { NibssService } from '../nibss/nibss.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { createMockPrisma, IDS, MOCK } from '../../test/helpers/mock-prisma';
 import { TEST_JWT_SECRET, setTestJwtEnv } from '../../test/helpers/jwt.helper';
@@ -14,7 +16,11 @@ describe('AuthService', () => {
   let service: AuthService;
   let prisma: ReturnType<typeof createMockPrisma>;
 
-  beforeAll(() => setTestJwtEnv());
+  beforeAll(() => {
+    setTestJwtEnv();
+    process.env.BVN_HASH_PEPPER = 'test-bvn-pepper';
+    process.env.NODE_ENV = 'test';
+  });
 
   beforeEach(async () => {
     prisma = createMockPrisma();
@@ -24,6 +30,8 @@ describe('AuthService', () => {
       providers: [
         AuthService,
         { provide: PrismaService, useValue: prisma },
+        { provide: NotificationsService, useValue: { sendEmail: jest.fn().mockResolvedValue(undefined), sendOtpEmail: jest.fn().mockResolvedValue(undefined) } },
+        NibssService,
       ],
     }).compile();
 
@@ -85,6 +93,7 @@ describe('AuthService', () => {
           client: { create: jest.fn().mockResolvedValue({ ...MOCK.corporateClient, clientRef: 'CLI-001' }) },
           authUser: { create: jest.fn().mockResolvedValue(MOCK.authUser) },
           kycRecord: { create: jest.fn().mockResolvedValue({}) },
+          identityVerification: { create: jest.fn().mockResolvedValue({}) },
         };
         return fn(txMock);
       });
@@ -102,8 +111,8 @@ describe('AuthService', () => {
 
   // ── registerIndividual ────────────────────────────────────────────
   describe('registerIndividual()', () => {
-    const dtoSingle = { accountType: 'single' as const, primaryName: 'John Doe', email: 'john@example.com', password: 'Test1234!' };
-    const dtoJoint  = { accountType: 'joint'  as const, primaryName: 'John Doe', secondaryName: 'Jane Doe', email: 'joint@example.com', password: 'Test1234!' };
+    const dtoSingle = { accountType: 'single' as const, primaryName: 'John Doe', email: 'john@example.com', password: 'Test1234!', bvn: '22345678901' };
+    const dtoJoint  = { accountType: 'joint'  as const, primaryName: 'John Doe', secondaryName: 'Jane Doe', email: 'joint@example.com', password: 'Test1234!', bvn: '22345678901', holderIdentities: [{ name: 'John Doe', bvn: '22345678901', email: 'joint@example.com' }, { name: 'Jane Doe', bvn: '22345678902' }] };
 
     it('creates individual account and returns clientRef', async () => {
       prisma.authUser.findUnique.mockResolvedValueOnce(null);
@@ -113,6 +122,7 @@ describe('AuthService', () => {
           client: { create: jest.fn().mockResolvedValue({ ...MOCK.client, clientRef: 'CLI-002' }) },
           authUser: { create: jest.fn().mockResolvedValue(MOCK.authUser) },
           kycRecord: { create: jest.fn().mockResolvedValue({}) },
+          identityVerification: { create: jest.fn().mockResolvedValue({}) },
         };
         return fn(txMock);
       });
@@ -130,6 +140,7 @@ describe('AuthService', () => {
           client: { create: jest.fn().mockResolvedValue({ ...MOCK.client, clientRef: 'CLI-003', type: 'JOINT' }) },
           authUser: { create: jest.fn().mockResolvedValue(MOCK.authUser) },
           kycRecord: { create: jest.fn().mockResolvedValue({}) },
+          identityVerification: { create: jest.fn().mockResolvedValue({}) },
         };
         return fn(txMock);
       });

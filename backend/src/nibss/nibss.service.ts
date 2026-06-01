@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import axios from 'axios';
 
 export interface VerificationResult {
   verified: boolean;
@@ -7,20 +8,27 @@ export interface VerificationResult {
   number: string;
   type: 'nin' | 'bvn' | 'cac';
   verifiedAt: Date;
+  provider?: 'demo' | 'qoreid';
+  providerReference?: string;
+}
+
+interface ParsedName {
+  firstname: string;
+  lastname: string;
 }
 
 @Injectable()
 export class NibssService {
   private readonly logger = new Logger(NibssService.name);
+  private qoreIdToken?: { value: string; expiresAt: number };
 
   /**
-   * Verify NIN (National Identity Number)
-   * In production, this calls the NIBSS API. For now, validates format.
+   * Verify NIN (National Identity Number). NIN document upload still remains part of KYC;
+   * onboarding authentication now uses BVN.
    */
   async verifyNin(nin: string, expectedName: string): Promise<VerificationResult> {
     const clean = nin.replace(/\D/g, '');
-    
-    // Validate format
+
     if (clean.length !== 11) {
       return {
         verified: false,
@@ -41,64 +49,111 @@ export class NibssService {
       };
     }
 
-    // TODO: Integrate with real NIBSS API when credentials are available
-    // For now, return success with format validation passed
-    this.logger.log(`NIN verification requested: ${clean.substring(0, 4)}****${clean.substring(clean.length - 2)}`);
-    
+    this.logger.log(`NIN verification requested: ${this.maskIdentifier(clean)}`);
+
     return {
       verified: true,
       name: expectedName.trim(),
-      message: 'NIN verified successfully.',
+      message: 'NIN format accepted. BVN is required for account authentication.',
       number: clean,
       type: 'nin',
       verifiedAt: new Date(),
+      provider: 'demo',
     };
   }
 
   /**
-   * Verify BVN (Bank Verification Number)
+   * Verify BVN using QoreID boolean match. This method never logs or persists raw BVN;
+   * callers that need persistence should store only a keyed digest.
    */
-  async verifyBvn(bvn: string, expectedName: string): Promise<VerificationResult> {
+  async verifyBvn(bvn: string, expectedName: string, extras: { email?: string; phone?: string } = {}): Promise<VerificationResult> {
     const clean = bvn.replace(/\D/g, '');
-    
+    const verifiedAt = new Date();
+
     if (clean.length !== 11) {
       return {
         verified: false,
         message: 'BVN must be exactly 11 digits.',
-        number: clean,
+        number: this.maskIdentifier(clean),
         type: 'bvn',
-        verifiedAt: new Date(),
+        verifiedAt,
       };
     }
 
-    if (!expectedName || expectedName.trim().length < 2) {
+    const parsedName = this.parseName(expectedName);
+    if (!parsedName) {
       return {
         verified: false,
-        message: 'Full name is required for BVN verification.',
-        number: clean,
+        message: 'Full first and last name is required for BVN verification.',
+        number: this.maskIdentifier(clean),
         type: 'bvn',
-        verifiedAt: new Date(),
+        verifiedAt,
       };
     }
 
-    this.logger.log(`BVN verification requested: ${clean.substring(0, 4)}****${clean.substring(clean.length - 2)}`);
-    
-    return {
-      verified: true,
-      name: expectedName.trim(),
-      message: 'BVN verified successfully.',
-      number: clean,
-      type: 'bvn',
-      verifiedAt: new Date(),
-    };
+    if (this.shouldUseDemoVerification()) {
+      this.logger.warn(`QoreID credentials unavailable; using explicit demo BVN verification for ${this.maskIdentifier(clean)}.`);
+      return {
+        verified: true,
+        name: expectedName.trim(),
+        message: 'BVN verified successfully in demo mode.',
+        number: this.maskIdentifier(clean),
+        type: 'bvn',
+        verifiedAt,
+        provider: 'demo',
+      };
+    }
+
+    const token = await this.getQoreIdToken();
+    const baseUrl = this.getQoreIdBaseUrl();
+
+    try {
+      const response = await axios.post(
+        `${baseUrl}/v1/ng/identities/bvn-match/${clean}`,
+        {
+          firstname: parsedName.firstname,
+          fistname: parsedName.firstname,
+          lastname: parsedName.lastname,
+          ...(extras.phone ? { phone: extras.phone } : {}),
+          ...(extras.email ? { email: extras.email } : {}),
+        },
+        {
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          timeout: this.getQoreIdTimeoutMs(),
+        },
+      );
+
+      const fieldMatches = this.extractBvnFieldMatches(response.data);
+      const firstNameMatches = fieldMatches.firstname === true || fieldMatches.fistname === true;
+      const lastNameMatches = fieldMatches.lastname === true;
+      const verified = firstNameMatches && lastNameMatches;
+      const providerReference = this.extractProviderReference(response.data);
+
+      this.logger.log(`QoreID BVN boolean match completed for ${this.maskIdentifier(clean)}: ${verified ? 'matched' : 'not matched'}`);
+
+      return {
+        verified,
+        name: expectedName.trim(),
+        message: verified ? 'BVN verified successfully.' : 'BVN details did not match the supplied name.',
+        number: this.maskIdentifier(clean),
+        type: 'bvn',
+        verifiedAt,
+        provider: 'qoreid',
+        providerReference,
+      };
+    } catch (error) {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      this.logger.error(`QoreID BVN verification failed for ${this.maskIdentifier(clean)}${status ? ` with HTTP ${status}` : ''}.`);
+      throw new ServiceUnavailableException('BVN verification is temporarily unavailable. Please try again later.');
+    }
   }
 
   /**
-   * Verify CAC (Corporate Affairs Commission) registration number
+   * Verify CAC (Corporate Affairs Commission) registration number.
    */
   async verifyCac(cacNumber: string, companyName: string): Promise<VerificationResult> {
     const clean = cacNumber.trim();
-    
+
     if (clean.length < 6) {
       return {
         verified: false,
@@ -120,7 +175,7 @@ export class NibssService {
     }
 
     this.logger.log(`CAC verification requested: ${clean.substring(0, 3)}***${clean.substring(clean.length - 3)}`);
-    
+
     return {
       verified: true,
       name: companyName.trim(),
@@ -128,6 +183,69 @@ export class NibssService {
       number: clean,
       type: 'cac',
       verifiedAt: new Date(),
+      provider: 'demo',
     };
+  }
+
+  private async getQoreIdToken(): Promise<string> {
+    const now = Date.now();
+    if (this.qoreIdToken && this.qoreIdToken.expiresAt > now + 30_000) return this.qoreIdToken.value;
+
+    const clientId = process.env.QOREID_CLIENT_ID;
+    const secret = process.env.QOREID_SECRET;
+    if (!clientId || !secret) {
+      throw new BadRequestException('QoreID credentials are not configured.');
+    }
+
+    const response = await axios.post(
+      `${this.getQoreIdBaseUrl()}/token`,
+      { clientId, secret },
+      { headers: { 'Content-Type': 'application/json' }, timeout: this.getQoreIdTimeoutMs() },
+    );
+
+    const value = response.data?.access_token ?? response.data?.accessToken ?? response.data?.token;
+    if (!value || typeof value !== 'string') {
+      throw new ServiceUnavailableException('QoreID did not return an access token.');
+    }
+
+    const expiresInSeconds = Number(response.data?.expires_in ?? response.data?.expiresIn ?? 300);
+    this.qoreIdToken = { value, expiresAt: now + Math.max(60, expiresInSeconds - 30) * 1000 };
+    return value;
+  }
+
+  private shouldUseDemoVerification(): boolean {
+    return process.env.NODE_ENV === 'test' || process.env.QOREID_ALLOW_DEMO_VERIFICATION === 'true';
+  }
+
+  private getQoreIdBaseUrl(): string {
+    return (process.env.QOREID_BASE_URL ?? 'https://api.qoreid.com').replace(/\/$/, '');
+  }
+
+  private getQoreIdTimeoutMs(): number {
+    const parsed = Number(process.env.QOREID_TIMEOUT_MS ?? 10_000);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 10_000;
+  }
+
+  private parseName(name: string): ParsedName | null {
+    const parts = name.trim().replace(/\s+/g, ' ').split(' ').filter(Boolean);
+    if (parts.length < 2 || parts[0].length < 2 || parts[parts.length - 1].length < 2) return null;
+    return { firstname: parts[0], lastname: parts[parts.length - 1] };
+  }
+
+  private extractBvnFieldMatches(data: any): Record<string, boolean> {
+    return data?.bvn_match?.fieldMatches
+      ?? data?.summary?.bvn_match_check?.fieldMatches
+      ?? data?.summary?.bvn_match?.fieldMatches
+      ?? {};
+  }
+
+  private extractProviderReference(data: any): string | undefined {
+    const value = data?.id ?? data?.requestId ?? data?.reference ?? data?.applicant?.id;
+    return value === undefined || value === null ? undefined : String(value);
+  }
+
+  private maskIdentifier(value: string): string {
+    if (value.length <= 6) return '*'.repeat(value.length);
+    return `${value.slice(0, 3)}*****${value.slice(-2)}`;
   }
 }

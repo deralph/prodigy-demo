@@ -1,6 +1,6 @@
 import { Controller, Post, Body } from '@nestjs/common';
 import { ApiOperation, ApiTags, ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, IsNotEmpty, MinLength } from 'class-validator';
 import { NibssService, VerificationResult } from './nibss.service';
 
 class VerifyNinDto {
@@ -21,6 +21,14 @@ class VerifyBvnDto {
   @ApiProperty({ example: 'Jane Doe' })
   @IsString() @MinLength(2)
   expectedName: string;
+
+  @ApiProperty({ example: 'jane@example.com', required: false })
+  @IsOptional() @IsEmail()
+  email?: string;
+
+  @ApiProperty({ example: '08012345678', required: false })
+  @IsOptional() @IsString()
+  phone?: string;
 }
 
 class VerifyCacDto {
@@ -47,7 +55,7 @@ export class NibssController {
   @Post('verify/bvn')
   @ApiOperation({ summary: 'Verify BVN (Bank Verification Number)' })
   verifyBvn(@Body() dto: VerifyBvnDto): Promise<VerificationResult> {
-    return this.nibssService.verifyBvn(dto.bvn, dto.expectedName);
+    return this.nibssService.verifyBvn(dto.bvn, dto.expectedName, { email: dto.email, phone: dto.phone });
   }
 
   @Post('verify/cac')

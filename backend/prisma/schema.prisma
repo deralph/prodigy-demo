@@ -39,6 +39,7 @@ model Client {
   beneficiaries      Beneficiary[]
   goals              Goal[]
   investments        Investment[]
+  identityVerifications IdentityVerification[]
   kycDocuments       KycDocument[]
   kycRecord          KycRecord?
   legacyNote         LegacyNote?
@@ -141,6 +142,22 @@ model KycDocument {
   @@unique([clientId, docKey])
   @@index([clientId])
   @@index([status])
+}
+
+model IdentityVerification {
+  id                String   @id @default(cuid())
+  clientId          String
+  type              String
+  identifierHash    String
+  nameNormalized    String
+  provider          String
+  providerReference String?
+  verifiedAt        DateTime
+  createdAt         DateTime @default(now())
+  client            Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([type, identifierHash])
 }
 
 model Product {
