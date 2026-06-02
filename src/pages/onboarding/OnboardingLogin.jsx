@@ -138,7 +138,7 @@ function SignInForm({ isCorp, onApply, onCreate }) {
 
 /* ── Corporate Apply form ─────────────────────────── */
 function CorporateApplyForm({ onBack, onNext }) {
-  const [form, setForm] = useState({ entityName: '', email: '', password: '', phone: '', rcNumber: '', cacNumber: '' });
+  const [form, setForm] = useState({ entityName: '', email: '', password: '', phone: '', rcNumber: '' });
 
   const upd = patch => setForm(f => ({ ...f, ...patch }));
 
@@ -153,10 +153,9 @@ function CorporateApplyForm({ onBack, onNext }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <AuthInput label="Registered Entity Name" icon={Building2} placeholder="COMPANY LTD" value={form.entityName} onChange={e => upd({ entityName: e.target.value })} />
 
-        <AuthInput label="CAC Registration Number" icon={FileText} placeholder="e.g. RC123456" value={form.cacNumber} onChange={e => upd({ cacNumber: e.target.value })} />
         <AuthInput label="Primary Contact Email" icon={Mail} type="email" placeholder="admin@company.com" value={form.email} onChange={e => upd({ email: e.target.value })} />
         <AuthInput label="Phone Number" icon={Phone} type="tel" placeholder="+234 800 000 0000" value={form.phone} onChange={e => upd({ phone: e.target.value })} />
-        <AuthInput label="RC Number" icon={FileText} placeholder="RC123456" value={form.rcNumber} onChange={e => upd({ rcNumber: e.target.value })} />
+        <AuthInput label="RC / CAC Registration Number" icon={FileText} placeholder="e.g. RC123456" value={form.rcNumber} onChange={e => upd({ rcNumber: e.target.value })} />
         <AuthInput label="Secure Password" icon={Lock} type="password" placeholder="min 8 characters" value={form.password} onChange={e => upd({ password: e.target.value })} />
 
         <AuthSubmitButton label="CONTINUE TO KYC" disabled={!canContinue} onClick={() => onNext(form)} />
