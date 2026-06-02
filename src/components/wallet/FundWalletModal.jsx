@@ -5,7 +5,7 @@ import useAppStore from '../../store/useAppStore';
 import ModalOverlay from '../ui/ModalOverlay';
 
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const genRef = () => 'PSK-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
+const genRef = () => 'PSK-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
 const genId  = () => 'WAL-FT-' + Math.floor(1000 + Math.random() * 9000);
 const today  = () => new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
@@ -13,7 +13,7 @@ const PRESETS      = [100000, 250000, 500000, 1000000, 2500000, 5000000];
 const PAYSTACK_KEY = 'pk_test_62ba3fa4e30ace38c25feca74eae65646f1cf095';
 
 /** Isolated so usePaystackPayment always gets a stable config */
-function PaystackButton({ amountNaira, email, reference, onSuccess, onClose }) {
+function PaystackButton({ amountNaira, email, reference, paying, onPaying, onSuccess, onClose }) {
   const initPay = usePaystackPayment({
     reference, email: email || 'user@prodigyfinance.ng',
     amount: amountNaira * 100, publicKey: PAYSTACK_KEY, currency: 'NGN',
@@ -25,14 +25,21 @@ function PaystackButton({ amountNaira, email, reference, onSuccess, onClose }) {
   useEffect(() => { successRef.current = onSuccess; }, [onSuccess]);
   useEffect(() => { closeRef.current   = onClose;   }, [onClose]);
 
+  const handleClick = () => {
+    if (paying) return;
+    onPaying();
+    initPay(r => successRef.current(r), () => closeRef.current());
+  };
+
   return (
     <button
-      onClick={() => initPay(r => successRef.current(r), () => closeRef.current())}
-      style={{ width: '100%', background: 'var(--gold)', color: 'var(--navy)', fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 14, letterSpacing: '0.06em', border: 'none', borderRadius: 10, padding: '15px', cursor: 'pointer', transition: 'filter 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-      onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.08)'}
+      onClick={handleClick}
+      disabled={paying}
+      style={{ width: '100%', background: paying ? 'var(--gray-300)' : 'var(--gold)', color: 'var(--navy)', fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 14, letterSpacing: '0.06em', border: 'none', borderRadius: 10, padding: '15px', cursor: paying ? 'not-allowed' : 'pointer', transition: 'filter 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+      onMouseEnter={e => { if (!paying) e.currentTarget.style.filter = 'brightness(1.08)'; }}
       onMouseLeave={e => e.currentTarget.style.filter = 'none'}
     >
-      <Lock size={15} /> PAY {fmt(amountNaira)} VIA PAYSTACK
+      <Lock size={15} /> {paying ? 'OPENING PAYSTACK…' : `PAY ${fmt(amountNaira)} VIA PAYSTACK`}
     </button>
   );
 }
@@ -48,7 +55,8 @@ function PaystackButton({ amountNaira, email, reference, onSuccess, onClose }) {
 export default function FundWalletModal({ onClose, onDone }) {
   const { user, addTransaction } = useAppStore();
   const [rawAmount, setRawAmount] = useState('');
-  const [reference]               = useState(genRef);
+  const [reference, setReference] = useState(genRef);
+  const [paying, setPaying]       = useState(false);
 
   const numAmount = parseInt(rawAmount.replace(/[^0-9]/g, ''), 10) || 0;
 
@@ -61,14 +69,18 @@ export default function FundWalletModal({ onClose, onDone }) {
     const amt = parseInt(rawAmount.replace(/[^0-9]/g, ''), 10) || 0;
     const ref = response?.reference || reference;
     const id  = genId();
+    setPaying(false);
     addTransaction({ id, date: today(), amount: amt, description: 'Wallet Funding via Paystack', status: 'Successful', ref });
     onClose();
     onDone({ type: 'success', amount: amt, ref, id });
   }, [rawAmount, reference, addTransaction, onClose, onDone]);
 
   const handleCancelled = useCallback(() => {
+    const cancelledRef = reference;
+    setReference(genRef());
+    setPaying(false);
     onClose();
-    onDone({ type: 'cancel', ref: reference });
+    onDone({ type: 'cancel', ref: cancelledRef });
   }, [reference, onClose, onDone]);
 
   return (
@@ -129,7 +141,7 @@ export default function FundWalletModal({ onClose, onDone }) {
       </div>
 
       {numAmount >= 100 ? (
-        <PaystackButton key={numAmount} amountNaira={numAmount} email={user?.email} reference={reference} onSuccess={handleSuccess} onClose={handleCancelled} />
+        <PaystackButton key={reference} amountNaira={numAmount} email={user?.email} reference={reference} paying={paying} onPaying={() => setPaying(true)} onSuccess={handleSuccess} onClose={handleCancelled} />
       ) : (
         <button disabled style={{ width: '100%', background: 'var(--gray-100)', color: 'var(--gray-400)', fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 13, letterSpacing: '0.06em', border: 'none', borderRadius: 10, padding: '15px', cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <Lock size={15} /> ENTER AMOUNT TO CONTINUE

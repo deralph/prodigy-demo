@@ -21,13 +21,11 @@ async function verifyNibss(type, number, expectedName) {
   const clean = number.replace(/\D/g, '');
   if (type === 'nin' && clean.length !== 11) return { ok: false, message: 'NIN must be exactly 11 digits.' };
   if (type === 'bvn' && clean.length !== 11) return { ok: false, message: 'BVN must be exactly 11 digits.' };
-  if (type === 'cac' && clean.length < 6)    return { ok: false, message: 'CAC registration number is too short (min 6 chars).' };
   if (!expectedName || expectedName.trim().length < 3) return { ok: false, message: 'Full name is required for verification.' };
   try {
     let result;
     if (type === 'nin')      result = await nibssApi.verifyNin(clean, expectedName.trim());
     else if (type === 'bvn') result = await nibssApi.verifyBvn(clean, expectedName.trim());
-    else if (type === 'cac') result = await nibssApi.verifyCac(clean, expectedName.trim());
     if (result?.verified) return { ok: true, message: `${type.toUpperCase()} verified via ${type === 'bvn' ? 'QoreID' : 'NIBSS'}.` };
     return { ok: false, message: result?.message || `${type.toUpperCase()} could not be verified.` };
   } catch {
@@ -140,21 +138,11 @@ function SignInForm({ isCorp, onApply, onCreate }) {
 
 /* ── Corporate Apply form ─────────────────────────── */
 function CorporateApplyForm({ onBack, onNext }) {
-  const [form, setForm]     = useState({ entityName: '', email: '', password: '', phone: '', rcNumber: '', cacNumber: '', cacDigits: '' });
-  const [verifying, setVerifying] = useState(false);
-  const [verified,  setVerified]  = useState(false);
-  const [verifyErr, setVerifyErr] = useState('');
+  const [form, setForm] = useState({ entityName: '', email: '', password: '', phone: '', rcNumber: '', cacNumber: '' });
 
   const upd = patch => setForm(f => ({ ...f, ...patch }));
 
-  const handleVerify = async () => {
-    setVerifying(true); setVerifyErr(''); setVerified(false);
-    const r = await verifyNibss('cac', form.cacDigits || form.cacNumber, form.entityName);
-    setVerifying(false);
-    if (r.ok) setVerified(true); else setVerifyErr(r.message);
-  };
-
-  const canContinue = verified && form.email && form.password;
+  const canContinue = !!form.email && !!form.password;
 
   return (
     <div className="animate-in">
@@ -165,37 +153,11 @@ function CorporateApplyForm({ onBack, onNext }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <AuthInput label="Registered Entity Name" icon={Building2} placeholder="COMPANY LTD" value={form.entityName} onChange={e => upd({ entityName: e.target.value })} />
 
-        <div>
-          <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--gray-400)', marginBottom: 7, display: 'flex', justifyContent: 'space-between' }}>
-            CAC Registration Number
-            {verified && <span style={{ color: 'var(--green)', fontWeight: 700 }}>✓ VERIFIED</span>}
-          </div>
-          <AuthInput placeholder="e.g. RC123456" value={form.cacNumber} onChange={e => { upd({ cacNumber: e.target.value }); setVerified(false); }} icon={FileText} />
-        </div>
-
-        <NibssVerifyField
-          label="CAC RC Digits (numeric only)"
-          value={form.cacDigits}
-          onChange={val => { upd({ cacDigits: val }); setVerified(false); setVerifyErr(''); }}
-          onVerify={handleVerify}
-          verified={verified}
-          verifying={verifying}
-          error={verifyErr}
-          maxLength={10}
-          placeholder="e.g. 123456"
-          canVerify={!!form.entityName && (!!form.cacDigits || !!form.cacNumber)}
-        />
-
+        <AuthInput label="CAC Registration Number" icon={FileText} placeholder="e.g. RC123456" value={form.cacNumber} onChange={e => upd({ cacNumber: e.target.value })} />
         <AuthInput label="Primary Contact Email" icon={Mail} type="email" placeholder="admin@company.com" value={form.email} onChange={e => upd({ email: e.target.value })} />
         <AuthInput label="Phone Number" icon={Phone} type="tel" placeholder="+234 800 000 0000" value={form.phone} onChange={e => upd({ phone: e.target.value })} />
         <AuthInput label="RC Number" icon={FileText} placeholder="RC123456" value={form.rcNumber} onChange={e => upd({ rcNumber: e.target.value })} />
         <AuthInput label="Secure Password" icon={Lock} type="password" placeholder="min 8 characters" value={form.password} onChange={e => upd({ password: e.target.value })} />
-
-        {!verified && (
-          <div style={{ fontSize: 11, color: 'var(--gold)', background: 'rgba(232,184,75,0.1)', padding: '10px 12px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Shield size={13} /> CAC verification required before proceeding
-          </div>
-        )}
 
         <AuthSubmitButton label="CONTINUE TO KYC" disabled={!canContinue} onClick={() => onNext(form)} />
       </div>

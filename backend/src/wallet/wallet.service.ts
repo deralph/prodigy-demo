@@ -32,24 +32,25 @@ export class WalletService {
 
   // Initiate a Paystack payment — creates a PENDING transaction and returns the Paystack auth URL
   async initiatePaystackPayment(clientDbId: string, email: string, amountKobo: bigint) {
-    const reference = `WAL-PS-${clientDbId.slice(-6)}-${Date.now()}`;
+    // Random suffix (6 chars) prevents millisecond collisions and duplicate-reference errors
+    const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
+    const reference = `WAL-PS-${clientDbId.slice(-6)}-${Date.now()}-${rand}`;
     const secretKey = this.config.get<string>('PAYSTACK_SECRET_KEY');
-
-    // Store as PENDING for visibility before webhook fires
-    await this.prisma.walletTransaction.create({
-      data: {
-        txnRef: reference,
-        clientId: clientDbId,
-        type: 'WALLET_FUNDING',
-        status: 'PENDING',
-        amountKobo,
-        description: 'Wallet Funding via Paystack',
-        paystackRef: reference,
-      },
-    });
 
     if (!secretKey) {
       this.logger.warn('PAYSTACK_SECRET_KEY not set — returning demo reference');
+      // Still persist the PENDING record so the transaction is visible
+      await this.prisma.walletTransaction.create({
+        data: {
+          txnRef: reference,
+          clientId: clientDbId,
+          type: 'WALLET_FUNDING',
+          status: 'PENDING',
+          amountKobo,
+          description: 'Wallet Funding via Paystack',
+          paystackRef: reference,
+        },
+      });
       return { reference, access_code: null, authorization_url: null };
     }
 
@@ -66,6 +67,21 @@ export class WalletService {
     });
     const result = await resp.json() as any;
     if (!result.status) throw new BadRequestException(result.message || 'Paystack initiation failed');
+
+    // Only persist the PENDING record after Paystack has accepted the reference,
+    // preventing orphaned records from failed/abandoned initiations.
+    await this.prisma.walletTransaction.create({
+      data: {
+        txnRef: reference,
+        clientId: clientDbId,
+        type: 'WALLET_FUNDING',
+        status: 'PENDING',
+        amountKobo,
+        description: 'Wallet Funding via Paystack',
+        paystackRef: reference,
+      },
+    });
+
     return { ...result.data, reference };
   }
 

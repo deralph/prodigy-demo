@@ -3,8 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import useAppStore from './store/useAppStore';
 import { getTokens, authApi, clearTokens } from './services/api';
 
-import OnboardingLogin from './pages/onboarding/OnboardingLogin';
-import MagicLogin      from './pages/onboarding/MagicLogin';
 import Landing  from './pages/Landing';
 
 import CorporateLayout from './components/corporate/CorporateLayout';
@@ -40,16 +38,13 @@ import RiskCompliance        from './pages/admin/RiskCompliance';
 import AuditTrail            from './pages/admin/AuditTrail';
 import AdminReports          from './pages/admin/AdminReports';
 import UserManagement        from './pages/admin/UserManagement';
-import BookInstrument        from './pages/admin/BookInstrument';
 import PreTermination        from './pages/admin/PreTermination';
 import ProductSetup          from './pages/admin/ProductSetup';
 import DividendDeclaration   from './pages/admin/DividendDeclaration';
 import InterestAccruals      from './pages/admin/InterestAccruals';
-import EODRun                from './pages/admin/EODRun';
 import FinanceQueue          from './pages/admin/FinanceQueue';
 import Analytics             from './pages/admin/Analytics';
 import ClientInvestments     from './pages/admin/ClientInvestments';
-import BookedInstruments     from './pages/admin/BookedInstruments';
 
 import Products    from './pages/shared/Products';
 import Ledger      from './pages/shared/Ledger';
@@ -58,7 +53,7 @@ import ProfilePage from './pages/shared/ProfilePage';
 /* ── Role-based protected route ─────────────────────────── */
 function ProtectedRoute({ children, allowedRoles }) {
   const { isAuthenticated, user } = useAppStore();
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!isAuthenticated) return <Navigate to="/" replace />;
   if (allowedRoles && !allowedRoles.includes(user?.role)) return <Navigate to="/" replace />;
   return children;
 }
@@ -122,8 +117,6 @@ export default function App() {
       <Routes>
         {/* Public */}
         <Route path="/"            element={<Landing />} />
-        <Route path="/login"       element={<OnboardingLogin />} />
-        <Route path="/magic-login" element={<MagicLogin />} />
 
         {/* Corporate */}
         <Route path="/corporate" element={<ProtectedRoute allowedRoles={['corporate']}><CorporateLayout /></ProtectedRoute>}>
@@ -177,15 +170,12 @@ export default function App() {
           <Route path="audit"              element={<AuditTrail />} />
           <Route path="reports"            element={<AdminReports />} />
           <Route path="users"              element={<UserManagement />} />
-          <Route path="book"               element={<BookInstrument />} />
           <Route path="pretermination"     element={<PreTermination />} />
           <Route path="products"           element={<ProductSetup />} />
           <Route path="dividends"          element={<DividendDeclaration />} />
           <Route path="accruals"           element={<InterestAccruals />} />
-          <Route path="eod"                element={<EODRun />} />
           <Route path="finance-queue"      element={<FinanceQueue />} />
           <Route path="analytics"          element={<Analytics />} />
-          <Route path="booked"             element={<BookedInstruments />} />
           <Route path="client-investments" element={<ClientInvestments />} />
         </Route>
 

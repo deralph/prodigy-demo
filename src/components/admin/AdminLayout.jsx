@@ -3,8 +3,8 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, CheckSquare, TrendingUp,
   CreditCard, FileText, ShieldAlert, Clock,
-  Settings, LogOut, X, Menu, BookOpen, DollarSign,
-  BarChart2, GitMerge, Gift, Layers, AlertTriangle,
+  LogOut, X, Menu, DollarSign,
+  BarChart2, Gift, Layers, AlertTriangle,
   RefreshCw, Building2, UserCog, BarChart
 } from 'lucide-react';
 import useAppStore, { ADMIN_PERMISSIONS, ROLE_LABELS, ROLE_COLORS } from '../../store/useAppStore';
@@ -20,8 +20,6 @@ const NAV_GROUPS = [
   {
     group: 'Operations',
     items: [
-      { to:'/admin/book',         icon:BookOpen,        label:'Book Instrument',    key:'book_instrument' },
-      { to:'/admin/booked',       icon:TrendingUp,      label:'Booked Instruments', key:'book_instrument' },
       { to:'/admin/approvals',    icon:CheckSquare,     label:'Approval Hub',       key:'approval_hub' },
       { to:'/admin/pretermination',icon:AlertTriangle,  label:'Pre-Termination',    key:'pretermination' },
       { to:'/admin/clients',      icon:Users,           label:'Client Management',  key:'clients' },
@@ -35,7 +33,6 @@ const NAV_GROUPS = [
       { to:'/admin/plans',        icon:TrendingUp,      label:'Investment Plans',   key:'plans' },
       { to:'/admin/dividends',    icon:Gift,            label:'Dividend Declaration',key:'dividends' },
       { to:'/admin/accruals',     icon:RefreshCw,       label:'Interest Accruals',  key:'accruals' },
-      { to:'/admin/eod',          icon:GitMerge,        label:'EOD Run',            key:'eod' },
     ]
   },
   {
