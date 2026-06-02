@@ -109,10 +109,10 @@ export class NibssService {
 
     try {
       const response = await axios.post(
-        `${baseUrl}/v1/ng/identities/bvn-match/${clean}`,
+        `${baseUrl}/v1/ng/identities/bvn-premium/${clean}`,
         {
           firstname: parsedName.firstname,
-          fistname: parsedName.firstname,
+          // fistname: parsedName.firstname,
           lastname: parsedName.lastname,
           ...(extras.phone ? { phone: extras.phone } : {}),
           ...(extras.email ? { email: extras.email } : {}),
@@ -142,10 +142,36 @@ export class NibssService {
         providerReference,
       };
     } catch (error) {
-      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
-      this.logger.error(`QoreID BVN verification failed for ${this.maskIdentifier(clean)}${status ? ` with HTTP ${status}` : ''}.`);
-      throw new ServiceUnavailableException('BVN verification is temporarily unavailable. Please try again later.');
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const message = error.response?.data?.message;
+
+    // BVN does not exist
+    if (status === 404) {
+      this.logger.log(
+        `QoreID BVN lookup completed for ${this.maskIdentifier(clean)}: BVN not found`,
+      );
+
+      return {
+        verified: false,
+        name: expectedName.trim(),
+        message: 'BVN not found. Please provide a valid BVN.',
+        number: this.maskIdentifier(clean),
+        type: 'bvn',
+        verifiedAt,
+        provider: 'qoreid',
+      };
     }
+
+    this.logger.error(
+      `QoreID BVN verification failed for ${this.maskIdentifier(clean)} with HTTP ${status}. Response: ${message}`,
+    );
+  }
+
+  throw new ServiceUnavailableException(
+    'BVN verification is temporarily unavailable. Please try again later.',
+  );
+}
   }
 
   /**
@@ -207,6 +233,7 @@ export class NibssService {
     if (!value || typeof value !== 'string') {
       throw new ServiceUnavailableException('QoreID did not return an access token.');
     }
+    // console.log( "token value = ", value)
 
     const expiresInSeconds = Number(response.data?.expires_in ?? response.data?.expiresIn ?? 300);
     this.qoreIdToken = { value, expiresAt: now + Math.max(60, expiresInSeconds - 30) * 1000 };
