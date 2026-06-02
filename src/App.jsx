@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import useAppStore from './store/useAppStore';
 import { getTokens, authApi, clearTokens } from './services/api';
 
+import OnboardingLogin from './pages/onboarding/OnboardingLogin';
+import MagicLogin      from './pages/onboarding/MagicLogin';
 import Landing  from './pages/Landing';
 
 import CorporateLayout from './components/corporate/CorporateLayout';
@@ -53,7 +55,7 @@ import ProfilePage from './pages/shared/ProfilePage';
 /* ── Role-based protected route ─────────────────────────── */
 function ProtectedRoute({ children, allowedRoles }) {
   const { isAuthenticated, user } = useAppStore();
-  if (!isAuthenticated) return <Navigate to="/" replace />;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (allowedRoles && !allowedRoles.includes(user?.role)) return <Navigate to="/" replace />;
   return children;
 }
@@ -117,6 +119,8 @@ export default function App() {
       <Routes>
         {/* Public */}
         <Route path="/"            element={<Landing />} />
+        <Route path="/login"       element={<OnboardingLogin />} />
+        <Route path="/magic-login" element={<MagicLogin />} />
 
         {/* Corporate */}
         <Route path="/corporate" element={<ProtectedRoute allowedRoles={['corporate']}><CorporateLayout /></ProtectedRoute>}>
