@@ -260,9 +260,7 @@ export class NibssService {
   }
 
   private extractBvnFieldMatches(data: any): Record<string, boolean> {
-    return data?.bvn_match?.fieldMatches
-      ?? data?.summary?.bvn_check?.fieldMatches
-      ?? data?.summary?.bvn_match?.fieldMatches
+    return data?.summary?.bvn_check?.fieldMatches
       ?? {};
   }
 
