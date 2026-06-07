@@ -114,15 +114,15 @@ export class NibssService {
           firstname: parsedName.firstname,
           // fistname: parsedName.firstname,
           lastname: parsedName.lastname,
-          ...(extras.phone ? { phone: extras.phone } : {}),
-          ...(extras.email ? { email: extras.email } : {}),
+          // ...(extras.phone ? { phone: extras.phone } : {}),
+          // ...(extras.email ? { email: extras.email } : {}),
         },
         {
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           timeout: this.getQoreIdTimeoutMs(),
         },
       );
-
+      // console.log(response.data)
       const fieldMatches = this.extractBvnFieldMatches(response.data);
       const firstNameMatches = fieldMatches.firstname === true || fieldMatches.fistname === true;
       const lastNameMatches = fieldMatches.lastname === true;
@@ -261,7 +261,7 @@ export class NibssService {
 
   private extractBvnFieldMatches(data: any): Record<string, boolean> {
     return data?.bvn_match?.fieldMatches
-      ?? data?.summary?.bvn_match_check?.fieldMatches
+      ?? data?.summary?.bvn_check?.fieldMatches
       ?? data?.summary?.bvn_match?.fieldMatches
       ?? {};
   }
