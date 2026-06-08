@@ -154,31 +154,33 @@ const useAppStore = create((set, get) => ({
   // Fetch live data from backend APIs
   fetchApiData: async () => {
     set({ isLoadingData: true });
+    const tasks = [];
     try {
       const api = await import('../services/api');
       const user = get().user;
       // Products (available to all)
-      api.productApi.findAll().then(data => {
+      tasks.push(api.productApi.findAll().then(data => {
         if (data && Array.isArray(data)) set({ plans: data.map(mapProduct) });
-      }).catch(() => {});
+      }).catch(() => {}));
       // User: Wallet & Investments (only for non-admin users)
       if (user?.role !== 'admin') {
-        api.walletApi.getWallet().then(data => {
-          if (data) set({
+        tasks.push(api.walletApi.getWallet().then(data => {
+          if (data) set(s => ({
             walletBalance:  Number(data.walletBalance  ?? 0) / 100,
             pendingBalance: Number(data.pendingBalance ?? 0) / 100,
-          });
-        }).catch(() => {});
-        api.walletApi.getTransactions().then(data => {
+            user: s.user ? { ...s.user, virtualAccountNo: data.virtualAccountNo ?? null, virtualAccountBank: data.virtualAccountBank ?? null } : s.user,
+          }));
+        }).catch(() => {}));
+        tasks.push(api.walletApi.getTransactions().then(data => {
           if (data && Array.isArray(data)) set({ transactions: data.map(mapWalletTxn) });
-        }).catch(() => {});
-        api.investmentApi.getMyInvestments().then(data => {
+        }).catch(() => {}));
+        tasks.push(api.investmentApi.getMyInvestments().then(data => {
           if (data && Array.isArray(data)) set({ clientInvestments: data });
-        }).catch(() => {});
+        }).catch(() => {}));
       }
       // Admin-only: try to load admin data (silently fails for regular users)
       if (user?.role === 'admin') {
-        api.adminClientApi.findAll().then(data => {
+        tasks.push(api.adminClientApi.findAll().then(data => {
           if (data && Array.isArray(data)) {
             // Transform Prisma Client fields to frontend format
             const transformed = data.map(c => ({
@@ -206,8 +208,8 @@ const useAppStore = create((set, get) => ({
             }));
             set({ clients: transformed });
           }
-        }).catch(() => {});
-        api.adminApprovalApi.findAll().then(data => {
+        }).catch(() => {}));
+        tasks.push(api.adminApprovalApi.findAll().then(data => {
           if (data && Array.isArray(data)) {
             const transformed = data.map(a => ({
               id: a.id,
@@ -231,8 +233,8 @@ const useAppStore = create((set, get) => ({
             }));
             set({ approvals: transformed });
           }
-        }).catch(() => {});
-        api.adminInvestmentApi.findAll().then(data => {
+        }).catch(() => {}));
+        tasks.push(api.adminInvestmentApi.findAll().then(data => {
           if (data && Array.isArray(data)) {
             const transformed = data.map(inv => ({
               id: inv.id,
@@ -259,13 +261,14 @@ const useAppStore = create((set, get) => ({
             }));
             set({ clientInvestments: transformed });
           }
-        }).catch(() => {});
-        api.adminTransactionApi.findAll().then(data => {
+        }).catch(() => {}));
+        tasks.push(api.adminTransactionApi.findAll().then(data => {
           if (data && Array.isArray(data)) {
             const transformed = data.map(t => ({
               id: t.id,
               txnRef: t.txnRef,
               client: t.client?.name,
+              clientEmail: t.client?.email,
               clientId: t.client?.clientRef,
               clientType: t.client?.type?.toLowerCase(),
               type: t.type?.toLowerCase(),
@@ -282,8 +285,8 @@ const useAppStore = create((set, get) => ({
             }));
             set({ allTransactions: transformed });
           }
-        }).catch(() => {});
-        api.adminFinanceQueueApi.findAll().then(data => {
+        }).catch(() => {}));
+        tasks.push(api.adminFinanceQueueApi.findAll().then(data => {
           if (data && Array.isArray(data)) {
             const transformed = data.map(fq => ({
               id: fq.id,
@@ -304,8 +307,8 @@ const useAppStore = create((set, get) => ({
             }));
             set({ financeQueue: transformed });
           }
-        }).catch(() => {});
-        api.adminPreTermApi.findAll().then(data => {
+        }).catch(() => {}));
+        tasks.push(api.adminPreTermApi.findAll().then(data => {
           if (data && Array.isArray(data)) {
             const transformed = data.map(pt => ({
               id: pt.id,
@@ -328,17 +331,18 @@ const useAppStore = create((set, get) => ({
             }));
             set({ preTermQueue: transformed });
           }
-        }).catch(() => {});
-        api.adminDividendApi.findAll().then(data => {
+        }).catch(() => {}));
+        tasks.push(api.adminDividendApi.findAll().then(data => {
           if (data && Array.isArray(data)) set({ dividends: data });
-        }).catch(() => {});
-        api.adminStaffLoanApi.getAllEntities().then(data => {
+        }).catch(() => {}));
+        tasks.push(api.adminStaffLoanApi.getAllEntities().then(data => {
           if (data && Array.isArray(data)) set({ corpLoanEntities: data });
-        }).catch(() => {});
-        api.adminUserApi.findAll().then(data => {
+        }).catch(() => {}));
+        tasks.push(api.adminUserApi.findAll().then(data => {
           if (data && Array.isArray(data)) set({ adminUsers: data.map(mapAdminUser) });
-        }).catch(() => {});
+        }).catch(() => {}));
       }
+      await Promise.allSettled(tasks);
     } catch { /* Backend offline */ }
     finally { set({ isLoadingData: false }); }
   },
@@ -356,10 +360,11 @@ const useAppStore = create((set, get) => ({
         api.walletApi.getWallet().catch(() => null),
         api.walletApi.getTransactions().catch(() => null),
       ]);
-      if (wallet) set({
+      if (wallet) set(s => ({
         walletBalance:  Number(wallet.walletBalance  ?? 0) / 100,
         pendingBalance: Number(wallet.pendingBalance ?? 0) / 100,
-      });
+        user: s.user ? { ...s.user, virtualAccountNo: wallet.virtualAccountNo ?? null, virtualAccountBank: wallet.virtualAccountBank ?? null } : s.user,
+      }));
       if (txns && Array.isArray(txns)) set({ transactions: txns.map(mapWalletTxn) });
     } catch {}
   },

@@ -12,6 +12,12 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class WalletController {
   constructor(private walletService: WalletService) {}
 
+  @Get('config')
+  @ApiOperation({ summary: 'Get the Paystack public key for the inline popup' })
+  getConfig() {
+    return this.walletService.getPaystackConfig();
+  }
+
   @Get('me')
   @ApiOperation({ summary: 'Get wallet balance and virtual account details' })
   getWallet(@Req() req: any) {
@@ -31,8 +37,8 @@ export class WalletController {
   }
 
   @Post('fund/initiate')
-  @ApiOperation({ summary: 'Initiate a Paystack wallet funding payment' })
-  async initiatePayment(@Req() req: any, @Body() body: { amountKobo: number }) {
+  @ApiOperation({ summary: 'Record a PENDING wallet funding transaction before Paystack inline popup' })
+  async initiatePayment(@Req() req: any, @Body() body: { amountKobo: number; reference?: string }) {
     if (!req.user.clientDbId) {
       throw new BadRequestException('Admin users do not have a wallet.');
     }
@@ -41,7 +47,21 @@ export class WalletController {
       req.user.clientDbId,
       req.user.email,
       amountKobo,
+      body.reference,
     );
+  }
+
+  @Post('fund/verify')
+  @ApiOperation({ summary: 'Verify and settle a Paystack payment after inline popup success' })
+  async verifyPayment(@Req() req: any, @Body() body: { reference: string; amountKobo?: number }) {
+    if (!req.user.clientDbId) {
+      throw new BadRequestException('Admin users do not have a wallet.');
+    }
+    if (!body.reference) {
+      throw new BadRequestException('reference is required');
+    }
+    const amountKobo = body.amountKobo ? BigInt(Math.round(body.amountKobo)) : undefined;
+    return this.walletService.verifyPayment(req.user.clientDbId, body.reference, req.user.email, amountKobo);
   }
 
   @Post('withdraw')

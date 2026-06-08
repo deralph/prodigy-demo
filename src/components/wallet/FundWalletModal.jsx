@@ -2,21 +2,21 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Lock, X } from 'lucide-react';
 import { usePaystackPayment } from 'react-paystack';
 import useAppStore from '../../store/useAppStore';
+import { walletApi } from '../../services/api';
 import ModalOverlay from '../ui/ModalOverlay';
 
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const genRef = () => 'PSK-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
-const genId  = () => 'WAL-FT-' + Math.floor(1000 + Math.random() * 9000);
 const today  = () => new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
 const PRESETS      = [100000, 250000, 500000, 1000000, 2500000, 5000000];
-const PAYSTACK_KEY = 'pk_test_62ba3fa4e30ace38c25feca74eae65646f1cf095';
+const PAYSTACK_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_test_62ba3fa4e30ace38c25feca74eae65646f1cf095';
 
 /** Isolated so usePaystackPayment always gets a stable config */
-function PaystackButton({ amountNaira, email, reference, paying, onPaying, onSuccess, onClose }) {
+function PaystackButton({ amountNaira, email, reference, publicKey, paying, onPaying, onSuccess, onClose }) {
   const initPay = usePaystackPayment({
     reference, email: email || 'user@prodigyfinance.ng',
-    amount: amountNaira * 100, publicKey: PAYSTACK_KEY, currency: 'NGN',
+    amount: amountNaira * 100, publicKey, currency: 'NGN',
     metadata: { custom_fields: [{ display_name: 'Platform', variable_name: 'platform', value: 'Prodigy Finance' }] },
   });
 
@@ -28,7 +28,8 @@ function PaystackButton({ amountNaira, email, reference, paying, onPaying, onSuc
   const handleClick = () => {
     if (paying) return;
     onPaying();
-    initPay(r => successRef.current(r), () => closeRef.current());
+    // react-paystack v6 expects a single object with onSuccess/onClose callbacks
+    initPay({ onSuccess: r => successRef.current(r), onClose: () => closeRef.current() });
   };
 
   return (
@@ -39,7 +40,7 @@ function PaystackButton({ amountNaira, email, reference, paying, onPaying, onSuc
       onMouseEnter={e => { if (!paying) e.currentTarget.style.filter = 'brightness(1.08)'; }}
       onMouseLeave={e => e.currentTarget.style.filter = 'none'}
     >
-      <Lock size={15} /> {paying ? 'OPENING PAYSTACK…' : `PAY ${fmt(amountNaira)} VIA PAYSTACK`}
+      <Lock size={15} /> {paying ? 'PROCESSING…' : `PAY ${fmt(amountNaira)} VIA PAYSTACK`}
     </button>
   );
 }
@@ -48,32 +49,63 @@ function PaystackButton({ amountNaira, email, reference, paying, onPaying, onSuc
  * FundWalletModal — universal wallet funding modal with Paystack.
  * Used in Wallet.jsx (individual) and corporate/Wallet.jsx.
  *
+ * Flow (no pre-popup initiate so a cancelled popup never leaves a phantom record):
+ *   1. User enters amount, clicks Pay
+ *   2. Paystack inline popup opens (client reference + matching public key)
+ *   3. On popup success → POST /wallet/fund/verify { reference, amountKobo }
+ *      → backend verifies with Paystack and credits atomically (creates the
+ *        SUCCESSFUL record if none exists yet)
+ *   4. On popup close/cancel → nothing is recorded
+ *   5. refreshWallet() reloads balance + transactions from backend
+ *
  * Props:
  *   onClose  — () => void
  *   onDone   — ({ type, amount?, ref, id? }) => void
  */
 export default function FundWalletModal({ onClose, onDone }) {
-  const { user, addTransaction } = useAppStore();
+  const { user, refreshWallet } = useAppStore();
   const [rawAmount, setRawAmount] = useState('');
   const [reference, setReference] = useState(genRef);
   const [paying, setPaying]       = useState(false);
+  const [error, setError]         = useState('');
+  const [pubKey, setPubKey]       = useState(PAYSTACK_KEY);
+
+  // Use the public key that matches the backend's secret key so the charge and
+  // the verification happen on the same Paystack account.
+  useEffect(() => {
+    let alive = true;
+    walletApi.getConfig()
+      .then(cfg => { if (alive && cfg?.publicKey) setPubKey(cfg.publicKey); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const numAmount = parseInt(rawAmount.replace(/[^0-9]/g, ''), 10) || 0;
 
   const handleInput = val => {
     const digits = val.replace(/[^0-9]/g, '');
     setRawAmount(digits ? Number(digits).toLocaleString() : '');
+    setError('');
   };
 
-  const handleSuccess = useCallback(response => {
-    const amt = parseInt(rawAmount.replace(/[^0-9]/g, ''), 10) || 0;
+  const handlePaying = useCallback(() => {
+    setPaying(true);
+    setError('');
+  }, []);
+
+  const handleSuccess = useCallback(async (response) => {
     const ref = response?.reference || reference;
-    const id  = genId();
+    const amountKobo = numAmount * 100;
+    try {
+      await walletApi.verifyPayment(ref, amountKobo);
+      await refreshWallet();
+    } catch (err) {
+      console.error('[FundWallet] verify failed:', err);
+    }
     setPaying(false);
-    addTransaction({ id, date: today(), amount: amt, description: 'Wallet Funding via Paystack', status: 'Successful', ref });
     onClose();
-    onDone({ type: 'success', amount: amt, ref, id });
-  }, [rawAmount, reference, addTransaction, onClose, onDone]);
+    onDone({ type: 'success', amount: numAmount, ref, id: ref });
+  }, [numAmount, reference, refreshWallet, onClose, onDone]);
 
   const handleCancelled = useCallback(() => {
     const cancelledRef = reference;
@@ -140,8 +172,12 @@ export default function FundWalletModal({ onClose, onDone }) {
         </div>
       </div>
 
-      {numAmount >= 100 ? (
-        <PaystackButton key={reference} amountNaira={numAmount} email={user?.email} reference={reference} paying={paying} onPaying={() => setPaying(true)} onSuccess={handleSuccess} onClose={handleCancelled} />
+      {error && (
+        <div style={{ fontSize: 12, color: 'var(--red)', background: 'rgba(239,68,68,0.08)', padding: '10px 12px', borderRadius: 8, marginBottom: 12 }}>{error}</div>
+      )}
+
+      {numAmount > 0 ? (
+        <PaystackButton key={`${reference}-${pubKey}`} amountNaira={numAmount} email={user?.email} reference={reference} publicKey={pubKey} paying={paying} onPaying={handlePaying} onSuccess={handleSuccess} onClose={handleCancelled} />
       ) : (
         <button disabled style={{ width: '100%', background: 'var(--gray-100)', color: 'var(--gray-400)', fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 13, letterSpacing: '0.06em', border: 'none', borderRadius: 10, padding: '15px', cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <Lock size={15} /> ENTER AMOUNT TO CONTINUE
