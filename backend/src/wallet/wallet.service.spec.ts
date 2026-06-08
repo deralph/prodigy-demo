@@ -148,9 +148,25 @@ describe('WalletService', () => {
 
   // ── verifyPayment ────────────────────────────────────────────────
   describe('verifyPayment()', () => {
-    it('throws NotFoundException when no transaction for reference', async () => {
-      prisma.walletTransaction.findFirst.mockResolvedValueOnce(null);
-      await expect(service.verifyPayment(IDS.CLIENT_DB, 'UNKNOWN-REF')).rejects.toThrow(NotFoundException);
+    it('creates + credits when no pre-existing record (popup-only flow, demo mode)', async () => {
+      prisma.walletTransaction.findFirst.mockResolvedValueOnce(null); // no existing record
+      configGet.mockReturnValue(undefined); // demo mode (no secret)
+      const created = { ...MOCK.walletTx, status: 'SUCCESSFUL', paystackRef: 'NEW-REF', amountKobo: BigInt(50_000) };
+      prisma.$transaction.mockImplementationOnce(async (fn: any) =>
+        fn({
+          client: { update: jest.fn() },
+          walletTransaction: {
+            findFirst: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(null),
+            create: jest.fn().mockResolvedValue(created),
+            update: jest.fn(),
+          },
+        }),
+      );
+      prisma.activityLog.create.mockResolvedValue({});
+      prisma.auditLog.create.mockResolvedValue({});
+
+      const result = await service.verifyPayment(IDS.CLIENT_DB, 'NEW-REF', 'john@example.com', BigInt(50_000));
+      expect(result.status).toBe('success');
     });
 
     it('returns success immediately for already-SUCCESSFUL txn (idempotent)', async () => {

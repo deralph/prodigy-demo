@@ -114,30 +114,35 @@ export class WalletService {
 
   /**
    * Verify a Paystack inline payment after the popup reports success.
-   * - With a secret key configured → verify against Paystack (with retries).
-   * - In TEST mode (no key, or sk_test) → if verify can't confirm (e.g. the
-   *   popup's public key and this secret key are from different test accounts),
-   *   fall back to crediting the recorded PENDING amount so the demo stays
-   *   seamless. LIVE mode (sk_live) stays strict and marks the txn FAILED.
+   *
+   * The frontend calls this AFTER the Paystack popup closes with success — there
+   * is no separate "initiate" call before the popup, so cancelled popups never
+   * create a PENDING record in the first place.
+   *
+   * If a PENDING record exists (optional pre-initiate), we upgrade it.
+   * If not, we create + credit atomically.
+   *
+   * - With a secret key → verify against Paystack (with retries).
+   * - TEST mode (sk_test / no key) → if verify can't confirm, credit as demo fallback.
+   * - LIVE mode (sk_live) → strict, reject unverified.
    * Idempotent: re-calling with an already-SUCCESSFUL reference returns it.
    */
-  async verifyPayment(clientDbId: string, reference: string) {
-    this.logger.log(`[VERIFY] clientId=${clientDbId} ref=${reference}`);
+  async verifyPayment(clientDbId: string, reference: string, email?: string, amountKobo?: bigint) {
+    this.logger.log(`[VERIFY] clientId=${clientDbId} ref=${reference} amountKobo=${amountKobo ?? 'none'}`);
 
-    const pending = await this.prisma.walletTransaction.findFirst({
+    const existing = await this.prisma.walletTransaction.findFirst({
       where: { paystackRef: reference, clientId: clientDbId },
     });
 
-    if (!pending) {
-      this.logger.warn(`[VERIFY] No transaction found for ref=${reference} client=${clientDbId}`);
-      throw new NotFoundException(`No transaction found for reference ${reference}`);
-    }
-
-    if (pending.status === 'SUCCESSFUL') {
+    if (existing?.status === 'SUCCESSFUL') {
       this.logger.log(`[VERIFY] Already successful — idempotent return ref=${reference}`);
-      return { status: 'success', transaction: pending };
+      return { status: 'success', transaction: existing };
     }
 
+    const recordedAmount = existing?.amountKobo ?? amountKobo ?? BigInt(0);
+    if (!existing && recordedAmount <= BigInt(0)) {
+      throw new BadRequestException('A valid funding amount is required.');
+    }
     const secretKey = this.config.get<string>('PAYSTACK_SECRET_KEY');
     const isTestMode = !secretKey || secretKey.startsWith('sk_test');
 
@@ -148,54 +153,38 @@ export class WalletService {
       if (verified) {
         const verifiedAmountKobo = BigInt(result.data.amount);
         const channel = result.data.channel || 'card';
-        const txn = await this.creditWallet(
-          clientDbId,
-          verifiedAmountKobo,
-          reference,
-          `Wallet Funding via Paystack (${channel})`,
-        );
+        const txn = await this.creditWallet(clientDbId, verifiedAmountKobo, reference, `Wallet Funding via Paystack (${channel})`);
         await this.logFundingEvent(clientDbId, verifiedAmountKobo, reference, 'SUCCESS', channel);
         return { status: 'success', transaction: txn };
       }
 
       const reason = result?.data?.gateway_response || result?.message || 'Verification failed';
 
-      // TEST mode safety net: keys may belong to different test accounts, so a
-      // "reference not found" here is a config mismatch, not a real failure.
       if (isTestMode) {
         this.logger.warn(
-          `[VERIFY] Paystack verify unsuccessful in TEST mode (${reason}) — crediting recorded amount as demo fallback. ` +
-            `To verify for real, set PAYSTACK_PUBLIC_KEY/VITE key from the SAME account as PAYSTACK_SECRET_KEY. ref=${reference}`,
+          `[VERIFY] Paystack verify unsuccessful in TEST mode (${reason}) — crediting as demo fallback. ref=${reference}`,
         );
-        const txn = await this.creditWallet(
-          clientDbId,
-          pending.amountKobo,
-          reference,
-          'Wallet Funding via Paystack (test)',
-        );
-        await this.logFundingEvent(clientDbId, pending.amountKobo, reference, 'SUCCESS', 'test');
+        const txn = await this.creditWallet(clientDbId, recordedAmount, reference, 'Wallet Funding via Paystack (test)');
+        await this.logFundingEvent(clientDbId, recordedAmount, reference, 'SUCCESS', 'test');
         return { status: 'success', transaction: txn };
       }
 
-      // LIVE mode — do not credit unverified money.
+      // LIVE mode — reject unverified.
       this.logger.warn(`[VERIFY] Payment not successful: ${reason} ref=${reference}`);
-      await this.prisma.walletTransaction.update({
-        where: { id: pending.id },
-        data: { status: 'FAILED', description: `Failed: ${reason}`, processedAt: new Date() },
-      });
-      await this.logFundingEvent(clientDbId, pending.amountKobo, reference, 'FAILED', reason);
+      if (existing) {
+        await this.prisma.walletTransaction.update({
+          where: { id: existing.id },
+          data: { status: 'FAILED', description: `Failed: ${reason}`, processedAt: new Date() },
+        });
+      }
+      await this.logFundingEvent(clientDbId, recordedAmount, reference, 'FAILED', reason);
       throw new BadRequestException(`Payment verification failed: ${reason}`);
     }
 
-    // No secret key at all — pure demo mode; trust the inline popup.
+    // No secret key — pure demo mode; trust the inline popup.
     this.logger.log(`[VERIFY] Demo mode (no secret key) — crediting wallet directly ref=${reference}`);
-    const txn = await this.creditWallet(
-      clientDbId,
-      pending.amountKobo,
-      reference,
-      'Wallet Funding via Paystack (demo)',
-    );
-    await this.logFundingEvent(clientDbId, pending.amountKobo, reference, 'SUCCESS', 'demo');
+    const txn = await this.creditWallet(clientDbId, recordedAmount, reference, 'Wallet Funding via Paystack (demo)');
+    await this.logFundingEvent(clientDbId, recordedAmount, reference, 'SUCCESS', 'demo');
     return { status: 'success', transaction: txn };
   }
 

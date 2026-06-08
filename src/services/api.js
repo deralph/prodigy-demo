@@ -177,8 +177,8 @@ export const walletApi = {
   },
   initiatePayment: (amountKobo, reference) =>
     request('/wallet/fund/initiate', { method: 'POST', body: JSON.stringify({ amountKobo, reference }) }),
-  verifyPayment: (reference) =>
-    request('/wallet/fund/verify', { method: 'POST', body: JSON.stringify({ reference }) }),
+  verifyPayment: (reference, amountKobo) =>
+    request('/wallet/fund/verify', { method: 'POST', body: JSON.stringify({ reference, amountKobo }) }),
   requestWithdrawal: (data) =>
     request('/wallet/withdraw', { method: 'POST', body: JSON.stringify(data) }),
 };

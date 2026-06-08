@@ -1,6 +1,7 @@
 import React from 'react';
-import { Download } from 'lucide-react';
+import { Download, Loader } from 'lucide-react';
 import { ArrowDownLeft, ArrowUpRight, TrendingUp } from 'lucide-react';
+import useAppStore from '../../store/useAppStore';
 
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 
@@ -36,6 +37,7 @@ const INFLOW_TYPES = new Set(['wallet_funding', 'redemption', 'pre_termination_p
  *   emptyMsg     — empty state message
  */
 export default function TransactionList({ transactions = [], title = 'Transaction History', onExport, filterKey = 'all', onFilter, showFilters = true, emptyMsg = 'No transactions yet.' }) {
+  const isLoading = useAppStore(s => s.isLoadingData);
   return (
     <div style={{ background: 'white', borderRadius: 14, border: '1px solid var(--gray-200)', overflow: 'hidden' }} className="animate-in delay-3">
       <div style={{ padding: '14px 22px', borderBottom: '1px solid var(--gray-100)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -57,7 +59,9 @@ export default function TransactionList({ transactions = [], title = 'Transactio
       </div>
 
       {transactions.length === 0 ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>{emptyMsg}</div>
+        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 13, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+          {isLoading ? <><Loader size={18} style={{ animation: 'spin 1s linear infinite' }} /> Loading transactions…<style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></> : emptyMsg}
+        </div>
       ) : transactions.map((t, i) => {
         const ty   = TYPE_STYLE[t.type] || TYPE_STYLE.wallet_funding;
         const st   = STATUS_STYLE[t.status] || STATUS_STYLE.pending;

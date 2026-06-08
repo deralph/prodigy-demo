@@ -35,7 +35,7 @@ function FundModal({ onClose, user, onSuccess }) {
   }, []);
 
   const ACCOUNT = {
-    bank: user?.virtualAccountBank || 'Prodigy MFB',
+    bank: user?.virtualAccountBank || 'Not assigned',
     acct: user?.virtualAccountNo   || user?.accountNumber || '—',
     name: user?.name || user?.email || '—',
   };
@@ -49,27 +49,24 @@ function FundModal({ onClose, user, onSuccess }) {
     channels:  ['card','bank','ussd','bank_transfer','qr'],
   });
 
-  const handlePayWithCard = async () => {
-    if (!amount || Number(amount) < 1000) return;
+  const handlePayWithCard = () => {
+    if (!amount || Number(amount) <= 0) return;
     setLoading(true);
-    try {
-      await walletApi.initiatePayment(Math.round(Number(amount) * 100), psRef.current);
-    } catch (err) {
-      console.warn('[CashAccount] initiate failed (continuing with popup):', err);
-    }
-    setLoading(false);
-    // react-paystack v6 expects a single object with onSuccess/onClose callbacks
+    // Open Paystack popup directly — no pre-initiate call, so cancelled payments
+    // never create phantom PENDING records in the database.
     initializePayment({
       onSuccess: async () => {
         try {
-          await walletApi.verifyPayment(psRef.current);
+          const amountKobo = Math.round(Number(amount) * 100);
+          await walletApi.verifyPayment(psRef.current, amountKobo);
         } catch (err) {
           console.error('[CashAccount] verify failed:', err);
         }
+        setLoading(false);
         onSuccess();
         onClose();
       },
-      onClose: () => {},
+      onClose: () => { setLoading(false); },
     });
   };
 
@@ -141,7 +138,7 @@ export default function CashAccount() {
   const [copied,      setCopied]      = useState(false);
 
   const ACCOUNT = {
-    bank: user?.virtualAccountBank || 'Prodigy MFB',
+    bank: user?.virtualAccountBank || 'Not assigned',
     acct: user?.virtualAccountNo || user?.accountNumber || '—',
     name: user?.name || user?.email || '—',
   };

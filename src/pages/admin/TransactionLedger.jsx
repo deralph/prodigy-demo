@@ -19,7 +19,7 @@ const KPI_COLS = [
 ];
 
 export default function TransactionLedger() {
-  const { allTransactions, plans, clients } = useAppStore();
+  const { allTransactions, plans, clients, isLoadingData } = useAppStore();
 
   const [search,        setSearch]        = useState('');
   const [clientSearch,  setClientSearch]  = useState('');
@@ -114,19 +114,19 @@ export default function TransactionLedger() {
       {/* Ledger table */}
       <div style={{ background: 'white', borderRadius: 14, border: '1px solid var(--gray-200)', overflow: 'hidden' }} className="animate-in delay-2">
         {/* Column headers — extra "Client" column for admin */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 110px 100px 80px 120px', gap: 8, padding: '10px 20px', background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
-          {['Transaction / Client', 'Client', 'Type', 'Direction', 'Status', 'Amount'].map(h => (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 160px 110px 100px 80px 120px', gap: 8, padding: '10px 20px', background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
+          {['Transaction / Client', 'Client', 'Email', 'Type', 'Direction', 'Status', 'Amount'].map(h => (
             <div key={h} style={{ fontSize: 9, color: 'var(--gray-400)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{h}</div>
           ))}
         </div>
         {filtered.length === 0
-          ? <div style={{ padding: '48px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>No transactions match filters.</div>
+          ? <div style={{ padding: '48px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>{isLoadingData ? 'Loading transactions…' : 'No transactions match filters.'}</div>
           : filtered.map((t, i) => {
               const meta  = TYPE_META[t.type] || TYPE_META.wallet_funding;
               const st    = STATUS_META[t.status] || STATUS_META.pending;
               const plan  = plans.find(p => p.id === t.planId);
               return (
-                <div key={t.id || i} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 110px 100px 80px 120px', gap: 8, padding: '12px 20px', borderBottom: i < filtered.length - 1 ? '1px solid var(--gray-50)' : 'none', transition: 'background 0.1s' }}
+                <div key={t.id || i} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 160px 110px 100px 80px 120px', gap: 8, padding: '12px 20px', borderBottom: i < filtered.length - 1 ? '1px solid var(--gray-50)' : 'none', transition: 'background 0.1s' }}
                   onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
@@ -140,6 +140,7 @@ export default function TransactionLedger() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', fontSize: 12, color: 'var(--navy)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.client || '—'}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', fontSize: 11, color: 'var(--gray-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.clientEmail || '—'}</div>
                   <div style={{ display: 'flex', alignItems: 'center' }}><span style={{ fontSize: 10, fontWeight: 700, color: meta.color, background: `${meta.color}12`, padding: '2px 8px', borderRadius: 4, whiteSpace: 'nowrap' }}>{meta.label}</span></div>
                   <div style={{ display: 'flex', alignItems: 'center' }}><span style={{ fontSize: 10, fontWeight: 700, color: meta.dir === 'credit' ? 'var(--green)' : 'var(--red)', textTransform: 'uppercase' }}>{meta.dir === 'credit' ? '↓ CR' : '↑ DR'}</span></div>
                   <div style={{ display: 'flex', alignItems: 'center' }}><span style={{ fontSize: 9, fontWeight: 700, color: st.color, background: st.bg, padding: '2px 7px', borderRadius: 4 }}>{st.label}</span></div>

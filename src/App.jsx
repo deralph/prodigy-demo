@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import useAppStore from './store/useAppStore';
 import { getTokens, authApi, clearTokens } from './services/api';
+import LoadingOverlay from './components/ui/LoadingOverlay';
 
 import OnboardingLogin from './pages/onboarding/OnboardingLogin';
 import MagicLogin      from './pages/onboarding/MagicLogin';
@@ -114,6 +115,7 @@ function DataFetcher() {
 export default function App() {
   return (
     <BrowserRouter>
+      <LoadingOverlay />
       <SessionRestore />
       <DataFetcher />
       <Routes>

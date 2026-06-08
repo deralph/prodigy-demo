@@ -1,5 +1,7 @@
 import React from 'react';
+import { Loader } from 'lucide-react';
 import StatusBadge from '../shared/StatusBadge';
+import useAppStore from '../../store/useAppStore';
 
 /**
  * DataTable — universal styled table with mapped columns and rows.
@@ -12,6 +14,7 @@ import StatusBadge from '../shared/StatusBadge';
  *   stickyHeader — boolean (optional)
  */
 export default function DataTable({ columns = [], rows = [], onRow, emptyMsg = 'No data available.', stickyHeader = false }) {
+  const isLoading = useAppStore(s => s.isLoadingData);
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -33,7 +36,9 @@ export default function DataTable({ columns = [], rows = [], onRow, emptyMsg = '
           {rows.length === 0 ? (
             <tr>
               <td colSpan={columns.length} style={{ padding: '32px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>
-                {emptyMsg}
+                {isLoading
+                  ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> Loading…<style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></span>
+                  : emptyMsg}
               </td>
             </tr>
           ) : (

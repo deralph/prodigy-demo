@@ -1,61 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import useAppStore from '../../store/useAppStore';
 import PageHeader from '../../components/ui/PageHeader';
 import HolderBanner from '../../components/ui/HolderBanner';
 import WalletHero from '../../components/ui/WalletHero';
 import TransactionList from '../../components/ui/TransactionList';
-import ModalOverlay from '../../components/ui/ModalOverlay';
-import DetailRow from '../../components/ui/DetailRow';
+import FundWalletModal from '../../components/wallet/FundWalletModal';
+import Toast from '../../components/ui/Toast';
 
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
-const QUICK_AMTS = [100000, 500000, 1000000, 5000000];
-
-function FundModal({ onClose, account, onFund }) {
-  const [amount, setAmount] = useState('');
-
-  const handle = () => {
-    if (!amount || isNaN(amount) || Number(amount) < 1000) return;
-    onFund(Number(amount));
-    onClose();
-  };
-
-  return (
-    <ModalOverlay onClose={onClose} maxWidth={440}
-      headerContent={<div style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:15,color:'white',textTransform:'uppercase' }}>Fund Joint Wallet</div>}
-    >
-      <div style={{ background:'var(--gray-50)',borderRadius:10,padding:'16px',marginBottom:16,border:'1px solid var(--gray-200)' }}>
-        <div style={{ fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--gray-400)',marginBottom:8,fontWeight:600 }}>Transfer to this joint account</div>
-        <DetailRow label="Bank"         value={account.bank} />
-        <DetailRow label="Account No"   value={account.acct} />
-        <DetailRow label="Account Name" value={account.name} noBorder />
-      </div>
-      <div style={{ fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--gray-400)',marginBottom:6,fontWeight:600 }}>Amount (₦)</div>
-      <input type="number" placeholder="e.g. 500000" value={amount} onChange={e=>setAmount(e.target.value)}
-        style={{ width:'100%',border:'1.5px solid var(--gray-200)',borderRadius:8,padding:'12px 14px',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:16,outline:'none',marginBottom:10,color:'var(--navy)' }}
-        onFocus={e=>e.target.style.borderColor='var(--navy)'} onBlur={e=>e.target.style.borderColor='var(--gray-200)'}/>
-      <div style={{ display:'flex',gap:8,marginBottom:14,flexWrap:'wrap' }}>
-        {QUICK_AMTS.map(q=>(
-          <button key={q} onClick={()=>setAmount(String(q))} style={{ padding:'6px 12px',background:'rgba(13,27,53,0.06)',border:'1px solid var(--gray-200)',borderRadius:7,cursor:'pointer',fontSize:11,fontWeight:700,color:'var(--navy)' }}>{fmt(q)}</button>
-        ))}
-      </div>
-      <button onClick={handle} disabled={!amount||Number(amount)<1000}
-        style={{ width:'100%',padding:'13px',background:'var(--navy)',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:12,opacity:(!amount||Number(amount)<1000)?0.5:1 }}>
-        CONFIRM FUNDING
-      </button>
-    </ModalOverlay>
-  );
-}
+const INFLOW_TYPES = new Set(['wallet_funding','redemption','pre_termination_payout','dividend_payout']);
 
 export default function JointCash() {
-  const { user, walletBalance, pendingBalance, transactions, allTransactions, addTransaction, clients } = useAppStore();
+  const { user, walletBalance, pendingBalance, transactions, allTransactions, clients, refreshWallet } = useAppStore();
   const client   = clients.find(c => c.clientId === user?.clientId);
   const [fundOpen, setFundOpen] = useState(false);
   const [copied,   setCopied]   = useState(false);
   const [search,   setSearch]   = useState('');
+  const [toast, setToast]       = useState(null);
+  const dismissToast            = useCallback(() => setToast(null), []);
 
   const ACCOUNT = {
-    bank: 'Prodigy MFB',
-    acct: '0234567890',
+    bank: user?.virtualAccountBank || 'Not assigned',
+    acct: user?.virtualAccountNo   || user?.accountNumber || '—',
     name: `${user?.name || ''} & ${client?.secondaryName || 'Joint Holder'}`,
   };
 
@@ -74,9 +40,13 @@ export default function JointCash() {
     setCopied(true); setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleFund = (amount) => {
-    addTransaction({ id:'JWAL-'+Date.now(), date:new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}), amount, description:'Joint Wallet Funding via Transfer', status:'Successful', ref:'JTRF-'+Math.random().toString(36).slice(2,8).toUpperCase() });
-  };
+  const handleDone = useCallback(({ type, amount, ref }) => {
+    if (type === 'success') {
+      setToast({ type: 'success', title: 'Joint Wallet Funded!', message: `${fmt(amount)} has been credited.`, sub: `Ref: ${ref}` });
+    } else {
+      setToast({ type: 'error', title: 'Payment Cancelled', message: 'You closed the payment window. No charge was made.' });
+    }
+  }, []);
 
   const downloadCSV = () => {
     const rows = allTxns.map(t => `"${t.date||''}","${t.ref||t.id||''}","${t.description||''}",${t.amount||0},"${t.status||''}"`);
@@ -88,9 +58,9 @@ export default function JointCash() {
   };
 
   const holders = [user?.name, client?.secondaryName].filter(Boolean);
-  const totalFunded  = transactions.filter(t=>t.status==='Successful').reduce((s,t)=>s+t.amount,0);
+  const totalFunded  = transactions.filter(t=>t.status==='successful').reduce((s,t)=>s+t.amount,0);
   const totalSubbed  = myTxns.filter(t=>t.type==='subscription').reduce((s,t)=>s+t.amount,0);
-  const totalPending = transactions.filter(t=>t.status==='Pending').reduce((s,t)=>s+t.amount,0);
+  const totalPending = transactions.filter(t=>t.status==='pending').reduce((s,t)=>s+t.amount,0);
 
   return (
     <div>
@@ -133,7 +103,8 @@ export default function JointCash() {
         showFilters={false}
       />
 
-      {fundOpen && <FundModal onClose={() => setFundOpen(false)} account={ACCOUNT} onFund={handleFund} />}
+      {fundOpen && <FundWalletModal onClose={() => setFundOpen(false)} onDone={handleDone} />}
+      <Toast toast={toast} onDismiss={dismissToast} />
     </div>
   );
 }

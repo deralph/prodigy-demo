@@ -16,7 +16,7 @@ const COLUMNS = [
   { key: 'description', label: 'Description',    style: { fontSize: 12, color: 'var(--gray-600)' } },
   { key: 'amount',      label: 'Amount',         style: { fontSize: 13, fontWeight: 700, color: 'var(--navy)', whiteSpace: 'nowrap' }, render: v => fmt(v) },
   { key: 'ref',         label: 'Reference',      style: { fontSize: 11, fontFamily: 'monospace', color: 'var(--gray-400)', whiteSpace: 'nowrap' } },
-  { key: 'status',      label: 'Status',         render: v => <StatusBadge status={v === 'Successful' ? 'approved' : v === 'Pending' ? 'pending' : 'rejected'} label={v} /> },
+  { key: 'status',      label: 'Status',         render: v => <StatusBadge status={v} /> },
 ];
 
 export default function CorporateWallet() {

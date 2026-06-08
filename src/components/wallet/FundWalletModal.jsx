@@ -49,11 +49,13 @@ function PaystackButton({ amountNaira, email, reference, publicKey, paying, onPa
  * FundWalletModal — universal wallet funding modal with Paystack.
  * Used in Wallet.jsx (individual) and corporate/Wallet.jsx.
  *
- * Flow:
+ * Flow (no pre-popup initiate so a cancelled popup never leaves a phantom record):
  *   1. User enters amount, clicks Pay
- *   2. POST /wallet/fund/initiate  → records PENDING txn with the same reference
- *   3. Paystack inline popup opens (same reference + public key)
- *   4. On popup success → POST /wallet/fund/verify  → backend verifies & credits
+ *   2. Paystack inline popup opens (client reference + matching public key)
+ *   3. On popup success → POST /wallet/fund/verify { reference, amountKobo }
+ *      → backend verifies with Paystack and credits atomically (creates the
+ *        SUCCESSFUL record if none exists yet)
+ *   4. On popup close/cancel → nothing is recorded
  *   5. refreshWallet() reloads balance + transactions from backend
  *
  * Props:
@@ -86,29 +88,24 @@ export default function FundWalletModal({ onClose, onDone }) {
     setError('');
   };
 
-  const handlePaying = useCallback(async () => {
+  const handlePaying = useCallback(() => {
     setPaying(true);
     setError('');
-    try {
-      await walletApi.initiatePayment(numAmount * 100, reference);
-    } catch (err) {
-      console.warn('[FundWallet] initiate failed (continuing with popup):', err);
-    }
-  }, [numAmount, reference]);
+  }, []);
 
   const handleSuccess = useCallback(async (response) => {
     const ref = response?.reference || reference;
+    const amountKobo = numAmount * 100;
     try {
-      await walletApi.verifyPayment(ref);
+      await walletApi.verifyPayment(ref, amountKobo);
       await refreshWallet();
     } catch (err) {
       console.error('[FundWallet] verify failed:', err);
     }
-    const amt = parseInt(rawAmount.replace(/[^0-9]/g, ''), 10) || 0;
     setPaying(false);
     onClose();
-    onDone({ type: 'success', amount: amt, ref, id: ref });
-  }, [rawAmount, reference, refreshWallet, onClose, onDone]);
+    onDone({ type: 'success', amount: numAmount, ref, id: ref });
+  }, [numAmount, reference, refreshWallet, onClose, onDone]);
 
   const handleCancelled = useCallback(() => {
     const cancelledRef = reference;
@@ -179,7 +176,7 @@ export default function FundWalletModal({ onClose, onDone }) {
         <div style={{ fontSize: 12, color: 'var(--red)', background: 'rgba(239,68,68,0.08)', padding: '10px 12px', borderRadius: 8, marginBottom: 12 }}>{error}</div>
       )}
 
-      {numAmount >= 100 ? (
+      {numAmount > 0 ? (
         <PaystackButton key={`${reference}-${pubKey}`} amountNaira={numAmount} email={user?.email} reference={reference} publicKey={pubKey} paying={paying} onPaying={handlePaying} onSuccess={handleSuccess} onClose={handleCancelled} />
       ) : (
         <button disabled style={{ width: '100%', background: 'var(--gray-100)', color: 'var(--gray-400)', fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 13, letterSpacing: '0.06em', border: 'none', borderRadius: 10, padding: '15px', cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
