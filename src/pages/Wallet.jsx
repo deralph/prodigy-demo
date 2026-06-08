@@ -55,7 +55,9 @@ export default function Wallet() {
           <div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 'clamp(20px,4vw,30px)', color: 'var(--navy)', marginBottom: 8 }}>
             {fmt(pendingBalance)}
           </div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>No pending transactions</div>
+          <div style={{ fontSize: 12, color: pendingBalance > 0 ? 'var(--gold)' : 'var(--gray-400)', fontWeight: pendingBalance > 0 ? 600 : 400 }}>
+            {pendingBalance > 0 ? `${transactions.filter(t => t.status === 'pending').length} pending transaction(s)` : 'No pending transactions'}
+          </div>
         </div>
       </div>
 

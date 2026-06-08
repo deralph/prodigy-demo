@@ -43,15 +43,15 @@ import AdminReports          from './pages/admin/AdminReports';
 import UserManagement        from './pages/admin/UserManagement';
 import PreTermination        from './pages/admin/PreTermination';
 import ProductSetup          from './pages/admin/ProductSetup';
-import DividendDeclaration   from './pages/admin/DividendDeclaration';
 import InterestAccruals      from './pages/admin/InterestAccruals';
 import FinanceQueue          from './pages/admin/FinanceQueue';
 import Analytics             from './pages/admin/Analytics';
 import ClientInvestments     from './pages/admin/ClientInvestments';
 
-import Products    from './pages/shared/Products';
-import Ledger      from './pages/shared/Ledger';
-import ProfilePage from './pages/shared/ProfilePage';
+import Products       from './pages/shared/Products';
+import ProductDetail  from './pages/shared/ProductDetail';
+import Ledger         from './pages/shared/Ledger';
+import ProfilePage    from './pages/shared/ProfilePage';
 
 /* ── Role-based protected route ─────────────────────────── */
 function ProtectedRoute({ children, allowedRoles }) {
@@ -134,9 +134,10 @@ export default function App() {
           <Route path="kyc"         element={<KYC />} />
           <Route path="reports"     element={<Reports />} />
           <Route path="risk"        element={<RiskStrategy />} />
-          <Route path="ledger"      element={<Ledger />} />
-          <Route path="products"    element={<Products />} />
-          <Route path="profile"     element={<ProfilePage />} />
+          <Route path="ledger"         element={<Ledger />} />
+          <Route path="products"         element={<Products />} />
+          <Route path="products/:id"     element={<ProductDetail />} />
+          <Route path="profile"          element={<ProfilePage />} />
         </Route>
 
         {/* Individual */}
@@ -146,9 +147,10 @@ export default function App() {
           <Route path="cash"      element={<CashAccount />} />
           <Route path="vault"     element={<SecurityVault />} />
           <Route path="activity"  element={<ActivityLog />} />
-          <Route path="ledger"    element={<Ledger />} />
-          <Route path="products"  element={<Products />} />
-          <Route path="profile"   element={<ProfilePage />} />
+          <Route path="ledger"        element={<Ledger />} />
+          <Route path="products"        element={<Products />} />
+          <Route path="products/:id"    element={<ProductDetail />} />
+          <Route path="profile"         element={<ProfilePage />} />
         </Route>
 
         {/* Joint */}
@@ -159,9 +161,10 @@ export default function App() {
           <Route path="legacy"      element={<SharedLegacy />} />
           <Route path="access"      element={<AccessControl />} />
           <Route path="statements"  element={<JointStatements />} />
-          <Route path="ledger"      element={<Ledger />} />
-          <Route path="products"    element={<Products />} />
-          <Route path="profile"     element={<ProfilePage />} />
+          <Route path="ledger"        element={<Ledger />} />
+          <Route path="products"        element={<Products />} />
+          <Route path="products/:id"    element={<ProductDetail />} />
+          <Route path="profile"         element={<ProfilePage />} />
         </Route>
 
         {/* Admin */}
@@ -178,7 +181,6 @@ export default function App() {
           <Route path="users"              element={<UserManagement />} />
           <Route path="pretermination"     element={<PreTermination />} />
           <Route path="products"           element={<ProductSetup />} />
-          <Route path="dividends"          element={<DividendDeclaration />} />
           <Route path="accruals"           element={<InterestAccruals />} />
           <Route path="finance-queue"      element={<FinanceQueue />} />
           <Route path="analytics"          element={<Analytics />} />

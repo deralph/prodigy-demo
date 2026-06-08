@@ -4,18 +4,25 @@ import { ArrowDownLeft, ArrowUpRight, TrendingUp } from 'lucide-react';
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 
 export const TYPE_META = {
-  wallet_funding: { label: 'Wallet Funding',  color: '#22c55e', dir: 'credit', icon: ArrowDownLeft },
-  subscription:   { label: 'Subscription',    color: '#3b82f6', dir: 'debit',  icon: ArrowUpRight },
-  redemption:     { label: 'Redemption',      color: '#f97316', dir: 'credit', icon: ArrowDownLeft },
-  disbursement:   { label: 'Disbursement',    color: '#8b5cf6', dir: 'credit', icon: ArrowDownLeft },
-  withdrawal:     { label: 'Withdrawal',      color: '#ef4444', dir: 'debit',  icon: ArrowUpRight },
-  interest:       { label: 'Interest Credit', color: '#eab308', dir: 'credit', icon: TrendingUp },
+  wallet_funding:          { label: 'Wallet Funding',        color: '#22c55e', dir: 'credit', icon: ArrowDownLeft },
+  subscription:            { label: 'Subscription',          color: '#3b82f6', dir: 'debit',  icon: ArrowUpRight },
+  redemption:              { label: 'Redemption',            color: '#f97316', dir: 'credit', icon: ArrowDownLeft },
+  disbursement:            { label: 'Disbursement',          color: '#8b5cf6', dir: 'credit', icon: ArrowDownLeft },
+  withdrawal:              { label: 'Withdrawal',            color: '#ef4444', dir: 'debit',  icon: ArrowUpRight },
+  wallet_withdrawal:       { label: 'Withdrawal',            color: '#ef4444', dir: 'debit',  icon: ArrowUpRight },
+  interest:                { label: 'Interest Credit',       color: '#eab308', dir: 'credit', icon: TrendingUp },
+  pre_termination_payout:  { label: 'Pre-Term Payout',       color: '#f97316', dir: 'credit', icon: ArrowDownLeft },
+  dividend_payout:         { label: 'Dividend Payout',       color: '#eab308', dir: 'credit', icon: TrendingUp },
+  loan_disbursement:       { label: 'Loan Disbursement',     color: '#8b5cf6', dir: 'credit', icon: ArrowDownLeft },
+  loan_repayment:          { label: 'Loan Repayment',        color: '#ef4444', dir: 'debit',  icon: ArrowUpRight },
+  fee:                     { label: 'Fee',                   color: '#6b7280', dir: 'debit',  icon: ArrowUpRight },
 };
 
 export const STATUS_META = {
   successful: { color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  label: 'Successful' },
   pending:    { color: '#eab308', bg: 'rgba(234,179,8,0.1)',  label: 'Pending' },
   failed:     { color: '#ef4444', bg: 'rgba(239,68,68,0.1)',  label: 'Failed' },
+  reversed:   { color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', label: 'Reversed' },
 };
 
 /**

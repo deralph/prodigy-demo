@@ -104,4 +104,29 @@ export class KycController {
   ) {
     return this.kycService.rejectKyc(clientId, req.user.sub, reason);
   }
+
+  @Post('documents/:clientId/:docKey/approve')
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  @ApiOperation({ summary: 'Admin: approve a single KYC document' })
+  approveDocument(
+    @Param('clientId') clientId: string,
+    @Param('docKey') docKey: string,
+    @Req() req: any,
+  ) {
+    return this.kycService.approveDocument(clientId, docKey, req.user.sub);
+  }
+
+  @Post('documents/:clientId/:docKey/reject')
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  @ApiOperation({ summary: 'Admin: reject a single KYC document with reason' })
+  rejectDocument(
+    @Param('clientId') clientId: string,
+    @Param('docKey') docKey: string,
+    @Req() req: any,
+    @Body('reason') reason: string,
+  ) {
+    return this.kycService.rejectDocument(clientId, docKey, req.user.sub, reason);
+  }
 }

@@ -18,15 +18,23 @@ import SectionCard from '../../components/ui/SectionCard';
 const fmt  = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 
 function buildInvGrowth(inv) {
-  const base = inv.amount;
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const principal = inv.amount;
   const monthlyRate = (inv.roi || 0) / 1200;
-  return months.map((m, i) => ({
-    month: m,
-    principal: +(base * (0.6 + 0.4 * ((i + 1) / 12))).toFixed(0),
-    eli:       +(base * monthlyRate * (i + 1)).toFixed(0),
-    value:     +(base * (0.6 + 0.4 * ((i + 1) / 12)) + base * monthlyRate * (i + 1)).toFixed(0),
-  }));
+  const monthlyELI = principal * monthlyRate;
+  const tenorMonths = Math.max(1, Math.round((inv.tenorDays || 365) / 30));
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  return months.map((m, i) => {
+    const elapsed = Math.min(i + 1, tenorMonths);
+    const cumulativeELI = monthlyELI * elapsed;
+    return {
+      month: m,
+      principal: Math.round(principal),
+      monthlyEli: Math.round(monthlyELI),
+      eli: Math.round(cumulativeELI),
+      value: Math.round(principal + cumulativeELI),
+    };
+  });
 }
 
 function InvestmentDrawer({ inv, plans, user, onClose }) {
@@ -180,7 +188,7 @@ function InvestmentDrawer({ inv, plans, user, onClose }) {
                     <XAxis dataKey="month" tick={{ fontSize: 10 }} />
                     <YAxis tickFormatter={v => '₦' + (v / 1e3).toFixed(0) + 'K'} tick={{ fontSize: 10 }} />
                     <Tooltip formatter={v => [fmt(v), 'ELI']} />
-                    <Bar dataKey="eli" name="Monthly ELI" fill={color} radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="monthlyEli" name="Monthly ELI" fill={color} radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -289,6 +297,7 @@ export default function AssetPortfolio() {
   const totalAUM   = myInvs.reduce((s, i) => s + i.amount, 0);
   const activeAUM  = myInvs.filter(i => i.status === 'active').reduce((s, i) => s + i.amount, 0);
   const activeCount = myInvs.filter(i => i.status === 'active').length;
+  const pendingCount = myInvs.filter(i => i.status === 'pending_approval').length;
   const avgRoi     = myInvs.length ? (myInvs.reduce((s, i) => s + i.roi, 0) / myInvs.length).toFixed(1) : 0;
   const totalNet   = myInvs.reduce((s, i) => { const g = (i.amount * i.roi) / 100; return s + g - ((g * (i.tax || 0)) / 100); }, 0);
 
@@ -303,9 +312,10 @@ export default function AssetPortfolio() {
       filtered.forEach(inv => {
         const plan = plans.find(p => p.id === inv.planId);
         const label = plan?.name || inv.plan;
-        const pct = 0.6 + 0.4 * ((mi + 1) / 12);
-        row[label] = (row[label] || 0) + Math.round(inv.amount * pct);
-        row[label + '_roi'] = +((inv.roi * (mi + 1) / 12).toFixed(2));
+        const tenorMonths = Math.max(1, Math.round((inv.tenorDays || 365) / 30));
+        const elapsed = Math.min(mi + 1, tenorMonths);
+        const accrued = inv.amount * (inv.roi / 100) * (elapsed / 12);
+        row[label] = (row[label] || 0) + Math.round(inv.amount + accrued);
       });
       return row;
     });
@@ -338,6 +348,7 @@ export default function AssetPortfolio() {
             <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center', gap: 5 }}>
               <TrendingUp size={12} color="var(--green)" />
               <span style={{ color: 'var(--green)', fontWeight: 600 }}>{avgRoi}% Avg ROI · {activeCount} Active</span>
+              {pendingCount > 0 && <span style={{ color: 'var(--gold)', fontWeight: 600 }}>· {pendingCount} Pending Approval</span>}
             </p>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, textAlign: 'right' }}>
@@ -423,6 +434,7 @@ export default function AssetPortfolio() {
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ border: '1px solid #e2e8f0', borderRadius: 7, padding: '7px 12px', fontSize: 11, color: 'var(--navy)', fontFamily: 'DM Sans,sans-serif', cursor: 'pointer', outline: 'none' }}>
             <option value="all">All Statuses</option>
             <option value="active">Active</option>
+            <option value="pending_approval">Pending Approval</option>
             <option value="matured">Matured</option>
             <option value="pre_term">Pre-Term</option>
           </select>

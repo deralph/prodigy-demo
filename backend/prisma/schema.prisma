@@ -161,25 +161,35 @@ model IdentityVerification {
 }
 
 model Product {
-  id            String        @id @default(cuid())
-  code          String        @unique
-  name          String
-  description   String?
-  roiMin        Decimal       @db.Decimal(5, 2)
-  roiMax        Decimal       @db.Decimal(5, 2)
-  minInvestKobo BigInt
-  lockInDays    Int?
-  color         String?
-  isNegotiated  Boolean       @default(false)
-  status        ProductStatus @default(ACTIVE)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  updatedById   String?
-  approvals     Approval[]
-  dividends     Dividend[]
-  investments   Investment[]
+  id                 String        @id @default(cuid())
+  code               String        @unique
+  name               String
+  category           String?
+  description        String?
+  roiMin             Decimal       @db.Decimal(5, 2)
+  roiMax             Decimal       @db.Decimal(5, 2)
+  minInvestKobo      BigInt
+  maxInvestKobo      BigInt?
+  lockInDays         Int?
+  lockInStr          String?
+  withholdingTaxRate Decimal       @default(10.00) @db.Decimal(5, 2)
+  earlyExitPenalty   Decimal?      @db.Decimal(5, 2)
+  clientTypes        String[]      @default([])
+  riskLevel          String?
+  hasTenor           Boolean       @default(false)
+  tenorOptions       String[]      @default([])
+  color              String?
+  isNegotiated       Boolean       @default(false)
+  status             ProductStatus @default(ACTIVE)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  updatedById        String?
+  approvals          Approval[]
+  dividends          Dividend[]
+  investments        Investment[]
 
   @@index([status])
+  @@index([category])
 }
 
 model Investment {

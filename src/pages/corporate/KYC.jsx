@@ -81,24 +81,37 @@ function SupportingDocs({ docData, uploading, onUpload, fileRefs }) {
           const info     = docData[doc.key];
           const isUpl    = uploading === doc.key;
           const uploaded = ['UPLOADED','VERIFIED'].includes(status);
+          const isVer    = status === 'VERIFIED';
+          const isRej    = status === 'REJECTED';
           const canView  = info?.fileUrl && !info.fileUrl.startsWith('pending-cloud-upload://');
           return (
-            <div key={doc.key} style={{ padding:'14px 24px',borderBottom:i<ADDITIONAL_DOCS.length-1?'1px solid var(--gray-100)':'none',display:'flex',alignItems:'center',gap:14 }}>
+            <div key={doc.key} style={{ padding:'14px 24px',borderBottom:i<ADDITIONAL_DOCS.length-1?'1px solid var(--gray-100)':'none',display:'flex',alignItems:'flex-start',gap:14 }}>
               <div style={{ flex:1 }}>
-                <div style={{ fontSize:13,fontWeight:700,color:'var(--navy)',marginBottom:2 }}>{doc.label}</div>
+                <div style={{ display:'flex',alignItems:'center',gap:8 }}>
+                  <div style={{ fontSize:13,fontWeight:700,color:'var(--navy)',marginBottom:2 }}>{doc.label}</div>
+                  {isVer && <span style={{ fontSize:9,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',color:'var(--green)',background:'rgba(34,197,94,0.1)',padding:'2px 7px',borderRadius:4 }}>Verified</span>}
+                  {isRej && <span style={{ fontSize:9,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',color:'var(--red)',background:'rgba(239,68,68,0.1)',padding:'2px 7px',borderRadius:4 }}>Rejected</span>}
+                </div>
                 <div style={{ fontSize:11,color:'var(--gray-400)' }}>{doc.hint}</div>
-                {info?.fileName && <div style={{ fontSize:11,color:'var(--green)',fontWeight:600,marginTop:3 }}>✓ {info.fileName}</div>}
+                {info?.fileName && <div style={{ fontSize:11,color:isRej?'var(--red)':'var(--green)',fontWeight:600,marginTop:3 }}>{isRej?'✗':'✓'} {info.fileName}</div>}
+                {isRej && info?.rejectionReason && (
+                  <div style={{ marginTop:6,padding:'6px 10px',background:'rgba(239,68,68,0.07)',borderRadius:6,fontSize:11,color:'var(--red)',fontWeight:600 }}>
+                    Rejected: {info.rejectionReason}
+                  </div>
+                )}
               </div>
-              <div style={{ display:'flex',alignItems:'center',gap:8,flexShrink:0 }}>
+              <div style={{ display:'flex',alignItems:'center',gap:8,flexShrink:0,marginTop:2 }}>
                 {canView && (
                   <a href={info.fileUrl} target="_blank" rel="noreferrer" style={{ display:'flex',alignItems:'center',gap:5,padding:'7px 12px',background:'rgba(13,27,53,0.06)',color:'var(--navy)',borderRadius:7,fontSize:11,fontWeight:700,textDecoration:'none' }}>
                     <ExternalLink size={11}/> View
                   </a>
                 )}
-                <label style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:uploaded?'rgba(34,197,94,0.1)':'var(--navy)',color:uploaded?'var(--green)':'white',borderRadius:8,cursor:isUpl?'not-allowed':'pointer',fontSize:11,fontWeight:700 }}>
-                  <input ref={el=>fileRefs.current[doc.key]=el} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display:'none' }} disabled={isUpl} onChange={e=>onUpload(doc.key,e.target.files?.[0]||null)}/>
-                  {isUpl?<>Uploading…</>:uploaded?<><CheckCircle size={12}/>{status==='VERIFIED'?'Verified':'Replace'}</>:<><Upload size={12}/>Upload</>}
-                </label>
+                {!isVer && (
+                  <label style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:uploaded?'rgba(59,130,246,0.1)':isRej?'rgba(239,68,68,0.1)':'var(--navy)',color:uploaded?'#3b82f6':isRej?'var(--red)':'white',borderRadius:8,cursor:isUpl?'not-allowed':'pointer',fontSize:11,fontWeight:700 }}>
+                    <input ref={el=>fileRefs.current[doc.key]=el} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display:'none' }} disabled={isUpl} onChange={e=>onUpload(doc.key,e.target.files?.[0]||null)}/>
+                    {isUpl?<>Uploading…</>:uploaded?<><Upload size={12}/>Replace</>:isRej?<><Upload size={12}/>Re-upload</>:<><Upload size={12}/>Upload</>}
+                  </label>
+                )}
               </div>
             </div>
           );
@@ -207,9 +220,11 @@ export default function KYC() {
           <div style={{ background:'rgba(232,184,75,0.07)',border:'1px solid rgba(232,184,75,0.2)',borderRadius:10,padding:'14px 16px',fontSize:12,color:'var(--navy)',lineHeight:1.6 }}>
             <div style={{ fontWeight:700,marginBottom:6 }}>Compliance Notice</div>
             All KYC documents must be current and valid. Utility bills must not be older than 3 months.
-            <div style={{ marginTop:8,padding:'8px 10px',background:'rgba(239,68,68,0.07)',borderRadius:7,fontSize:11,color:'var(--red)',fontWeight:600 }}>
-              ⚠ Liquidation, withdrawal and pre-termination are locked until all KYC items are approved.
-            </div>
+            {ADDITIONAL_DOCS.some(d => docData[d.key]?.status !== 'VERIFIED') && (
+              <div style={{ marginTop:8,padding:'8px 10px',background:'rgba(239,68,68,0.07)',borderRadius:7,fontSize:11,color:'var(--red)',fontWeight:600 }}>
+                ⚠ Liquidation, withdrawal and pre-termination are locked until all KYC items are approved.
+              </div>
+            )}
           </div>
         </div>
       </div>

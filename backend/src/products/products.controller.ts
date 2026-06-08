@@ -16,6 +16,15 @@ export class ProductsController {
     return this.productsService.findAll(true);
   }
 
+  @Get('admin/all')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Admin: list all products (all statuses)' })
+  findAllAdmin() {
+    return this.productsService.findAllAdmin();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get single product' })
   findOne(@Param('id') id: string) {

@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, CheckSquare, TrendingUp,
   CreditCard, FileText, ShieldAlert, Clock,
   LogOut, X, Menu, DollarSign,
-  BarChart2, Gift, Layers, AlertTriangle,
+  BarChart2, Layers, AlertTriangle,
   RefreshCw, Building2, UserCog, BarChart
 } from 'lucide-react';
 import useAppStore, { ADMIN_PERMISSIONS, ROLE_LABELS, ROLE_COLORS } from '../../store/useAppStore';
@@ -31,7 +31,6 @@ const NAV_GROUPS = [
     items: [
       { to:'/admin/products',     icon:Layers,          label:'Product Setup',      key:'product_setup' },
       { to:'/admin/plans',        icon:TrendingUp,      label:'Investment Plans',   key:'plans' },
-      { to:'/admin/dividends',    icon:Gift,            label:'Dividend Declaration',key:'dividends' },
       { to:'/admin/accruals',     icon:RefreshCw,       label:'Interest Accruals',  key:'accruals' },
     ]
   },

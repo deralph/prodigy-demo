@@ -7,11 +7,11 @@ import { create } from 'zustand';
 /* ── Admin role permissions ─────────────────────────────────── */
 export const ADMIN_PERMISSIONS = {
   super_admin:  ['all'],
-  operations:   ['clients','loans','kyc','risk','transactions','book_instrument','approval_hub','pretermination','product_setup','plans','dividends','accruals','eod','client_investments','analytics','reports'],
+  operations:   ['clients','loans','kyc','risk','transactions','book_instrument','approval_hub','pretermination','product_setup','plans','accruals','eod','client_investments','analytics','reports'],
   compliance:   ['kyc','audit_trail','risk'],
   finance:      ['transactions','finance_queue','reports','analytics','client_investments'],
   audit:        ['audit_trail','reports','transactions'],
-  investment:   ['plans','book_instrument','approval_hub','pretermination','product_setup','dividends','accruals','client_investments','analytics','reports'],
+  investment:   ['plans','book_instrument','approval_hub','pretermination','product_setup','accruals','client_investments','analytics','reports'],
 };
 
 /* ── Initial empty state ─────────────────────────────────────── */
@@ -27,7 +27,6 @@ const INITIAL_STATE = {
   financeQueue: [],
   clientInvestments: [],
   auditLog: [],
-  dividends: [],
   adminUsers: [],
   walletBalance: 0,
   pendingBalance: 0,
@@ -46,18 +45,40 @@ const INITIAL_STATE = {
 
 
 /* ── Product + AdminUser mappers (shared between fetchApiData & mutations) ── */
+const lockInDisplay = (p) => {
+  if (p.lockInStr) return p.lockInStr;
+  if (!p.lockInDays) return '\u2014';
+  const d = p.lockInDays;
+  if (d % 365 === 0) return `${d / 365} year${d / 365 === 1 ? '' : 's'}`;
+  if (d % 30  === 0) return `${d / 30}  month${d / 30  === 1 ? '' : 's'}`;
+  if (d % 7   === 0) return `${d / 7}   week${d / 7   === 1 ? '' : 's'}`;
+  return `${d} day${d === 1 ? '' : 's'}`;
+};
+
 const mapProduct = (p) => {
   const roiMin = Number(p.roiMin ?? 0);
   const roiMax = Number(p.roiMax ?? roiMin);
   return {
     ...p,
-    roi:       roiMin === roiMax ? `${roiMin}%` : `${roiMin}% \u2013 ${roiMax}%`,
-    roiNum:    roiMax,
-    minInvest: Number(p.minInvestKobo ?? 0) / 100,
-    lockIn:    p.lockInDays ? `${p.lockInDays} day${p.lockInDays === 1 ? '' : 's'}` : '\u2014',
-    desc:      p.description || '',
-    tag:       p.isNegotiated ? 'Negotiable' : undefined,
-    color:     p.color || '#3b82f6',
+    roi:               roiMin === roiMax ? `${roiMin}%` : `${roiMin}% \u2013 ${roiMax}%`,
+    roiNum:            roiMax,
+    roiMin:            roiMin,
+    roiMax:            roiMax,
+    minInvest:         Number(p.minInvestKobo ?? 0) / 100,
+    maxInvest:         p.maxInvestKobo ? Number(p.maxInvestKobo) / 100 : null,
+    lockIn:            lockInDisplay(p),
+    lockInStr:         p.lockInStr || null,
+    desc:              p.description || '',
+    tag:               p.isNegotiated ? 'Negotiable' : undefined,
+    color:             p.color || '#3b82f6',
+    withholdingTaxRate: Number(p.withholdingTaxRate ?? 10),
+    clientTypes:       Array.isArray(p.clientTypes) && p.clientTypes.length ? p.clientTypes : ['corporate', 'individual', 'joint'],
+    category:          p.category || null,
+    riskLevel:         p.riskLevel || null,
+    hasTenor:          Boolean(p.hasTenor),
+    tenorOptions:      Array.isArray(p.tenorOptions) ? p.tenorOptions : [],
+    earlyExitPenalty:  p.earlyExitPenalty ? Number(p.earlyExitPenalty) : null,
+    status:            p.status || 'ACTIVE',
   };
 };
 
@@ -76,6 +97,48 @@ const mapWalletTxn = (t) => ({
   ref:         t.txnRef || t.paystackRef || t.id,
   description: t.description || 'Transaction',
 });
+
+const mapInvestment = (inv) => {
+  const amount = Number(inv.principalKobo ?? 0) / 100;
+  const roi    = Number(inv.roiRate ?? inv.roi ?? 0);
+  const tax    = Number(inv.taxRate ?? inv.withholdingTax ?? inv.tax ?? 10);
+
+  let tenor = inv.tenor;
+  if (!tenor && inv.tenorDays) {
+    const d = inv.tenorDays;
+    if (d % 365 === 0)       tenor = `${d / 365} year${d / 365 === 1 ? '' : 's'}`;
+    else if (d % 30 === 0)   tenor = `${d / 30} month${d / 30 === 1 ? '' : 's'}`;
+    else if (d % 7 === 0)    tenor = `${d / 7} week${d / 7 === 1 ? '' : 's'}`;
+    else                     tenor = `${d} day${d === 1 ? '' : 's'}`;
+  }
+
+  const valueDateObj    = inv.valueDate    ? new Date(inv.valueDate)    : null;
+  const maturityDateObj = inv.maturityDate ? new Date(inv.maturityDate) : null;
+
+  return {
+    ...inv,
+    id:           inv.id,
+    investRef:    inv.investRef,
+    clientId:     inv.clientId,
+    planId:       inv.productId,
+    plan:         inv.product?.name || inv.planName || '—',
+    amount,
+    roi,
+    tax,
+    tenor:        tenor || '—',
+    tenorDays:    inv.tenorDays,
+    status:       inv.status?.toLowerCase() || 'pending_approval',
+    valueDate:    valueDateObj    ? valueDateObj.toLocaleDateString('en-GB',    { day:'2-digit', month:'short', year:'numeric' }) : '—',
+    maturityDate: maturityDateObj ? maturityDateObj.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : '—',
+    _valueDate:    valueDateObj,
+    _maturityDate: maturityDateObj,
+    autoRollover: inv.autoRollover,
+    notes:        inv.notes,
+    createdAt:    inv.createdAt,
+    _createdAt:   inv.createdAt ? new Date(inv.createdAt) : null,
+    history:      (inv.history || []).map(h => ({ ...h, date: h.createdAt ? new Date(h.createdAt).toLocaleDateString('en-GB') : '—' })),
+  };
+};
 
 /* ── KYC documents ──────────────────────────────────────────── */
 export const KYC_REQUIREMENTS = {
@@ -158,10 +221,16 @@ const useAppStore = create((set, get) => ({
     try {
       const api = await import('../services/api');
       const user = get().user;
-      // Products (available to all)
-      tasks.push(api.productApi.findAll().then(data => {
-        if (data && Array.isArray(data)) set({ plans: data.map(mapProduct) });
-      }).catch(() => {}));
+      // Products — admin sees all statuses, clients see active only
+      if (user?.role === 'admin') {
+        tasks.push(api.productApi.findAllAdmin().then(data => {
+          if (data && Array.isArray(data)) set({ plans: data.map(mapProduct) });
+        }).catch(() => {}));
+      } else {
+        tasks.push(api.productApi.findAll().then(data => {
+          if (data && Array.isArray(data)) set({ plans: data.map(mapProduct) });
+        }).catch(() => {}));
+      }
       // User: Wallet & Investments (only for non-admin users)
       if (user?.role !== 'admin') {
         tasks.push(api.walletApi.getWallet().then(data => {
@@ -175,7 +244,7 @@ const useAppStore = create((set, get) => ({
           if (data && Array.isArray(data)) set({ transactions: data.map(mapWalletTxn) });
         }).catch(() => {}));
         tasks.push(api.investmentApi.getMyInvestments().then(data => {
-          if (data && Array.isArray(data)) set({ clientInvestments: data });
+          if (data && Array.isArray(data)) set({ clientInvestments: data.map(mapInvestment) });
         }).catch(() => {}));
       }
       // Admin-only: try to load admin data (silently fails for regular users)
@@ -236,36 +305,14 @@ const useAppStore = create((set, get) => ({
         }).catch(() => {}));
         tasks.push(api.adminInvestmentApi.findAll().then(data => {
           if (data && Array.isArray(data)) {
-            const transformed = data.map(inv => ({
-              id: inv.id,
-              investRef: inv.investRef,
-              clientId: inv.client?.clientRef || inv.clientId,
-              clientName: inv.client?.name,
-              client: inv.client,
-              plan: inv.product?.name || inv.planName,
-              planId: inv.productId || inv.planId,
-              product: inv.product,
-              amount: Number(inv.principalKobo || inv.principalAmount || inv.amount || 0) / 100,
-              principalAmount: Number(inv.principalKobo || inv.principalAmount || 0) / 100,
-              roi: inv.roiRate || inv.roi || inv.product?.roiMin,
-              tenor: inv.tenorDays || inv.tenor,
-              tenorDays: inv.tenorDays,
-              status: inv.status?.toLowerCase(),
-              valueDate: inv.valueDate ? new Date(inv.valueDate).toLocaleDateString('en-GB') : '—',
-              maturityDate: inv.maturityDate ? new Date(inv.maturityDate).toLocaleDateString('en-GB') : '—',
-              tax: inv.withholdingTax || 0,
-              autoRollover: inv.autoRollover,
-              notes: inv.notes,
-              createdAt: inv.createdAt,
-              history: inv.history,
-            }));
-            set({ clientInvestments: transformed });
+            set({ clientInvestments: data.map(mapInvestment) });
           }
         }).catch(() => {}));
         tasks.push(api.adminTransactionApi.findAll().then(data => {
           if (data && Array.isArray(data)) {
             const transformed = data.map(t => ({
               id: t.id,
+              ref: t.txnRef,
               txnRef: t.txnRef,
               client: t.client?.name,
               clientEmail: t.client?.email,
@@ -332,9 +379,6 @@ const useAppStore = create((set, get) => ({
             set({ preTermQueue: transformed });
           }
         }).catch(() => {}));
-        tasks.push(api.adminDividendApi.findAll().then(data => {
-          if (data && Array.isArray(data)) set({ dividends: data });
-        }).catch(() => {}));
         tasks.push(api.adminStaffLoanApi.getAllEntities().then(data => {
           if (data && Array.isArray(data)) set({ corpLoanEntities: data });
         }).catch(() => {}));
@@ -369,10 +413,26 @@ const useAppStore = create((set, get) => ({
     } catch {}
   },
 
+  refreshInvestments: async () => {
+    const api = await import('../services/api');
+    try {
+      const data = await api.investmentApi.getMyInvestments();
+      if (data && Array.isArray(data)) set({ clientInvestments: data.map(mapInvestment) });
+    } catch {}
+  },
+
   // Admin: update a plan
-  updatePlan: (id, patch) => {
+  updatePlan: async (id, patch) => {
     set((s) => ({ plans: s.plans.map(p => p.id === id ? { ...p, ...patch } : p) }));
-    import('../services/api').then(m => m.productApi.update(id, patch)).catch(() => {});
+    const api = await import('../services/api');
+    try {
+      const updated = await api.productApi.update(id, patch);
+      if (updated) set((s) => ({ plans: s.plans.map(p => p.id === id ? mapProduct(updated) : p) }));
+      return updated;
+    } catch (err) {
+      console.error('Failed to update product:', err);
+      throw err;
+    }
   },
 
   // Admin: add a new plan
@@ -413,13 +473,6 @@ const useAppStore = create((set, get) => ({
 
   // Admin: add audit log entry
   addAuditEntry: (entry) => set((s) => ({ auditLog: [entry, ...s.auditLog] })),
-
-  // Admin: add dividend declaration
-  addDividend: (div) => set((s) => ({ dividends: [div, ...s.dividends] })),
-  declareDividend: (div) => {
-    set((s) => ({ dividends: [div, ...s.dividends] }));
-    import('../services/api').then(m => m.adminDividendApi.declare(div)).catch(() => {});
-  },
 
   // Admin: book investment instrument
   bookInvestment: (inv) => {

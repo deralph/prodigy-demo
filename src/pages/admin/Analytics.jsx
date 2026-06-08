@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { AreaChart, Area, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Legend, ComposedChart } from 'recharts';
 import { Filter, TrendingUp, TrendingDown, Users, DollarSign, BarChart2, Activity } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
@@ -10,51 +10,6 @@ import TabBar from '../../components/ui/TabBar';
 
 const fmt  = n => '₦' + (n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : Number(n).toLocaleString('en-NG'));
 const fmtM = n => `₦${(n / 1000000).toFixed(1)}M`;
-
-/* ── Static enriched chart data ────────────────────── */
-const AUM_TREND = [
-  { month: 'Jan 24', corporate: 62, individual: 18, joint: 5,   total: 85 },
-  { month: 'Feb 24', corporate: 70, individual: 20, joint: 5.5, total: 95.5 },
-  { month: 'Mar 24', corporate: 80, individual: 22, joint: 6,   total: 108 },
-  { month: 'Apr 24', corporate: 85, individual: 24, joint: 7,   total: 116 },
-  { month: 'May 24', corporate: 90, individual: 26, joint: 7.5, total: 123.5 },
-  { month: 'Jun 24', corporate: 95, individual: 28, joint: 8,   total: 131 },
-  { month: 'Jul 24', corporate: 102,individual: 31, joint: 9,   total: 142 },
-  { month: 'Aug 24', corporate: 108,individual: 33, joint: 9.5, total: 150.5 },
-];
-
-const CLIENT_GROWTH = [
-  { month: 'Jan', corporate: 8,  individual: 12, joint: 2, total: 22 },
-  { month: 'Feb', corporate: 10, individual: 15, joint: 3, total: 28 },
-  { month: 'Mar', corporate: 12, individual: 18, joint: 4, total: 34 },
-  { month: 'Apr', corporate: 14, individual: 20, joint: 4, total: 38 },
-  { month: 'May', corporate: 15, individual: 22, joint: 5, total: 42 },
-  { month: 'Jun', corporate: 17, individual: 25, joint: 5, total: 47 },
-  { month: 'Jul', corporate: 19, individual: 27, joint: 6, total: 52 },
-  { month: 'Aug', corporate: 21, individual: 29, joint: 7, total: 57 },
-];
-
-const PORTFOLIO_GROWTH = [
-  { month: 'Jan', capital: 85000000,  eli: 1487500, cumReturn: 1487500,  roiPct: 21 },
-  { month: 'Feb', capital: 95500000,  eli: 1671250, cumReturn: 3158750,  roiPct: 21.1 },
-  { month: 'Mar', capital: 108000000, eli: 1890000, cumReturn: 5048750,  roiPct: 21.2 },
-  { month: 'Apr', capital: 116000000, eli: 2030000, cumReturn: 7078750,  roiPct: 21.3 },
-  { month: 'May', capital: 123500000, eli: 2161250, cumReturn: 9240000,  roiPct: 21.5 },
-  { month: 'Jun', capital: 131000000, eli: 2292500, cumReturn: 11532500, roiPct: 21.5 },
-  { month: 'Jul', capital: 142000000, eli: 2485000, cumReturn: 14017500, roiPct: 21.7 },
-  { month: 'Aug', capital: 150500000, eli: 2633750, cumReturn: 16651250, roiPct: 21.9 },
-];
-
-const PER_PRODUCT_GROWTH = [
-  { month: 'Jan', apex: 50, genesis: 100, aura: 10,   flex: 5,   liquidity: 5,   vcf: 75, vantage: 12.5 },
-  { month: 'Feb', apex: 52, genesis: 100, aura: 10.5, flex: 5.5, liquidity: 5.5, vcf: 75, vantage: 13 },
-  { month: 'Mar', apex: 54, genesis: 100, aura: 11,   flex: 6,   liquidity: 6,   vcf: 75, vantage: 13 },
-  { month: 'Apr', apex: 55, genesis: 100, aura: 11.5, flex: 6.5, liquidity: 6.5, vcf: 75, vantage: 13.5 },
-  { month: 'May', apex: 56, genesis: 100, aura: 12,   flex: 7,   liquidity: 7,   vcf: 75, vantage: 14 },
-  { month: 'Jun', apex: 57, genesis: 100, aura: 12.5, flex: 7.5, liquidity: 7.5, vcf: 75, vantage: 14 },
-  { month: 'Jul', apex: 58, genesis: 100, aura: 13,   flex: 8,   liquidity: 8,   vcf: 75, vantage: 14.5 },
-  { month: 'Aug', apex: 60, genesis: 100, aura: 13.5, flex: 8,   liquidity: 8,   vcf: 75, vantage: 15 },
-];
 
 /* ── Sub-components for each tab ─────────────────── */
 function AumPieCard({ title, data, totalAUM }) {

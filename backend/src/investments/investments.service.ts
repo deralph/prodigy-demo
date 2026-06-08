@@ -40,6 +40,7 @@ export class InvestmentsService {
 
     const client = await this.prisma.client.findUnique({ where: { id: clientDbId } });
     if (!client) throw new NotFoundException('Client not found');
+    console.log(client)
     if (client.status !== 'ACTIVE') throw new ForbiddenException('Account must be active to invest. Please complete KYC.');
 
     const product = await this.prisma.product.findUnique({ where: { id: dto.productId } });
@@ -61,7 +62,7 @@ export class InvestmentsService {
       ? addDays(valueDate, product.lockInDays)
       : addDays(valueDate, tenorDays);
 
-    // ── Atomic: deduct wallet + create subscription txn + create investment ─
+    // ── Atomic: deduct wallet + create subscription txn + create investment + approval ─
     return this.prisma.$transaction(async (tx) => {
       // Deduct from wallet; move to pendingBalance until admin approves
       await tx.client.update({
@@ -72,20 +73,19 @@ export class InvestmentsService {
         },
       });
 
-      // Record the subscription as a wallet transaction
+      // Record the subscription as a wallet transaction (PENDING until approved)
       await tx.walletTransaction.create({
         data: {
           txnRef: `WAL-SUB-${Date.now()}`,
           clientId: clientDbId,
           type: 'SUBSCRIPTION',
-          status: 'SUCCESSFUL',
+          status: 'PENDING',
           amountKobo: principalKobo,
           description: `Investment subscription: ${product.name}`,
-          processedAt: new Date(),
         },
       });
 
-      return tx.investment.create({
+      const investment = await tx.investment.create({
         data: {
           investRef,
           clientId: clientDbId,
@@ -93,6 +93,7 @@ export class InvestmentsService {
           status: 'PENDING_APPROVAL',
           principalKobo,
           roiRate: product.roiMin,
+          taxRate: (product as any).withholdingTaxRate ?? 10,
           tenorDays,
           valueDate,
           maturityDate,
@@ -104,6 +105,27 @@ export class InvestmentsService {
         },
         include: { product: true },
       });
+
+      // Create approval record so admin sees it in Approval Hub
+      await tx.approval.create({
+        data: {
+          approvalRef: `APR-SUB-${Date.now()}`,
+          type: 'SUBSCRIPTION',
+          status: 'PENDING',
+          clientId: clientDbId,
+          investmentId: investment.id,
+          productId: dto.productId,
+          amountKobo: principalKobo,
+          details: {
+            productName: product.name,
+            tenorDays,
+            investRef,
+            roiRate: Number(product.roiMin),
+          },
+        },
+      });
+
+      return investment;
     });
   }
 

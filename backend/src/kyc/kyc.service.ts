@@ -177,4 +177,22 @@ export class KycService {
     });
     return { message: 'KYC rejected' };
   }
+
+  // Admin: approve a single KYC document
+  async approveDocument(clientId: string, docKey: string, adminId: string) {
+    const doc = await this.prisma.kycDocument.update({
+      where: { clientId_docKey: { clientId, docKey } },
+      data: { status: 'VERIFIED', verifiedById: adminId, verifiedAt: new Date(), rejectionReason: null },
+    });
+    return doc;
+  }
+
+  // Admin: reject a single KYC document
+  async rejectDocument(clientId: string, docKey: string, adminId: string, reason: string) {
+    const doc = await this.prisma.kycDocument.update({
+      where: { clientId_docKey: { clientId, docKey } },
+      data: { status: 'REJECTED', verifiedById: adminId, verifiedAt: new Date(), rejectionReason: reason },
+    });
+    return doc;
+  }
 }

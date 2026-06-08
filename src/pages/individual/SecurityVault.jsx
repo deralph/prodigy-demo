@@ -15,10 +15,10 @@ const STATUS_CFG = {
 };
 
 /* ── KYC hero banner ── */
-function KycHeroBanner({ uploaded, total, kycComplete }) {
+function KycHeroBanner({ uploaded, total, kycComplete, allVerified }) {
   const pct = total ? Math.round((uploaded / total) * 100) : 0;
   return (
-    <div style={{ background:kycComplete?'var(--green)':'var(--navy)', borderRadius:14, padding:'22px 26px', marginBottom:22, position:'relative', overflow:'hidden' }} className="animate-in delay-1">
+    <div style={{ background:allVerified?'var(--green)':kycComplete?'#1e7a3e':'var(--navy)', borderRadius:14, padding:'22px 26px', marginBottom:22, position:'relative', overflow:'hidden' }} className="animate-in delay-1">
       <div style={{ position:'absolute', top:-40, right:-40, width:160, height:160, borderRadius:'50%', background:'rgba(255,255,255,0.05)', pointerEvents:'none' }}/>
       <div style={{ display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
         <div style={{ width:48, height:48, borderRadius:12, background:'rgba(255,255,255,0.12)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
@@ -26,7 +26,7 @@ function KycHeroBanner({ uploaded, total, kycComplete }) {
         </div>
         <div style={{ flex:1 }}>
           <div style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:16, color:'white', marginBottom:3 }}>
-            {kycComplete ? 'All Documents Submitted — Pending Review' : 'KYC Documents Required'}
+            {allVerified ? 'KYC Approved — Account Active' : kycComplete ? 'All Documents Submitted — Pending Review' : 'KYC Documents Required'}
           </div>
           <div style={{ fontSize:12, color:'rgba(255,255,255,0.65)' }}>
             {uploaded}/{total} documents submitted · Select each document below to upload
@@ -134,6 +134,7 @@ export default function SecurityVault() {
 
   const uploaded    = docs.filter(d => ['UPLOADED','VERIFIED'].includes(getStatus(d.key))).length;
   const kycComplete = uploaded === docs.length;
+  const allVerified = docs.length > 0 && docs.every(d => getStatus(d.key) === 'VERIFIED');
 
   const kpiStats = [
     { label:'Submitted', val:uploaded,                                                                 color:'var(--green)' },
@@ -151,7 +152,7 @@ export default function SecurityVault() {
 
       {toast && <AlertBanner message={toast.msg} type={toast.type} style={{ marginBottom:16 }} />}
 
-      <KycHeroBanner uploaded={uploaded} total={docs.length} kycComplete={kycComplete} />
+      <KycHeroBanner uploaded={uploaded} total={docs.length} kycComplete={kycComplete} allVerified={allVerified} />
 
       {/* Stats */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14, marginBottom:22 }} className="animate-in delay-2">

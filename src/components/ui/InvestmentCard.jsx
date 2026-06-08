@@ -4,9 +4,11 @@ import { Eye } from 'lucide-react';
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 
 const STATUS_STYLE = {
-  active:   { color: 'var(--green)', bg: 'rgba(34,197,94,0.1)',  label: 'Active' },
-  matured:  { color: 'var(--gold)',  bg: 'rgba(232,184,75,0.12)',label: 'Matured' },
-  pre_term: { color: '#f97316',      bg: 'rgba(249,115,22,0.1)', label: 'Pre-Term' },
+  active:           { color: 'var(--green)', bg: 'rgba(34,197,94,0.1)',  label: 'Active' },
+  pending_approval: { color: '#eab308',      bg: 'rgba(234,179,8,0.12)', label: 'Pending Approval' },
+  matured:          { color: 'var(--gold)',  bg: 'rgba(232,184,75,0.12)',label: 'Matured' },
+  pre_term:         { color: '#f97316',      bg: 'rgba(249,115,22,0.1)', label: 'Pre-Term' },
+  rejected:         { color: 'var(--red)',   bg: 'rgba(239,68,68,0.1)',  label: 'Rejected' },
 };
 
 /**

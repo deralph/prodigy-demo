@@ -193,6 +193,8 @@ export default function ClientManagement() {
   const [editModal,    setEditModal]    = useState(null);
   const [kycDocs,      setKycDocs]      = useState(null);
   const [kycLoading,   setKycLoading]   = useState(false);
+  const [actingDoc,    setActingDoc]    = useState(null);
+  const [msg,          setMsg]          = useState('');
 
   const filtered = clients.filter(c => {
     const ms = c.name.toLowerCase().includes(search.toLowerCase()) || c.email.toLowerCase().includes(search.toLowerCase());
@@ -215,6 +217,68 @@ export default function ClientManagement() {
   const handleSaveEdit = (form) => {
     updateClient(editModal.id, form);
     adminClientApi.updateStatus(editModal.clientId, form.status === 'verified' ? 'ACTIVE' : form.status === 'suspended' ? 'SUSPENDED' : 'PENDING_KYC').catch(() => {});
+  };
+
+  const handleApproveKyc = async () => {
+    try {
+      setMsg('');
+      await kycApi.approveKyc(selected.id);
+      updateClient(selected.id, { kyc: 'approved', status: 'verified' });
+      setMsg('Account activated successfully');
+      setTimeout(() => { setSelected(null); setMsg(''); }, 1200);
+    } catch (e) {
+      setMsg(e?.message || 'Approval failed');
+    }
+  };
+
+  const handleFlagSuspend = async () => {
+    try {
+      setMsg('');
+      await kycApi.rejectKyc(selected.id, 'Account flagged by admin');
+      updateClient(selected.id, { kyc: 'flagged', status: 'suspended' });
+      setSelected({ ...selected, kyc: 'flagged', status: 'suspended' });
+      setMsg('Account flagged and suspended');
+    } catch (e) {
+      setMsg(e?.message || 'Action failed');
+    }
+  };
+
+  const refreshKyc = async () => {
+    if (!selected?.id) return;
+    setKycLoading(true);
+    try {
+      const data = await kycApi.getClientKyc(selected.id);
+      setKycDocs(data);
+    } catch {
+      setKycDocs(null);
+    } finally {
+      setKycLoading(false);
+    }
+  };
+
+  const handleApproveDoc = async (clientId, docKey) => {
+    setActingDoc({ clientId, docKey });
+    try {
+      await kycApi.approveDocument(clientId, docKey);
+      await refreshKyc();
+    } catch (e) {
+      setMsg(e?.message || 'Failed to approve document');
+    } finally {
+      setActingDoc(null);
+    }
+  };
+
+  const handleRejectDoc = async (clientId, docKey, reason) => {
+    if (!reason.trim()) return;
+    setActingDoc({ clientId, docKey });
+    try {
+      await kycApi.rejectDocument(clientId, docKey, reason);
+      await refreshKyc();
+    } catch (e) {
+      setMsg(e?.message || 'Failed to reject document');
+    } finally {
+      setActingDoc(null);
+    }
   };
 
   const columns = buildColumns(
@@ -260,11 +324,12 @@ export default function ClientManagement() {
         >
           <TabBar tabs={DETAIL_TABS} active={detailTab} onChange={setDetailTab} />
           <div style={{ paddingTop: 20 }}>
+            {msg && <div style={{ marginBottom: 16 }}><AlertBanner message={msg} type={msg.includes('successfully') || msg.includes('activated') ? 'success' : 'error'} /></div>}
             {detailTab === 'info' && (
               <ClientInfoPanel
                 client={selected}
-                onApproveKyc={() => { updateClient(selected.id, { kyc: 'approved', status: 'verified' }); setSelected({ ...selected, kyc: 'approved', status: 'verified' }); }}
-                onFlagSuspend={() => { updateClient(selected.id, { kyc: 'flagged', status: 'suspended' }); setSelected({ ...selected, kyc: 'flagged', status: 'suspended' }); }}
+                onApproveKyc={handleApproveKyc}
+                onFlagSuspend={handleFlagSuspend}
               />
             )}
             {detailTab === 'wallet' && <WalletTab client={selected} allTransactions={allTransactions} clients={clients} />}
@@ -275,6 +340,11 @@ export default function ClientManagement() {
                 kycStatus={kycDocs?.kycRecord?.status || selected.kyc}
                 submittedAt={kycDocs?.kycRecord?.submittedAt}
                 loading={kycLoading}
+                isAdmin
+                clientId={selected.id}
+                onApproveDoc={handleApproveDoc}
+                onRejectDoc={handleRejectDoc}
+                actingDoc={actingDoc}
               />
             )}
           </div>

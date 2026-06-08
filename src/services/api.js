@@ -134,11 +134,16 @@ export const kycApi = {
   approveKyc: (clientId) => request(`/kyc/${clientId}/approve`, { method: 'POST' }),
   rejectKyc: (clientId, reason) =>
     request(`/kyc/${clientId}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  approveDocument: (clientId, docKey) =>
+    request(`/kyc/documents/${clientId}/${docKey}/approve`, { method: 'POST' }),
+  rejectDocument: (clientId, docKey, reason) =>
+    request(`/kyc/documents/${clientId}/${docKey}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
 };
 
 /* ── PRODUCTS ────────────────────────────────────────────── */
 export const productApi = {
   findAll: () => request('/products'),
+  findAllAdmin: () => request('/products/admin/all'),
   findOne: (id) => request(`/products/${id}`),
   create: (data) => request('/products', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => request(`/products/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
@@ -267,12 +272,6 @@ export const adminStaffLoanApi = {
   getAllEntities: () => request('/admin/loans/corporate'),
   getEntityLoans: (entityId) => request(`/admin/loans/corporate/${entityId}/staff`),
   findOne: (id) => request(`/admin/loans/${id}`),
-};
-
-/* ── DIVIDENDS ───────────────────────────────────────────── */
-export const adminDividendApi = {
-  findAll: () => request('/admin/dividends'),
-  declare: (data) => request('/admin/dividends', { method: 'POST', body: JSON.stringify(data) }),
 };
 
 /* ── JOINT ACCOUNTS ──────────────────────────────────────── */

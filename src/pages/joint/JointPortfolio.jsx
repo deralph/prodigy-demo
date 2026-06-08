@@ -18,14 +18,22 @@ const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 function buildGrowth(inv) {
-  const base = inv.amount;
-  const rate = (inv.roi || 0) / 1200;
-  return MONTHS.map((m, i) => ({
-    month: m,
-    value:     +(base * (0.6 + 0.4 * ((i + 1) / 12)) + base * rate * (i + 1)).toFixed(0),
-    principal: +(base * (0.6 + 0.4 * ((i + 1) / 12))).toFixed(0),
-    eli:       +(base * rate * (i + 1)).toFixed(0),
-  }));
+  const principal = inv.amount;
+  const monthlyRate = (inv.roi || 0) / 1200;
+  const monthlyELI = principal * monthlyRate;
+  const tenorMonths = Math.max(1, Math.round((inv.tenorDays || 365) / 30));
+
+  return MONTHS.map((m, i) => {
+    const elapsed = Math.min(i + 1, tenorMonths);
+    const cumulativeELI = monthlyELI * elapsed;
+    return {
+      month: m,
+      principal: Math.round(principal),
+      monthlyEli: Math.round(monthlyELI),
+      eli: Math.round(cumulativeELI),
+      value: Math.round(principal + cumulativeELI),
+    };
+  });
 }
 
 function JointInvestmentDrawer({ inv, plans, user, client, onClose }) {
@@ -163,7 +171,7 @@ function JointInvestmentDrawer({ inv, plans, user, client, onClose }) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f4ff" />
                   <XAxis dataKey="month" tick={{ fontSize: 10 }} /><YAxis tickFormatter={v => '₦' + (v / 1e3).toFixed(0) + 'K'} tick={{ fontSize: 10 }} />
                   <Tooltip formatter={v => [fmt(v), 'ELI']} />
-                  <Bar dataKey="eli" name="Monthly ELI" fill={color} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="monthlyEli" name="Monthly ELI" fill={color} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -239,7 +247,10 @@ export default function JointPortfolio() {
       const row = { month };
       filtered.forEach(inv => {
         const label = plans.find(p => p.id === inv.planId)?.name || inv.plan;
-        row[label] = (row[label] || 0) + Math.round(inv.amount * (0.6 + 0.4 * ((mi + 1) / 12)));
+        const tenorMonths = Math.max(1, Math.round((inv.tenorDays || 365) / 30));
+        const elapsed = Math.min(mi + 1, tenorMonths);
+        const accrued = inv.amount * (inv.roi / 100) * (elapsed / 12);
+        row[label] = (row[label] || 0) + Math.round(inv.amount + accrued);
       });
       return row;
     });
@@ -305,6 +316,7 @@ export default function JointPortfolio() {
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ border: '1px solid #e2e8f0', borderRadius: 7, padding: '7px 12px', fontSize: 11, color: 'var(--navy)', fontFamily: 'DM Sans,sans-serif', cursor: 'pointer', outline: 'none' }}>
             <option value="all">All Statuses</option>
             <option value="active">Active</option>
+            <option value="pending_approval">Pending Approval</option>
             <option value="matured">Matured</option>
             <option value="pre_term">Pre-Term</option>
           </select>

@@ -240,7 +240,7 @@ export default function Treasury() {
     const grouped = {};
     myInvs.forEach(inv => {
       const plan = plans.find(p => p.id === inv.planId) || {};
-      if (!grouped[inv.planId]) grouped[inv.planId] = { id: inv.planId, name: inv.plan || plan.name || 'Unknown', balance: 0, color: plan.color || '#3b82f6' };
+      if (!grouped[inv.planId]) grouped[inv.planId] = { id: inv.planId, name: inv.plan || plan.name || 'Unknown', balance: 0, color: plan.color || '#3b82f6', roi: plan.roiMin || 0 };
       grouped[inv.planId].balance += (inv.amount || 0);
     });
     return Object.values(grouped).map(p => ({ ...p, weight: total > 0 ? ((p.balance / total) * 100).toFixed(1) + '%' : '0%' }));
@@ -254,16 +254,24 @@ export default function Treasury() {
     const filtered = chartFilter === 'all' ? PORTFOLIO : PORTFOLIO.filter(p => p.id === chartFilter);
     return MONTHS.map((month, mi) => {
       const row = { month };
-      filtered.forEach(p => { row[p.name] = Math.round(p.balance * (0.7 + 0.3 * ((mi + 1) / 12))); });
+      filtered.forEach(p => {
+        const monthlyRate = (p.roi || 0) / 1200;
+        const accrued = p.balance * monthlyRate * (mi + 1);
+        row[p.name] = Math.round(p.balance + accrued);
+      });
       return row;
     });
   }, [chartFilter, PORTFOLIO]);
 
-  const GROWTH_DATA = useMemo(() => MONTHS.map((month, mi) => ({
-    month,
-    aum: Math.round(totalAUM * (0.7 + 0.3 * ((mi + 1) / 12))),
-    ret: Math.round(totalAUM * 0.0015 * (mi + 1)),
-  })), [totalAUM]);
+  const GROWTH_DATA = useMemo(() => {
+    const weightedRoi = totalAUM > 0 ? PORTFOLIO.reduce((s, p) => s + (p.roi || 0) * p.balance, 0) / totalAUM : 0;
+    const monthlyReturn = totalAUM * (weightedRoi / 100) / 12;
+    return MONTHS.map((month, mi) => ({
+      month,
+      aum: Math.round(totalAUM),
+      ret: Math.round(monthlyReturn * (mi + 1)),
+    }));
+  }, [totalAUM, PORTFOLIO]);
 
   return (
     <div>

@@ -25,17 +25,33 @@ export class ApprovalsService {
       data: { status: 'APPROVED', reviewedById: adminId, reviewNotes: notes, reviewedAt: new Date() },
     });
 
-    // If it's a SUBSCRIPTION approval → activate investment
+    // If it's a SUBSCRIPTION approval → activate investment + settle wallet
     if (approval.type === 'SUBSCRIPTION' && approval.investmentId) {
-      await this.prisma.investment.update({
-        where: { id: approval.investmentId },
-        data: {
-          status: 'ACTIVE',
-          approvedById: adminId,
-          approvedAt: new Date(),
-          history: { create: { action: 'Approved & Activated', performedById: adminId } },
-        },
-      });
+      const inv = await this.prisma.investment.findUnique({ where: { id: approval.investmentId } });
+      if (inv) {
+        await this.prisma.$transaction([
+          // Activate investment
+          this.prisma.investment.update({
+            where: { id: approval.investmentId },
+            data: {
+              status: 'ACTIVE',
+              approvedById: adminId,
+              approvedAt: new Date(),
+              history: { create: { action: 'Approved & Activated', note: notes, performedById: adminId } },
+            },
+          }),
+          // Remove from pendingBalance (money is now formally invested)
+          this.prisma.client.update({
+            where: { id: inv.clientId },
+            data: { pendingBalance: { decrement: inv.principalKobo } },
+          }),
+          // Mark wallet txn as SUCCESSFUL
+          this.prisma.walletTransaction.updateMany({
+            where: { clientId: inv.clientId, type: 'SUBSCRIPTION', status: 'PENDING', amountKobo: inv.principalKobo },
+            data: { status: 'SUCCESSFUL', processedAt: new Date() },
+          }),
+        ]);
+      }
     }
 
     return updated;
@@ -51,10 +67,29 @@ export class ApprovalsService {
     });
 
     if (approval.type === 'SUBSCRIPTION' && approval.investmentId) {
-      await this.prisma.investment.update({
-        where: { id: approval.investmentId },
-        data: { status: 'REJECTED', history: { create: { action: 'Rejected', note: reason, performedById: adminId } } },
-      });
+      const inv = await this.prisma.investment.findUnique({ where: { id: approval.investmentId } });
+      if (inv) {
+        await this.prisma.$transaction([
+          // Reject investment
+          this.prisma.investment.update({
+            where: { id: approval.investmentId },
+            data: { status: 'REJECTED', history: { create: { action: 'Rejected', note: reason, performedById: adminId } } },
+          }),
+          // Refund wallet balance + clear pending
+          this.prisma.client.update({
+            where: { id: inv.clientId },
+            data: {
+              walletBalance: { increment: inv.principalKobo },
+              pendingBalance: { decrement: inv.principalKobo },
+            },
+          }),
+          // Mark wallet txn as REVERSED
+          this.prisma.walletTransaction.updateMany({
+            where: { clientId: inv.clientId, type: 'SUBSCRIPTION', status: 'PENDING', amountKobo: inv.principalKobo },
+            data: { status: 'REVERSED', processedAt: new Date() },
+          }),
+        ]);
+      }
     }
 
     return updated;
