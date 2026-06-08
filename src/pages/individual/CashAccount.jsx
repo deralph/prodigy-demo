@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { usePaystackPayment } from 'react-paystack';
 import { CreditCard, Building2, X, Check, Copy } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
@@ -22,7 +22,17 @@ function FundModal({ onClose, user, onSuccess }) {
   const [amount, setAmount]   = useState('');
   const [copied, setCopied]   = useState(false);
   const [loading, setLoading] = useState(false);
+  const [pubKey, setPubKey]   = useState(PAYSTACK_KEY);
   const psRef                 = useRef(genRef());
+
+  // Use the public key that matches the backend secret key (same Paystack account)
+  useEffect(() => {
+    let alive = true;
+    walletApi.getConfig()
+      .then(cfg => { if (alive && cfg?.publicKey) setPubKey(cfg.publicKey); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const ACCOUNT = {
     bank: user?.virtualAccountBank || 'Prodigy MFB',
@@ -34,7 +44,7 @@ function FundModal({ onClose, user, onSuccess }) {
     reference: psRef.current,
     email:     user?.email || '',
     amount:    Math.round(Number(amount || 0) * 100),
-    publicKey: PAYSTACK_KEY,
+    publicKey: pubKey,
     metadata:  { clientDbId: user?.id },
     channels:  ['card','bank','ussd','bank_transfer','qr'],
   });

@@ -12,6 +12,12 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class WalletController {
   constructor(private walletService: WalletService) {}
 
+  @Get('config')
+  @ApiOperation({ summary: 'Get the Paystack public key for the inline popup' })
+  getConfig() {
+    return this.walletService.getPaystackConfig();
+  }
+
   @Get('me')
   @ApiOperation({ summary: 'Get wallet balance and virtual account details' })
   getWallet(@Req() req: any) {

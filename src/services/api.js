@@ -169,6 +169,7 @@ export const adminInvestmentApi = {
 
 /* ── WALLET ──────────────────────────────────────────────── */
 export const walletApi = {
+  getConfig: () => request('/wallet/config'),
   getWallet: () => request('/wallet/me'),
   getTransactions: (params = {}) => {
     const qs = new URLSearchParams(params).toString();

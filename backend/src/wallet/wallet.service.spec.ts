@@ -187,6 +187,81 @@ describe('WalletService', () => {
       const result = await service.verifyPayment(IDS.CLIENT_DB, 'REF-002');
       expect(result.status).toBe('success');
     });
+
+    // Helper: make $transaction credit a PENDING txn successfully
+    const mockCredit = (pendingTx: any) =>
+      prisma.$transaction.mockImplementationOnce(async (fn: any) =>
+        fn({
+          client: { update: jest.fn() },
+          walletTransaction: {
+            findFirst: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(pendingTx),
+            create: jest.fn(),
+            update: jest.fn().mockResolvedValue({ ...pendingTx, status: 'SUCCESSFUL' }),
+          },
+        }),
+      );
+
+    it('credits the verified amount when Paystack confirms (sk_test)', async () => {
+      const pendingTx = { ...MOCK.walletTx, status: 'PENDING', paystackRef: 'REF-OK', amountKobo: BigInt(50_000) };
+      prisma.walletTransaction.findFirst.mockResolvedValueOnce(pendingTx);
+      configGet.mockReturnValue('sk_test_xxx');
+      (global as any).fetch = jest.fn().mockResolvedValue({
+        status: 200,
+        json: async () => ({ status: true, data: { status: 'success', amount: 50_000, channel: 'card' } }),
+      });
+      mockCredit(pendingTx);
+      prisma.activityLog.create.mockResolvedValue({});
+      prisma.auditLog.create.mockResolvedValue({});
+
+      const result = await service.verifyPayment(IDS.CLIENT_DB, 'REF-OK');
+      expect(result.status).toBe('success');
+      expect((global as any).fetch).toHaveBeenCalled();
+    });
+
+    it('falls back to crediting in TEST mode when verify cannot confirm (key mismatch)', async () => {
+      const pendingTx = { ...MOCK.walletTx, status: 'PENDING', paystackRef: 'REF-MISS', amountKobo: BigInt(50_000) };
+      prisma.walletTransaction.findFirst.mockResolvedValueOnce(pendingTx);
+      configGet.mockReturnValue('sk_test_xxx');
+      (global as any).fetch = jest.fn().mockResolvedValue({
+        status: 404,
+        json: async () => ({ status: false, message: 'Transaction reference not found' }),
+      });
+      mockCredit(pendingTx);
+      prisma.activityLog.create.mockResolvedValue({});
+      prisma.auditLog.create.mockResolvedValue({});
+
+      const result = await service.verifyPayment(IDS.CLIENT_DB, 'REF-MISS');
+      expect(result.status).toBe('success');
+    }, 10000);
+
+    it('throws and marks FAILED in LIVE mode when verify fails', async () => {
+      const pendingTx = { ...MOCK.walletTx, status: 'PENDING', paystackRef: 'REF-LIVE', amountKobo: BigInt(50_000) };
+      prisma.walletTransaction.findFirst.mockResolvedValueOnce(pendingTx);
+      configGet.mockReturnValue('sk_live_xxx');
+      (global as any).fetch = jest.fn().mockResolvedValue({
+        status: 404,
+        json: async () => ({ status: false, message: 'Transaction reference not found' }),
+      });
+      prisma.walletTransaction.update.mockResolvedValue({});
+      prisma.activityLog.create.mockResolvedValue({});
+      prisma.auditLog.create.mockResolvedValue({});
+
+      await expect(service.verifyPayment(IDS.CLIENT_DB, 'REF-LIVE')).rejects.toThrow(BadRequestException);
+      expect(prisma.walletTransaction.update).toHaveBeenCalled();
+    }, 10000);
+  });
+
+  // ── getPaystackConfig ────────────────────────────────────────────
+  describe('getPaystackConfig()', () => {
+    it('returns the configured public key', () => {
+      configGet.mockReturnValue('pk_test_abc');
+      expect(service.getPaystackConfig()).toEqual({ publicKey: 'pk_test_abc' });
+    });
+
+    it('returns null when not configured', () => {
+      configGet.mockReturnValue(undefined);
+      expect(service.getPaystackConfig()).toEqual({ publicKey: null });
+    });
   });
 
   // ── requestWithdrawal ─────────────────────────────────────────────

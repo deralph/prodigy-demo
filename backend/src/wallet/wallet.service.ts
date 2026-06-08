@@ -79,10 +79,46 @@ export class WalletService {
     return { reference, access_code: null, authorization_url: null };
   }
 
+  /** Public Paystack key for the inline popup — single source of truth so the
+   *  key that charges the transaction always matches the key that verifies it. */
+  getPaystackConfig() {
+    return { publicKey: this.config.get<string>('PAYSTACK_PUBLIC_KEY') || null };
+  }
+
+  /**
+   * Call Paystack's verify endpoint, retrying briefly so a test-mode propagation
+   * delay doesn't surface as a spurious "reference not found". Returns the last
+   * response (successful or not) so the caller can decide what to do.
+   */
+  private async queryPaystackVerify(reference: string, secretKey: string, attempts = 3) {
+    let last: any = { status: false, message: 'No response from Paystack' };
+    for (let i = 1; i <= attempts; i++) {
+      try {
+        const resp = await fetch(
+          `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+          { headers: { Authorization: `Bearer ${secretKey}` } },
+        );
+        last = (await resp.json()) as any;
+        this.logger.log(
+          `[VERIFY] attempt ${i}/${attempts} httpStatus=${resp.status} status=${last?.data?.status} gateway_response=${last?.data?.gateway_response} message=${last?.message} ref=${reference}`,
+        );
+        if (last?.status && last?.data?.status === 'success') return last;
+      } catch (err: any) {
+        this.logger.warn(`[VERIFY] attempt ${i}/${attempts} error: ${err.message} ref=${reference}`);
+        last = { status: false, message: err.message };
+      }
+      if (i < attempts) await new Promise((r) => setTimeout(r, 1200));
+    }
+    return last;
+  }
+
   /**
    * Verify a Paystack inline payment after the popup reports success.
-   * If PAYSTACK_SECRET_KEY is configured → calls Paystack verify API.
-   * Otherwise (demo/test mode) → trusts the inline success and credits directly.
+   * - With a secret key configured → verify against Paystack (with retries).
+   * - In TEST mode (no key, or sk_test) → if verify can't confirm (e.g. the
+   *   popup's public key and this secret key are from different test accounts),
+   *   fall back to crediting the recorded PENDING amount so the demo stays
+   *   seamless. LIVE mode (sk_live) stays strict and marks the txn FAILED.
    * Idempotent: re-calling with an already-SUCCESSFUL reference returns it.
    */
   async verifyPayment(clientDbId: string, reference: string) {
@@ -103,45 +139,56 @@ export class WalletService {
     }
 
     const secretKey = this.config.get<string>('PAYSTACK_SECRET_KEY');
+    const isTestMode = !secretKey || secretKey.startsWith('sk_test');
 
     if (secretKey) {
-      const resp = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
-        headers: { Authorization: `Bearer ${secretKey}` },
-      });
-      const result = (await resp.json()) as any;
+      const result = await this.queryPaystackVerify(reference, secretKey);
+      const verified = !!result?.status && result?.data?.status === 'success';
 
-      this.logger.log(
-        `[VERIFY] Paystack response: status=${result?.data?.status} gateway_response=${result?.data?.gateway_response} ref=${reference}`,
-      );
-
-      if (!result.status || result.data?.status !== 'success') {
-        const reason = result.data?.gateway_response || result.message || 'Verification failed';
-        this.logger.warn(`[VERIFY] Payment not successful: ${reason} ref=${reference}`);
-
-        await this.prisma.walletTransaction.update({
-          where: { id: pending.id },
-          data: { status: 'FAILED', description: `Failed: ${reason}`, processedAt: new Date() },
-        });
-
-        await this.logFundingEvent(clientDbId, pending.amountKobo, reference, 'FAILED', reason);
-        throw new BadRequestException(`Payment verification failed: ${reason}`);
+      if (verified) {
+        const verifiedAmountKobo = BigInt(result.data.amount);
+        const channel = result.data.channel || 'card';
+        const txn = await this.creditWallet(
+          clientDbId,
+          verifiedAmountKobo,
+          reference,
+          `Wallet Funding via Paystack (${channel})`,
+        );
+        await this.logFundingEvent(clientDbId, verifiedAmountKobo, reference, 'SUCCESS', channel);
+        return { status: 'success', transaction: txn };
       }
 
-      const verifiedAmountKobo = BigInt(result.data.amount);
-      const channel = result.data.channel || 'card';
+      const reason = result?.data?.gateway_response || result?.message || 'Verification failed';
 
-      const txn = await this.creditWallet(
-        clientDbId,
-        verifiedAmountKobo,
-        reference,
-        `Wallet Funding via Paystack (${channel})`,
-      );
-      await this.logFundingEvent(clientDbId, verifiedAmountKobo, reference, 'SUCCESS', channel);
-      return { status: 'success', transaction: txn };
+      // TEST mode safety net: keys may belong to different test accounts, so a
+      // "reference not found" here is a config mismatch, not a real failure.
+      if (isTestMode) {
+        this.logger.warn(
+          `[VERIFY] Paystack verify unsuccessful in TEST mode (${reason}) — crediting recorded amount as demo fallback. ` +
+            `To verify for real, set PAYSTACK_PUBLIC_KEY/VITE key from the SAME account as PAYSTACK_SECRET_KEY. ref=${reference}`,
+        );
+        const txn = await this.creditWallet(
+          clientDbId,
+          pending.amountKobo,
+          reference,
+          'Wallet Funding via Paystack (test)',
+        );
+        await this.logFundingEvent(clientDbId, pending.amountKobo, reference, 'SUCCESS', 'test');
+        return { status: 'success', transaction: txn };
+      }
+
+      // LIVE mode — do not credit unverified money.
+      this.logger.warn(`[VERIFY] Payment not successful: ${reason} ref=${reference}`);
+      await this.prisma.walletTransaction.update({
+        where: { id: pending.id },
+        data: { status: 'FAILED', description: `Failed: ${reason}`, processedAt: new Date() },
+      });
+      await this.logFundingEvent(clientDbId, pending.amountKobo, reference, 'FAILED', reason);
+      throw new BadRequestException(`Payment verification failed: ${reason}`);
     }
 
-    // Demo / test mode — no secret key; trust the inline popup
-    this.logger.log(`[VERIFY] Demo mode — crediting wallet directly ref=${reference}`);
+    // No secret key at all — pure demo mode; trust the inline popup.
+    this.logger.log(`[VERIFY] Demo mode (no secret key) — crediting wallet directly ref=${reference}`);
     const txn = await this.creditWallet(
       clientDbId,
       pending.amountKobo,

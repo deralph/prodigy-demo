@@ -13,10 +13,10 @@ const PRESETS      = [100000, 250000, 500000, 1000000, 2500000, 5000000];
 const PAYSTACK_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_test_62ba3fa4e30ace38c25feca74eae65646f1cf095';
 
 /** Isolated so usePaystackPayment always gets a stable config */
-function PaystackButton({ amountNaira, email, reference, paying, onPaying, onSuccess, onClose }) {
+function PaystackButton({ amountNaira, email, reference, publicKey, paying, onPaying, onSuccess, onClose }) {
   const initPay = usePaystackPayment({
     reference, email: email || 'user@prodigyfinance.ng',
-    amount: amountNaira * 100, publicKey: PAYSTACK_KEY, currency: 'NGN',
+    amount: amountNaira * 100, publicKey, currency: 'NGN',
     metadata: { custom_fields: [{ display_name: 'Platform', variable_name: 'platform', value: 'Prodigy Finance' }] },
   });
 
@@ -66,6 +66,17 @@ export default function FundWalletModal({ onClose, onDone }) {
   const [reference, setReference] = useState(genRef);
   const [paying, setPaying]       = useState(false);
   const [error, setError]         = useState('');
+  const [pubKey, setPubKey]       = useState(PAYSTACK_KEY);
+
+  // Use the public key that matches the backend's secret key so the charge and
+  // the verification happen on the same Paystack account.
+  useEffect(() => {
+    let alive = true;
+    walletApi.getConfig()
+      .then(cfg => { if (alive && cfg?.publicKey) setPubKey(cfg.publicKey); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const numAmount = parseInt(rawAmount.replace(/[^0-9]/g, ''), 10) || 0;
 
@@ -169,7 +180,7 @@ export default function FundWalletModal({ onClose, onDone }) {
       )}
 
       {numAmount >= 100 ? (
-        <PaystackButton key={reference} amountNaira={numAmount} email={user?.email} reference={reference} paying={paying} onPaying={handlePaying} onSuccess={handleSuccess} onClose={handleCancelled} />
+        <PaystackButton key={`${reference}-${pubKey}`} amountNaira={numAmount} email={user?.email} reference={reference} publicKey={pubKey} paying={paying} onPaying={handlePaying} onSuccess={handleSuccess} onClose={handleCancelled} />
       ) : (
         <button disabled style={{ width: '100%', background: 'var(--gray-100)', color: 'var(--gray-400)', fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 13, letterSpacing: '0.06em', border: 'none', borderRadius: 10, padding: '15px', cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <Lock size={15} /> ENTER AMOUNT TO CONTINUE
