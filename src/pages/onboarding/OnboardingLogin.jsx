@@ -14,7 +14,7 @@ import AccountCreatedScreen from '../../components/auth/AccountCreatedScreen';
 import NibssVerifyField     from '../../components/auth/NibssVerifyField';
 
 /* ── Helpers ─────────────────────────────────────── */
-const isGmail = email => /^[a-zA-Z0-9._%+\-]+@gmail\.com$/.test(email.trim());
+const isValidEmail = email => /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(email.trim());
 const HOLDER_COLORS = ['#3b82f6', '#22c55e', '#8b5cf6'];
 
 async function verifyNibss(type, number, expectedName) {
@@ -256,8 +256,8 @@ function IndividualCreate({ onBack }) {
     updHolder(i, { verifying: false, verified: r.ok, verifyErr: r.ok ? '' : r.message });
   };
 
-  const singleValid       = single.name && isGmail(single.email) && single.password.length >= 8;
-  const jointFormValid    = holders.every(h => h.name && isGmail(h.email) && h.phone) && (holders[0]?.password?.length >= 6);
+  const singleValid       = single.name && isValidEmail(single.email) && single.password.length >= 8;
+  const jointFormValid    = holders.every(h => h.name && isValidEmail(h.email) && h.phone) && (holders[0]?.password?.length >= 6);
   const allHoldersVerified = holders.every(h => h.verified);
 
   const docList = accountType === 'joint' ? buildJointDocs(holderCount) : KYC_REQUIREMENTS.individual;
@@ -408,7 +408,7 @@ function IndividualCreate({ onBack }) {
       {accountType === 'single' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <AuthInput label="Full Legal Name" icon={User} placeholder="JOHN DOE" value={single.name} onChange={e => setSingle(f => ({ ...f, name: e.target.value }))} />
-          <AuthInput label="Gmail Address" icon={Mail} type="email" placeholder="you@gmail.com" value={single.email} onChange={e => setSingle(f => ({ ...f, email: e.target.value }))} error={single.email && !isGmail(single.email) ? 'Only Gmail addresses are accepted (@gmail.com)' : ''} />
+          <AuthInput label="Email Address" icon={Mail} type="email" placeholder="you@email.com" value={single.email} onChange={e => setSingle(f => ({ ...f, email: e.target.value }))} error={single.email && !isValidEmail(single.email) ? 'Please enter a valid email address' : ''} />
           <AuthInput label="Phone Number" icon={Phone} type="tel" placeholder="+234 800 000 0000" value={single.phone} onChange={e => setSingle(f => ({ ...f, phone: e.target.value }))} />
           <AuthInput label="Secure Password" icon={Lock} type="password" placeholder="min 8 characters" value={single.password} onChange={e => setSingle(f => ({ ...f, password: e.target.value }))} />
           <AuthSubmitButton label="NEXT: VERIFY IDENTITY" disabled={!singleValid} onClick={() => setStep('verify')} />
@@ -441,7 +441,7 @@ function IndividualCreate({ onBack }) {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <AuthInput placeholder={`Holder ${i + 1} full name`} value={h.name} onChange={e => updHolder(i, { name: e.target.value })} />
-                <AuthInput type="email" placeholder="holder@gmail.com" value={h.email} onChange={e => updHolder(i, { email: e.target.value })} error={h.email && !isGmail(h.email) ? 'Only @gmail.com accepted' : ''} />
+                <AuthInput type="email" placeholder="holder@email.com" value={h.email} onChange={e => updHolder(i, { email: e.target.value })} error={h.email && !isValidEmail(h.email) ? 'Please enter a valid email address' : ''} />
                 <AuthInput type="tel" placeholder="+234 800 000 0000" value={h.phone} onChange={e => updHolder(i, { phone: e.target.value })} />
               </div>
             </div>
@@ -455,7 +455,7 @@ function IndividualCreate({ onBack }) {
             <AuthInput type="password" placeholder="min 6 characters (shared account password)" value={holders[0]?.password || ''} onChange={e => updHolder(0, { password: e.target.value })} />
             <div style={{ fontSize: 10, color: '#1d4ed8', background: 'rgba(59,130,246,0.07)', padding: '9px 12px', borderRadius: 8, marginTop: 10, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
               <Mail size={11} style={{ flexShrink: 0, marginTop: 1 }} />
-              <span>Primary holder uses Gmail + this password. All other holders receive a login link.</span>
+              <span>Primary holder uses their email + this password. All other holders receive a login link.</span>
             </div>
           </div>
 

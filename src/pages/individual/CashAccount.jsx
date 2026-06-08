@@ -12,6 +12,9 @@ const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 const INFLOW_TYPES = new Set(['wallet_funding','redemption','pre_termination_payout','dividend_payout']);
 
 const QUICK_AMTS = [100000, 500000, 1000000, 5000000];
+const PAYSTACK_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_test_62ba3fa4e30ace38c25feca74eae65646f1cf095';
+
+const genRef = () => 'WAL-PS-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
 
 /* ── Fund modal tabs ── */
 function FundModal({ onClose, user, onSuccess }) {
@@ -19,7 +22,7 @@ function FundModal({ onClose, user, onSuccess }) {
   const [amount, setAmount]   = useState('');
   const [copied, setCopied]   = useState(false);
   const [loading, setLoading] = useState(false);
-  const psRef                 = useRef(`WAL-PS-${Date.now()}`);
+  const psRef                 = useRef(genRef());
 
   const ACCOUNT = {
     bank: user?.virtualAccountBank || 'Prodigy MFB',
@@ -31,7 +34,7 @@ function FundModal({ onClose, user, onSuccess }) {
     reference: psRef.current,
     email:     user?.email || '',
     amount:    Math.round(Number(amount || 0) * 100),
-    publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || '',
+    publicKey: PAYSTACK_KEY,
     metadata:  { clientDbId: user?.id },
     channels:  ['card','bank','ussd','bank_transfer','qr'],
   });
@@ -39,9 +42,25 @@ function FundModal({ onClose, user, onSuccess }) {
   const handlePayWithCard = async () => {
     if (!amount || Number(amount) < 1000) return;
     setLoading(true);
-    try { await walletApi.initiatePayment(Math.round(Number(amount) * 100)); } catch {}
+    try {
+      await walletApi.initiatePayment(Math.round(Number(amount) * 100), psRef.current);
+    } catch (err) {
+      console.warn('[CashAccount] initiate failed (continuing with popup):', err);
+    }
     setLoading(false);
-    initializePayment(async () => { onSuccess(); onClose(); }, () => {});
+    // react-paystack v6 expects a single object with onSuccess/onClose callbacks
+    initializePayment({
+      onSuccess: async () => {
+        try {
+          await walletApi.verifyPayment(psRef.current);
+        } catch (err) {
+          console.error('[CashAccount] verify failed:', err);
+        }
+        onSuccess();
+        onClose();
+      },
+      onClose: () => {},
+    });
   };
 
   const copy = () => {

@@ -31,8 +31,8 @@ export class WalletController {
   }
 
   @Post('fund/initiate')
-  @ApiOperation({ summary: 'Initiate a Paystack wallet funding payment' })
-  async initiatePayment(@Req() req: any, @Body() body: { amountKobo: number }) {
+  @ApiOperation({ summary: 'Record a PENDING wallet funding transaction before Paystack inline popup' })
+  async initiatePayment(@Req() req: any, @Body() body: { amountKobo: number; reference?: string }) {
     if (!req.user.clientDbId) {
       throw new BadRequestException('Admin users do not have a wallet.');
     }
@@ -41,7 +41,20 @@ export class WalletController {
       req.user.clientDbId,
       req.user.email,
       amountKobo,
+      body.reference,
     );
+  }
+
+  @Post('fund/verify')
+  @ApiOperation({ summary: 'Verify and settle a Paystack payment after inline popup success' })
+  async verifyPayment(@Req() req: any, @Body() body: { reference: string }) {
+    if (!req.user.clientDbId) {
+      throw new BadRequestException('Admin users do not have a wallet.');
+    }
+    if (!body.reference) {
+      throw new BadRequestException('reference is required');
+    }
+    return this.walletService.verifyPayment(req.user.clientDbId, body.reference);
   }
 
   @Post('withdraw')

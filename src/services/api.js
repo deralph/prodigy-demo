@@ -174,8 +174,10 @@ export const walletApi = {
     const qs = new URLSearchParams(params).toString();
     return request(`/wallet/me/transactions${qs ? '?' + qs : ''}`);
   },
-  initiatePayment: (amountKobo) =>
-    request('/wallet/fund/initiate', { method: 'POST', body: JSON.stringify({ amountKobo }) }),
+  initiatePayment: (amountKobo, reference) =>
+    request('/wallet/fund/initiate', { method: 'POST', body: JSON.stringify({ amountKobo, reference }) }),
+  verifyPayment: (reference) =>
+    request('/wallet/fund/verify', { method: 'POST', body: JSON.stringify({ reference }) }),
   requestWithdrawal: (data) =>
     request('/wallet/withdraw', { method: 'POST', body: JSON.stringify(data) }),
 };

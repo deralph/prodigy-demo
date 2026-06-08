@@ -58,6 +58,30 @@ export class WebhooksService {
         `Wallet Funding via Paystack (${data.channel || 'card'})`,
       );
       this.logger.log(`Wallet credited: clientId=${resolvedClientId} amount=₦${Number(amountKobo) / 100}`);
+
+      // User-side + admin-side audit logs (non-blocking)
+      const amountNaira = (Number(amountKobo) / 100).toLocaleString();
+      const channel = data.channel || 'card';
+      await this.prisma.activityLog.create({
+        data: {
+          clientId: resolvedClientId,
+          action: 'WALLET_FUNDED',
+          description: `₦${amountNaira} credited via Paystack webhook (${channel}) — ref: ${reference}`,
+          amountKobo,
+          metadata: { reference, channel, source: 'webhook' } as any,
+        },
+      }).catch(err => this.logger.warn(`ActivityLog write failed: ${err.message}`));
+
+      await this.prisma.auditLog.create({
+        data: {
+          adminName: 'System · Paystack Webhook',
+          adminRole: 'system',
+          action: 'WALLET_FUNDED',
+          targetEntity: resolvedClientId,
+          category: 'FINANCE',
+          metadata: { reference, channel, amountKobo: Number(amountKobo), source: 'webhook' } as any,
+        },
+      }).catch(err => this.logger.warn(`AuditLog write failed: ${err.message}`));
     }
 
     return { status: 'ok' };
