@@ -19,6 +19,12 @@ export class FinanceQueueController {
     return this.financeQueueService.findAll(query);
   }
 
+  @Get('org-ledger')
+  @ApiOperation({ summary: 'List org-level income/expense ledger entries' })
+  getOrgLedger(@Query() query: { type?: string }) {
+    return this.financeQueueService.findAllOrgLedger(query);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get single finance queue item' })
   findOne(@Param('id') id: string) {

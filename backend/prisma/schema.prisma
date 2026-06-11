@@ -47,6 +47,7 @@ model Client {
   staffLoans         StaffLoan[]
   statements         Statement[]
   walletTransactions WalletTransaction[]
+  orgLedgerEntries   OrgLedger[]
 
   @@index([type])
   @@index([status])
@@ -309,6 +310,24 @@ model PreTermination {
 
   @@index([clientId])
   @@index([status])
+}
+
+model OrgLedger {
+  id           String   @id @default(cuid())
+  entryRef     String   @unique
+  type         String
+  description  String?
+  amountKobo   BigInt
+  clientId     String?
+  preTermId    String?
+  fqItemId     String?
+  recordedById String?
+  createdAt    DateTime @default(now())
+
+  client       Client?  @relation(fields: [clientId], references: [id])
+
+  @@index([type])
+  @@index([createdAt])
 }
 
 model FinanceQueueItem {

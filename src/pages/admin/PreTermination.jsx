@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ArrowRight, AlertTriangle, CheckCircle, XCircle, Clock, ShoppingCart, Inbox } from 'lucide-react';
+import { ArrowRight, AlertTriangle, CheckCircle, XCircle, Clock, Inbox } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 import EmptyState from '../../components/EmptyState';
 import PageHeader from '../../components/ui/PageHeader';
@@ -25,7 +25,7 @@ function FlowStep({ icon: Icon, label, color, isLast }) {
 }
 
 /* ── Item row ── */
-function PreTermItem({ item, canApprove, onReview, onSell }) {
+function PreTermItem({ item, canApprove, onReview }) {
   const statusCfg = {
     pending:      { color: 'var(--gold)',  bg: 'rgba(232,184,75,0.12)', label: 'Pending Review' },
     approved_ops: { color: 'var(--green)', bg: 'rgba(34,197,94,0.1)',   label: 'Sent to Finance' },
@@ -44,9 +44,9 @@ function PreTermItem({ item, canApprove, onReview, onSell }) {
             <span style={{ fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 13, color: 'var(--navy)' }}>{item.client}</span>
             <TypeBadge label={st.label} color={st.color} bg={st.bg} />
           </div>
-          <div style={{ fontSize: 12, color: 'var(--gray-600)', marginBottom: 2 }}>{item.product} · {item.tenor}</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-600)', marginBottom: 2 }}>{item.product || '—'} · {item.tenor || '—'}</div>
           <div style={{ fontSize: 11, color: 'var(--gray-400)', marginBottom: 4 }}>
-            Request date: {item.requestDate} · Maturity: {item.maturityDate}
+            Request date: {item.requestDate || '—'} · Maturity: {item.maturityDate || '—'}
           </div>
           <div style={{ fontSize: 12, color: 'var(--navy)' }}>
             Reason: <span style={{ color: 'var(--gray-600)', fontWeight: 400 }}>{item.reason}</span>
@@ -64,9 +64,9 @@ function PreTermItem({ item, canApprove, onReview, onSell }) {
                 Review <ArrowRight size={12} />
               </button>
             )}
-            <button onClick={() => onSell(item)} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: 'rgba(249,115,22,0.1)', color: '#f97316', border: '1px solid rgba(249,115,22,0.2)', borderRadius: 7, cursor: 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 11 }}>
-              <ShoppingCart size={11} /> Sell
-            </button>
+            {item.status === 'approved_ops' && (
+              <div style={{ fontSize: 10, color: 'var(--green)', fontWeight: 700, padding: '5px 10px', background: 'rgba(34,197,94,0.08)', borderRadius: 6, border: '1px solid rgba(34,197,94,0.2)' }}>✓ Sent to Finance Queue</div>
+            )}
           </div>
         </div>
       </div>
@@ -109,74 +109,12 @@ function ReviewModal({ item, onApprove, onReject, onClose }) {
   );
 }
 
-/* ── Sell modal ── */
-function SellModal({ item, onConfirm, onClose }) {
-  const [form, setForm] = useState({ salePrice: '', buyer: '', note: '' });
-  const [done, setDone] = useState(false);
-  const upd = patch => setForm(f => ({ ...f, ...patch }));
-
-  const handleConfirm = () => {
-    if (!form.salePrice) return;
-    onConfirm(item, form);
-    setDone(true);
-    setTimeout(() => { setDone(false); onClose(); }, 1800);
-  };
-
-  const inputStyle = { width: '100%', border: '1.5px solid var(--gray-200)', borderRadius: 8, padding: '9px 12px', fontFamily: 'DM Sans,sans-serif', fontSize: 13, outline: 'none', color: 'var(--navy)' };
-
-  return (
-    <ModalOverlay onClose={onClose} maxWidth={480}
-      headerContent={<div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 14, color: 'white', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 8 }}><ShoppingCart size={16} /> Sell / Liquidate Position</div>}
-      headerColor="#f97316"
-    >
-      <div style={{ background: 'rgba(249,115,22,0.07)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: 9, padding: '12px 14px', marginBottom: 18 }}>
-        <div style={{ fontSize: 11, color: '#c2410c', fontWeight: 700, marginBottom: 4 }}>EARLY EXIT — PENALTY APPLIES</div>
-        <div style={{ fontSize: 12, color: 'var(--navy)' }}>Confirm sale/liquidation of <strong>{item.product}</strong> for <strong>{item.client}</strong></div>
-      </div>
-      {done ? (
-        <div style={{ textAlign: 'center', padding: '20px 0' }}>
-          <CheckCircle size={40} color="var(--green)" style={{ marginBottom: 10 }} />
-          <div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 15, color: 'var(--green)' }}>Sale Recorded</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 4 }}>Instrument sale saved and audit logged.</div>
-        </div>
-      ) : (
-        <>
-          {[['Client', item.client], ['Product', item.product], ['Principal', fmt(item.amount)], ['Penalty', fmt(item.penalty)], ['Net Payout', fmt(item.amount - item.penalty)], ['Reason', item.reason]].map(([l, v]) => (
-            <DetailRow key={l} label={l} value={v} />
-          ))}
-          <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {[
-              { label: 'Sale Price (₦)',      key: 'salePrice', type: 'number', placeholder: `e.g. ${item.amount - item.penalty}` },
-              { label: 'Buyer / Counterparty', key: 'buyer',     type: 'text',   placeholder: 'e.g. Zenith Bank, CBN/DMO' },
-              { label: 'Note',                key: 'note',      type: 'text',   placeholder: 'Optional note…' },
-            ].map(f => (
-              <div key={f.key}>
-                <div style={{ fontSize: 9, color: 'var(--gray-400)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>{f.label}</div>
-                <input type={f.type} placeholder={f.placeholder} value={form[f.key]} onChange={e => upd({ [f.key]: e.target.value })}
-                  style={inputStyle} onFocus={e => e.target.style.borderColor = '#f97316'} onBlur={e => e.target.style.borderColor = 'var(--gray-200)'} />
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
-            <button onClick={onClose} style={{ flex: 1, padding: '12px', background: 'var(--gray-100)', color: 'var(--navy)', border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 12 }}>CANCEL</button>
-            <button onClick={handleConfirm} disabled={!form.salePrice}
-              style={{ flex: 2, padding: '12px', background: '#f97316', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: !form.salePrice ? 0.5 : 1 }}>
-              <ShoppingCart size={14} /> CONFIRM SELL
-            </button>
-          </div>
-        </>
-      )}
-    </ModalOverlay>
-  );
-}
-
 /* ── Main Page ── */
 export default function PreTermination() {
-  const { preTermQueue, approvePreTerm, rejectPreTerm, sellPreTerm, user, addAuditEntry } = useAppStore();
+  const { preTermQueue, approvePreTerm, rejectPreTerm, user, addAuditEntry } = useAppStore();
   const [reviewing,    setReviewing]    = useState(null);
-  const [selling,      setSelling]      = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
-  const [filterProduct,setFilterProduct]= useState('all');
+  const [filterProduct,setFilterProduct]= useState('');
   const [search,       setSearch]       = useState('');
 
   const isOps = ['super_admin', 'operations'].includes(user?.adminRole);
@@ -189,13 +127,12 @@ export default function PreTermination() {
 
   const handleApprove = (item) => { approvePreTerm(item.id, user?.name); log('Approved Pre-Termination', `${item.client} — ${fmt(item.amount)}`); setReviewing(null); };
   const handleReject  = (item, note) => { rejectPreTerm(item.id, user?.name, note); log('Rejected Pre-Termination', `${item.client} — ${note}`); setReviewing(null); };
-  const handleSell    = (item, form) => { sellPreTerm(item.id, { ...form, soldBy: user?.name }); log('Instrument Sold', `${item.client} — ${item.product}`); };
 
   const allProducts = [...new Set(preTermQueue.map(i => i.product))];
   const filtered    = useMemo(() => preTermQueue.filter(item => {
     return (filterStatus === 'all' || item.status === filterStatus) &&
            (!filterProduct || item.product === filterProduct) &&
-           (!search || item.client.toLowerCase().includes(search.toLowerCase()) || item.product.toLowerCase().includes(search.toLowerCase()));
+           (!search || (item.client || '').toLowerCase().includes(search.toLowerCase()) || (item.product || '').toLowerCase().includes(search.toLowerCase()));
   }), [preTermQueue, filterStatus, filterProduct, search]);
 
   const pending  = preTermQueue.filter(i => i.status === 'pending');
@@ -245,12 +182,11 @@ export default function PreTermination() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }} className="animate-in delay-3">
         {filtered.length === 0
           ? <EmptyState icon={Inbox} title={preTermQueue.length === 0 ? 'No pre-termination requests' : 'No matching requests'} message={preTermQueue.length === 0 ? 'Pre-termination requests will appear here when clients request early exit.' : 'Try adjusting your filters.'} compact />
-          : filtered.map(item => <PreTermItem key={item.id} item={item} canApprove={isOps} onReview={setReviewing} onSell={setSelling} />)
+          : filtered.map(item => <PreTermItem key={item.id} item={item} canApprove={isOps} onReview={setReviewing} />)
         }
       </div>
 
       {reviewing && <ReviewModal item={reviewing} onApprove={handleApprove} onReject={handleReject} onClose={() => setReviewing(null)} />}
-      {selling   && <SellModal   item={selling}   onConfirm={handleSell}    onClose={() => setSelling(null)} />}
     </div>
   );
 }

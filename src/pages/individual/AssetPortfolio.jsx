@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import {
-  TrendingUp, Eye, X, Download, Award, AlertTriangle, CheckCircle,
+  TrendingUp, Eye, X, Download, Award, AlertTriangle, CheckCircle, Clock, XCircle,
   BarChart2, DollarSign, Layers
 } from 'lucide-react';
 import {
@@ -16,25 +16,58 @@ import TabBar from '../../components/ui/TabBar';
 import SectionCard from '../../components/ui/SectionCard';
 
 const fmt  = n => '₦' + Number(n || 0).toLocaleString('en-NG');
+const fmtSmart = v => {
+  if (!v && v !== 0) return '₦0';
+  const abs = Math.abs(v);
+  if (abs >= 1e9) return '₦' + (v / 1e9).toFixed(1) + 'B';
+  if (abs >= 1e6) return '₦' + (v / 1e6).toFixed(1) + 'M';
+  if (abs >= 1e3) return '₦' + (v / 1e3).toFixed(1) + 'K';
+  return '₦' + v.toFixed(0);
+};
 
 function buildInvGrowth(inv) {
   const principal = inv.amount;
   const monthlyRate = (inv.roi || 0) / 1200;
   const monthlyELI = principal * monthlyRate;
   const tenorMonths = Math.max(1, Math.round((inv.tenorDays || 365) / 30));
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const startDate = inv._valueDate;
+  const maturityDate = inv._maturityDate;
+  const months = [];
 
-  return months.map((m, i) => {
-    const elapsed = Math.min(i + 1, tenorMonths);
-    const cumulativeELI = monthlyELI * elapsed;
-    return {
-      month: m,
+  if (!startDate || isNaN(startDate)) {
+    const label = new Date().toLocaleString('en-US', { month: 'short', year: '2-digit' });
+    return [{ month: label, principal: Math.round(principal), monthlyEli: 0, eli: 0, value: Math.round(principal) }];
+  }
+
+  const getMonthStart = d => new Date(d.getFullYear(), d.getMonth(), 1);
+  const monthDiff = (a, b) => (a.getFullYear() - b.getFullYear()) * 12 + (a.getMonth() - b.getMonth());
+  const startMonth = getMonthStart(startDate);
+  const today = getMonthStart(new Date());
+  let endMonth;
+  if (maturityDate && !isNaN(maturityDate)) {
+    endMonth = getMonthStart(maturityDate);
+  } else {
+    endMonth = new Date(startMonth);
+    endMonth.setMonth(startMonth.getMonth() + tenorMonths - 1);
+  }
+  endMonth = new Date(Math.max(endMonth, today));
+  const count = Math.max(1, monthDiff(endMonth, startMonth) + 1);
+
+  for (let mi = 0; mi < count; mi++) {
+    const monthDate = new Date(startMonth);
+    monthDate.setMonth(startMonth.getMonth() + mi);
+    const elapsed = monthDiff(monthDate, startMonth) + 1;
+    const capped = Math.min(elapsed, tenorMonths);
+    const cumulativeELI = monthlyELI * capped;
+    months.push({
+      month: monthDate.toLocaleString('en-US', { month: 'short', year: '2-digit' }),
       principal: Math.round(principal),
       monthlyEli: Math.round(monthlyELI),
       eli: Math.round(cumulativeELI),
       value: Math.round(principal + cumulativeELI),
-    };
-  });
+    });
+  }
+  return months;
 }
 
 function InvestmentDrawer({ inv, plans, user, onClose }) {
@@ -43,9 +76,15 @@ function InvestmentDrawer({ inv, plans, user, onClose }) {
   const grossReturn = (inv.amount * inv.roi) / 100;
   const tax         = (grossReturn * (inv.tax || 0)) / 100;
   const netReturn   = grossReturn - tax;
+  const penaltyRate = plan?.earlyExitPenalty ? Number(plan.earlyExitPenalty) / 100 : 0.1;
+  const penaltyAmt  = Math.round(inv.amount * penaltyRate);
+  const netAfterExit = inv.amount - penaltyAmt;
   const chartData   = buildInvGrowth(inv);
   const [termStep, setTermStep]   = useState(null);
   const [termReason, setTermReason] = useState('');
+  const [termLoading, setTermLoading] = useState(false);
+  const [termError, setTermError] = useState('');
+  const requestPreTermination = useAppStore(s => s.requestPreTermination);
   const [tab, setTab] = useState('overview');
 
   const TABS = [
@@ -171,7 +210,7 @@ function InvestmentDrawer({ inv, plans, user, onClose }) {
                   <AreaChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f4ff" />
                     <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-                    <YAxis tickFormatter={v => '₦' + (v / 1e6).toFixed(1) + 'M'} tick={{ fontSize: 10 }} />
+                    <YAxis tickFormatter={fmtSmart} tick={{ fontSize: 10 }} />
                     <Tooltip formatter={v => [fmt(v)]} />
                     <Legend />
                     <Area type="monotone" dataKey="value"     name="Total Value" stroke={color}       fill={`${color}18`} strokeWidth={2.5} />
@@ -204,7 +243,22 @@ function InvestmentDrawer({ inv, plans, user, onClose }) {
                   <Download size={12} /> Export CSV
                 </button>
               </div>
-              {(inv.history || []).length === 0 && <div style={{ padding: '32px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 12 }}>No transaction history available.</div>}
+              {/* Pre-termination event banner — always shown when a request exists */}
+              {inv.preTermination && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px', marginBottom: 8, background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 9 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#b91c1c' }}>
+                      Pre-Termination Request — {inv.preTermStatus === 'pending_ops' ? 'Awaiting Ops Review' : inv.preTermStatus === 'pending_finance' ? 'Approved — Pending Disbursement' : inv.preTermStatus === 'disbursed' ? 'Disbursed' : inv.preTermStatus === 'rejected' ? 'Rejected' : 'Submitted'}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--gray-400)' }}>
+                      {inv.preTermination.requestedAt ? new Date(inv.preTermination.requestedAt).toLocaleDateString('en-GB') : '—'} · Ref: {inv.preTermination.preTermRef || '—'}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}>−{fmt(Number(inv.preTermination.penaltyKobo || 0) / 100)} penalty</div>
+                </div>
+              )}
+              {(inv.history || []).length === 0 && !inv.preTermination && <div style={{ padding: '32px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 12 }}>No transaction history available.</div>}
               {(inv.history || []).map((h, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid var(--gray-100)' }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
@@ -221,7 +275,14 @@ function InvestmentDrawer({ inv, plans, user, onClose }) {
           {/* Terminate tab */}
           {tab === 'terminate' && (
             <div>
-              {termStep === 'done' ? (
+              {inv.preTermStatus && termStep !== 'done' ? (
+                <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                  {inv.preTermStatus === 'pending_ops' && <><Clock size={48} color="var(--gold)" style={{ marginBottom: 14 }} /><div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 16, color: 'var(--navy)', marginBottom: 8 }}>Request Pending Review</div><p style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.6 }}>Your pre-termination request has been submitted and is awaiting operations review. You will be notified within 1–2 business days.</p></>}
+                  {inv.preTermStatus === 'pending_finance' && <><CheckCircle size={48} color="var(--green)" style={{ marginBottom: 14 }} /><div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 16, color: 'var(--navy)', marginBottom: 8 }}>Approved — Pending Disbursement</div><p style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.6 }}>Operations has approved your request. Finance is processing your payout within 5 business days.</p></>}
+                  {inv.preTermStatus === 'disbursed' && <><CheckCircle size={48} color="var(--green)" style={{ marginBottom: 14 }} /><div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 16, color: 'var(--navy)', marginBottom: 8 }}>Disbursed</div><p style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.6 }}>Your principal has been returned to your wallet.</p></>}
+                  {inv.preTermStatus === 'rejected' && <><XCircle size={48} color="var(--red)" style={{ marginBottom: 14 }} /><div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 16, color: 'var(--navy)', marginBottom: 8 }}>Request Rejected</div><p style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.6 }}>{inv.preTermination?.rejectionReason || 'Your pre-termination request was rejected. Please contact support.'}</p></>}
+                </div>
+              ) : termStep === 'done' ? (
                 <div style={{ textAlign: 'center', padding: '32px 0' }}>
                   <CheckCircle size={52} color="var(--green)" style={{ marginBottom: 14 }} />
                   <div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 18, color: 'var(--navy)', marginBottom: 8 }}>Pre-Termination Submitted</div>
@@ -247,9 +308,21 @@ function InvestmentDrawer({ inv, plans, user, onClose }) {
                       style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10, padding: '12px 14px', fontFamily: 'DM Sans,sans-serif', fontSize: 13, color: '#1e293b', resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
                       onFocus={e => e.target.style.borderColor = 'var(--red)'} onBlur={e => e.target.style.borderColor = '#e2e8f0'} />
                   </div>
+                  {termError && <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 12px', marginBottom: 14, fontSize: 12, color: 'var(--red)', fontWeight: 600 }}>{termError}</div>}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <button onClick={() => setTermStep(null)} style={{ padding: '13px', background: 'var(--gray-100)', color: 'var(--navy)', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 12 }}>Cancel</button>
-                    <button onClick={() => setTermStep('done')} style={{ padding: '13px', background: 'var(--red)', color: 'white', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 12 }}>Submit Request</button>
+                    <button onClick={() => { setTermStep(null); setTermError(''); }} disabled={termLoading} style={{ padding: '13px', background: 'var(--gray-100)', color: 'var(--navy)', border: 'none', borderRadius: 10, cursor: termLoading ? 'not-allowed' : 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 12, opacity: termLoading ? 0.6 : 1 }}>Cancel</button>
+                    <button onClick={async () => {
+                      if (!termReason.trim()) { setTermError('Please provide a reason for termination.'); return; }
+                      setTermLoading(true); setTermError('');
+                      try {
+                        await requestPreTermination(inv.id, termReason);
+                        setTermStep('done');
+                      } catch (e) {
+                        setTermError(e?.message || 'Failed to submit request. Please try again.');
+                      } finally {
+                        setTermLoading(false);
+                      }
+                    }} disabled={termLoading} style={{ padding: '13px', background: 'var(--red)', color: 'white', border: 'none', borderRadius: 10, cursor: termLoading ? 'not-allowed' : 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 12, opacity: termLoading ? 0.6 : 1 }}>{termLoading ? 'Submitting…' : 'Submit Request'}</button>
                   </div>
                 </div>
               ) : (
@@ -257,13 +330,13 @@ function InvestmentDrawer({ inv, plans, user, onClose }) {
                   <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 12, padding: '16px', marginBottom: 20 }}>
                     <div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 13, color: 'var(--red)', marginBottom: 8 }}>⚠ Pre-Termination / Early Exit</div>
                     <ul style={{ fontSize: 12, color: 'var(--navy)', lineHeight: 1.9, paddingLeft: 16, margin: 0 }}>
-                      <li>Early termination is subject to a <strong>25% penalty on net returns</strong>.</li>
-                      <li>Requests must be approved by compliance within 1–2 business days.</li>
+                      <li>Early termination is subject to a <strong>{Math.round(penaltyRate * 100)}% penalty on principal</strong>.</li>
+                      <li>Requests must be approved by operations within 1–2 business days.</li>
                       <li>Principal is returned within <strong>5 business days</strong> of approval.</li>
                     </ul>
                   </div>
                   <div style={{ background: 'white', border: '1px solid var(--gray-200)', borderRadius: 10, padding: '14px', marginBottom: 18 }}>
-                    {[['Investment', inv.plan], ['Principal', fmt(inv.amount)], ['Net Return', fmt(netReturn)], ['Penalty (est.)', fmt(netReturn * 0.25)], ['Net After Exit', fmt(inv.amount + netReturn * 0.75)]].map(([l, v]) => (
+                    {[['Investment', inv.plan], ['Principal', fmt(inv.amount)], ['Net Return', fmt(netReturn)], ['Penalty (est.)', fmt(penaltyAmt)], ['Net After Exit', fmt(netAfterExit)]].map(([l, v]) => (
                       <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid var(--gray-50)' }}>
                         <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>{l}</span>
                         <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy)' }}>{v}</span>
@@ -291,8 +364,10 @@ export default function AssetPortfolio() {
   const [chartType, setChartType]     = useState('area');
   const [statusFilter, setStatusFilter] = useState('all');
 
-  const myInvs    = user?.role === 'admin' ? clientInvestments.filter(i => i.clientId === user?.clientId) : clientInvestments;
-  const displayed = statusFilter === 'all' ? myInvs : myInvs.filter(i => i.status === statusFilter);
+  const allMyInvs  = user?.role === 'admin' ? clientInvestments.filter(i => i.clientId === user?.clientId) : clientInvestments;
+  const myInvs     = allMyInvs.filter(i => i.preTermStatus !== 'disbursed');
+  const archivedInvs = allMyInvs.filter(i => i.preTermStatus === 'disbursed');
+  const displayed  = statusFilter === 'all' ? myInvs : myInvs.filter(i => i.status === statusFilter);
 
   const totalAUM   = myInvs.reduce((s, i) => s + i.amount, 0);
   const activeAUM  = myInvs.filter(i => i.status === 'active').reduce((s, i) => s + i.amount, 0);
@@ -306,19 +381,50 @@ export default function AssetPortfolio() {
   const displayedProducts = chartFilter === 'all' ? uniqueProducts : uniqueProducts.filter(p => p.id === chartFilter);
 
   const perProductData = useMemo(() => {
-    const filtered = chartFilter === 'all' ? myInvs : myInvs.filter(i => i.planId === chartFilter);
-    return MONTHS.map((month, mi) => {
-      const row = { month };
-      filtered.forEach(inv => {
-        const plan = plans.find(p => p.id === inv.planId);
-        const label = plan?.name || inv.plan;
-        const tenorMonths = Math.max(1, Math.round((inv.tenorDays || 365) / 30));
-        const elapsed = Math.min(mi + 1, tenorMonths);
-        const accrued = inv.amount * (inv.roi / 100) * (elapsed / 12);
-        row[label] = (row[label] || 0) + Math.round(inv.amount + accrued);
+    const activeInvs = myInvs.filter(i => i.status === 'active');
+    const filtered = chartFilter === 'all' ? activeInvs : activeInvs.filter(i => i.planId === chartFilter);
+    if (!filtered.length) return [];
+
+    const getMonthStart = d => new Date(d.getFullYear(), d.getMonth(), 1);
+    const monthDiff = (a, b) => (a.getFullYear() - b.getFullYear()) * 12 + (a.getMonth() - b.getMonth());
+    const valid = filtered.filter(i => i._valueDate && !isNaN(i._valueDate));
+    if (!valid.length) return [];
+
+    const startDates = valid.map(i => getMonthStart(i._valueDate));
+    const maturityDates = valid.map(i => i._maturityDate && !isNaN(i._maturityDate) ? getMonthStart(i._maturityDate) : getMonthStart(new Date()));
+    const todayStart = getMonthStart(new Date());
+    const earliest = new Date(Math.min(...startDates));
+    const latest = new Date(Math.max(...maturityDates, todayStart));
+    const monthCount = Math.max(1, monthDiff(latest, earliest) + 1);
+
+    const productNames = [...new Set(valid.map(i => {
+      const plan = plans.find(p => p.id === i.planId);
+      return plan?.name || i.plan || 'Unknown';
+    }))];
+
+    const rows = [];
+    for (let mi = 0; mi < monthCount; mi++) {
+      const monthDate = new Date(earliest);
+      monthDate.setMonth(earliest.getMonth() + mi);
+      const row = { month: monthDate.toLocaleString('en-US', { month: 'short', year: '2-digit' }) };
+      productNames.forEach(name => {
+        const invs = valid.filter(i => { const plan = plans.find(p => p.id === i.planId); return (plan?.name || i.plan || 'Unknown') === name; });
+        let total = 0;
+        invs.forEach(inv => {
+          const invStart = getMonthStart(inv._valueDate);
+          if (monthDate >= invStart) {
+            const elapsed = monthDiff(monthDate, invStart) + 1;
+            const tenorMonths = Math.max(1, Math.round((inv.tenorDays || 365) / 30));
+            const capped = Math.min(elapsed, tenorMonths);
+            const monthlyRate = (inv.roi || 0) / 1200;
+            total += inv.amount + inv.amount * monthlyRate * capped;
+          }
+        });
+        row[name] = Math.round(total);
       });
-      return row;
-    });
+      rows.push(row);
+    }
+    return rows;
   }, [myInvs, plans, chartFilter]);
 
   const pieData = uniqueProducts.map(p => ({ name: p.name, value: myInvs.filter(i => i.planId === p.id).reduce((s, i) => s + i.amount, 0), color: p.color }));
@@ -385,17 +491,17 @@ export default function AssetPortfolio() {
           <ResponsiveContainer width="100%" height={250}>
             {chartType === 'bar' ? (
               <BarChart data={perProductData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f4ff" /><XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tickFormatter={v => '₦' + (v / 1e6).toFixed(1) + 'M'} tick={{ fontSize: 10 }} /><Tooltip formatter={v => [fmt(v)]} /><Legend />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f4ff" /><XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tickFormatter={fmtSmart} tick={{ fontSize: 10 }} /><Tooltip formatter={v => [fmtSmart(v)]} /><Legend />
                 {displayedProducts.map(p => <Bar key={p.id} dataKey={p.name} fill={p.color} radius={[3, 3, 0, 0]} />)}
               </BarChart>
             ) : chartType === 'line' ? (
               <LineChart data={perProductData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f4ff" /><XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tickFormatter={v => '₦' + (v / 1e6).toFixed(1) + 'M'} tick={{ fontSize: 10 }} /><Tooltip formatter={v => [fmt(v)]} /><Legend />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f4ff" /><XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tickFormatter={fmtSmart} tick={{ fontSize: 10 }} /><Tooltip formatter={v => [fmtSmart(v)]} /><Legend />
                 {displayedProducts.map(p => <Line key={p.id} type="monotone" dataKey={p.name} stroke={p.color} strokeWidth={2.5} dot={{ r: 3 }} />)}
               </LineChart>
             ) : (
               <AreaChart data={perProductData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f4ff" /><XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tickFormatter={v => '₦' + (v / 1e6).toFixed(1) + 'M'} tick={{ fontSize: 10 }} /><Tooltip formatter={v => [fmt(v)]} /><Legend />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f4ff" /><XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tickFormatter={fmtSmart} tick={{ fontSize: 10 }} /><Tooltip formatter={v => [fmtSmart(v)]} /><Legend />
                 {displayedProducts.map(p => <Area key={p.id} type="monotone" dataKey={p.name} stroke={p.color} fill={p.color + '22'} strokeWidth={2} />)}
               </AreaChart>
             )}
@@ -449,6 +555,31 @@ export default function AssetPortfolio() {
           return <InvestmentCard key={inv.id} investment={inv} planColor={plan?.color} onOpen={setDrawer} />;
         })}
       </div>
+
+      {/* Archived / Terminated investments */}
+      {archivedInvs.length > 0 && (
+        <div style={{ marginTop: 28 }} className="animate-in delay-4">
+          <h3 style={{ fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 12, color: 'var(--gray-400)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 12 }}>Archived — Terminated Investments</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {archivedInvs.map(inv => {
+              const plan = plans.find(p => p.id === inv.planId);
+              return (
+                <div key={inv.id} style={{ background: 'white', borderRadius: 12, border: '1px solid var(--gray-200)', padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, opacity: 0.65 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: plan?.color || '#94a3b8', flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--navy)', marginBottom: 2 }}>{inv.plan || inv.product || '—'}</div>
+                    <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>Pre-terminated · Disbursed · Ref: {inv.preTermination?.preTermRef || '—'}</div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-400)', textDecoration: 'line-through' }}>{fmt(inv.amount)}</div>
+                    <div style={{ fontSize: 10, color: 'var(--green)', fontWeight: 600 }}>Payout sent to wallet</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {drawer && <InvestmentDrawer inv={drawer} plans={plans} user={user} onClose={() => setDrawer(null)} />}
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>

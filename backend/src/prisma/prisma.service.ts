@@ -10,8 +10,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     const base = process.env.DIRECT_URL || process.env.DATABASE_URL || '';
     const url = new URL(base);
     url.searchParams.delete('pgbouncer');
-    url.searchParams.set('connection_limit', '3');
-    url.searchParams.set('pool_timeout', '30');
+    url.searchParams.set('connection_limit', '10');
+    url.searchParams.set('pool_timeout', '60');
     url.searchParams.set('connect_timeout', '30');
 
     super({ datasourceUrl: url.toString() });

@@ -23,7 +23,7 @@ const LOAN_TYPES = [
  *   staffName   — string (optional)
  */
 export default function LoanApplicationForm({ onClose, onSubmit, walletBal, staffName }) {
-  const [form, setForm]     = useState({ type: 'emergency', amount: '', term: '', purpose: '' });
+  const [form, setForm]     = useState({ type: 'emergency', staffName: staffName || '', department: '', amount: '', term: '', purpose: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
   const upd = patch => setForm(f => ({ ...f, ...patch }));
@@ -38,8 +38,7 @@ export default function LoanApplicationForm({ onClose, onSubmit, walletBal, staf
     if (!canSubmit) { setError('Please fill all fields correctly.'); return; }
     setLoading(true);
     try {
-      await new Promise(r => setTimeout(r, 600)); // simulate
-      onSubmit({ type: form.type, amount, term: Number(form.term), purpose: form.purpose, staffName, id: 'LN-' + Date.now(), date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), status: 'pending' });
+      await onSubmit({ staffName: form.staffName || staffName, department: form.department, type: form.type, amount, term: Number(form.term), purpose: form.purpose });
       onClose();
     } catch {
       setError('Submission failed. Please try again.');

@@ -5,14 +5,17 @@ import EmptyState from '../../components/EmptyState';
 import LoanCard from '../../components/ui/LoanCard';
 import LoanApplicationForm from '../../components/ui/LoanApplicationForm';
 import ProgressBar from '../../components/ui/ProgressBar';
+import useAppStore from '../../store/useAppStore';
 import { staffLoanApi } from '../../services/api';
 
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 
 export default function CorporateStaffLoans() {
+  const { user } = useAppStore();
   const [showModal, setShowModal] = useState(false);
   const [loans,    setLoans]      = useState([]);
   const [loading,  setLoading]    = useState(true);
+  const [toast,    setToast]      = useState(null);
 
   useEffect(() => {
     staffLoanApi.getMyLoans()
@@ -21,17 +24,26 @@ export default function CorporateStaffLoans() {
       .finally(() => setLoading(false));
   }, []);
 
-  const activeLoans = loans.filter(l => l.status === 'active' || l.status === 'performing');
-  const closedLoans = loans.filter(l => l.status !== 'active' && l.status !== 'performing');
+  const activeLoans = loans.filter(l => ['active','performing','pending'].includes((l.status||'').toLowerCase()));
+  const closedLoans = loans.filter(l => !['active','performing','pending'].includes((l.status||'').toLowerCase()));
   const totalPrincipal = activeLoans.reduce((s, l) => s + (l.amount || l.principal || 0), 0);
 
-  const handleSubmit = (loanData) => {
-    setLoans(prev => [{ ...loanData, status: 'pending' }, ...prev]);
+  const handleSubmit = async (loanData) => {
+    try {
+      const created = await staffLoanApi.applyLoan(loanData);
+      setLoans(prev => [{ ...created, amount: loanData.amount, staffName: loanData.staffName, department: loanData.department, status: 'pending' }, ...prev]);
+      setToast('Loan application submitted successfully.');
+      setTimeout(() => setToast(null), 4000);
+    } catch (e) {
+      setToast(e?.message || 'Submission failed. Please try again.');
+      setTimeout(() => setToast(null), 4000);
+    }
   };
 
   return (
     <div>
       <PageHeader title="Employee Staff Loans" subtitle="Bespoke Asset Management System V2.0" />
+      {toast && <div style={{ marginBottom:16, padding:'12px 16px', background:toast.includes('success')||toast.includes('submitted')?'rgba(34,197,94,0.1)':'rgba(239,68,68,0.1)', border:`1px solid ${toast.includes('submitted')?'rgba(34,197,94,0.3)':'rgba(239,68,68,0.3)'}`, borderRadius:8, fontSize:12, color:toast.includes('submitted')?'var(--green)':'var(--red)', fontWeight:600 }}>{toast}</div>}
 
       {/* Summary stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 20, marginBottom: 24 }}>
@@ -132,7 +144,7 @@ export default function CorporateStaffLoans() {
         </div>
       </div>
 
-      {showModal && <LoanApplicationForm onClose={() => setShowModal(false)} onSubmit={handleSubmit} />}
+      {showModal && <LoanApplicationForm onClose={() => setShowModal(false)} onSubmit={handleSubmit} staffName={user?.name} />}
       <style>{`@media(max-width:900px){div[style*="grid-template-columns: 1fr 1fr"]{grid-template-columns:1fr!important;}}`}</style>
     </div>
   );

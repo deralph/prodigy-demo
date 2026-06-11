@@ -116,21 +116,28 @@ export default function FinanceQueue() {
             </div>
             <div style={{ padding:'22px 24px' }}>
               {[
-                ['Client',       selected.client],
-                ['Product',      selected.product],
-                ['Type',         selected.type],
-                ['Amount',       fmt(selected.amount)],
-                ['Penalty',      selected.penalty ? fmt(selected.penalty) : 'None'],
-                ['Net Payout',   fmt(selected.amount-(selected.penalty||0))],
-                ['Reason',       selected.reason],
-                ['Requested By', selected.requestedBy],
-                ['Request Date', selected.requestDate],
+                ['Client',            selected.client],
+                ['Product',           selected.product],
+                ['Type',              selected.type],
+                ['Principal',         fmt(selected.amount + (selected.penalty || 0))],
+                ['Net Payout (Client)', fmt(selected.amount)],
+                ['Reason',            selected.reason],
+                ['Requested By',      selected.requestedBy],
+                ['Request Date',      selected.requestDate],
               ].map(([l,v])=>(
                 <div key={l} style={{ display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid var(--gray-100)' }}>
                   <span style={{ fontSize:11,color:'var(--gray-400)',letterSpacing:'0.06em',textTransform:'uppercase' }}>{l}</span>
                   <span style={{ fontSize:12,fontWeight:600,color:'var(--navy)' }}>{v}</span>
                 </div>
               ))}
+              {selected.penalty > 0 && (
+                <div style={{ display:'flex',justifyContent:'space-between',padding:'10px 12px',marginTop:4,background:'rgba(217,119,6,0.07)',border:'1px solid rgba(217,119,6,0.2)',borderRadius:8 }}>
+                  <span style={{ fontSize:11,fontWeight:700,color:'#92400e',letterSpacing:'0.06em',textTransform:'uppercase',display:'flex',alignItems:'center',gap:5 }}>
+                    🏦 Early Exit Penalty (Org Income)
+                  </span>
+                  <span style={{ fontSize:13,fontWeight:800,color:'#d97706',fontFamily:'Syne,sans-serif' }}>+{fmt(selected.penalty)}</span>
+                </div>
+              )}
               <div style={{ marginTop:16 }}>
                 <div style={{ fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--gray-400)',marginBottom:6 }}>Rejection Reason (if rejecting)</div>
                 <input placeholder="e.g. Insufficient documentation…" value={rejectNote} onChange={e=>setRejectNote(e.target.value)}

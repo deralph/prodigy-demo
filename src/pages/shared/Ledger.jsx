@@ -172,8 +172,8 @@ export default function Ledger() {
               <BarChart data={chartData} barCategoryGap="25%">
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f4ff" />
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                <YAxis tickFormatter={v => '₦' + (v / 1e6).toFixed(1) + 'M'} tick={{ fontSize: 10 }} />
-                <Tooltip formatter={(v, n) => [fmt(v), n]} /><Legend />
+                <YAxis tickFormatter={fmtK} tick={{ fontSize: 10 }} />
+                <Tooltip formatter={(v, n) => [fmtK(v), n]} /><Legend />
                 <Bar dataKey="inflow"  name="Inflow"  fill="#22c55e" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="outflow" name="Outflow" fill="#ef4444" radius={[4, 4, 0, 0]} />
               </BarChart>
@@ -184,8 +184,8 @@ export default function Ledger() {
               <AreaChart data={chartData.map(d => ({ ...d, net: d.inflow - d.outflow }))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f4ff" />
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                <YAxis tickFormatter={v => '₦' + (v / 1e6).toFixed(1) + 'M'} tick={{ fontSize: 10 }} />
-                <Tooltip formatter={v => [fmt(v), 'Net Flow']} />
+                <YAxis tickFormatter={fmtK} tick={{ fontSize: 10 }} />
+                <Tooltip formatter={v => [fmtK(v), 'Net Flow']} />
                 <Area type="monotone" dataKey="net" name="Net Flow" stroke="var(--navy)" fill="rgba(13,27,53,0.07)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
@@ -200,9 +200,9 @@ export default function Ledger() {
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={productBreak} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f4ff" />
-                <XAxis type="number" tickFormatter={v => '₦' + (v / 1e6).toFixed(1) + 'M'} tick={{ fontSize: 10 }} />
+                <XAxis type="number" tickFormatter={fmtK} tick={{ fontSize: 10 }} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={120} />
-                <Tooltip formatter={v => [fmt(v), 'Volume']} />
+                <Tooltip formatter={v => [fmtK(v), 'Volume']} />
                 <Bar dataKey="total" name="Volume" fill="var(--navy)" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>

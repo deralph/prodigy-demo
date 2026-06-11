@@ -2,9 +2,12 @@ export const KYC_REQUIREMENTS: Record<string, { key: string; label: string; requ
   corporate: [
     { key: 'cac_cert',         label: 'CAC Certificate',                        required: true },
     { key: 'memart',           label: 'MEMART & Status of Directors',           required: true },
-    { key: 'scuml_tax',        label: 'SCUML & Tax ID',                        required: true },
+    { key: 'scuml',            label: 'SCUML Certificate',                     required: true },
+    { key: 'tax_id',           label: 'Tax ID / TIN',                          required: true },
+    { key: 'utility_bill',     label: 'Utility Bill',                          required: true },
     { key: 'directors_id',     label: "Directors' Valid ID",                   required: true },
     { key: 'sig_mandate',      label: 'Signature Mandate',                     required: true },
+    { key: 'sig_upload',       label: 'Authorised Signatory Signature',        required: true },
   ],
   individual: [
     { key: 'valid_id',         label: "Client's Valid ID",                     required: true },

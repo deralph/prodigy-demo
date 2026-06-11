@@ -8,7 +8,7 @@ export class FinanceQueueService {
   findAll(query: { status?: string }) {
     return this.prisma.financeQueueItem.findMany({
       where: query.status ? { status: query.status as any } : undefined,
-      include: { preTermination: { include: { investment: { include: { product: true } } } } },
+      include: { preTermination: { include: { investment: { include: { product: true, client: true } } } } },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -23,7 +23,10 @@ export class FinanceQueueService {
   }
 
   async approve(id: string, adminId: string, notes?: string) {
-    const item = await this.prisma.financeQueueItem.findUnique({ where: { id } });
+    const item = await this.prisma.financeQueueItem.findUnique({
+      where: { id },
+      include: { preTermination: { include: { investment: true } } },
+    });
     if (!item) throw new NotFoundException('Finance queue item not found');
     if (item.status !== 'PENDING') throw new BadRequestException('Item is not in pending state');
 
@@ -47,14 +50,42 @@ export class FinanceQueueService {
           type: 'PRE_TERMINATION_PAYOUT',
           status: 'SUCCESSFUL',
           amountKobo: item.amountKobo,
-          description: 'Pre-Termination Payout',
+          description: 'Pre-Termination Payout — Net of Early Exit Penalty',
           processedAt: new Date(),
           initiatedById: adminId,
         },
       });
 
-      // Update pre-termination if linked
-      if (item.preTermId) {
+      // Record penalty as org income in OrgLedger (only if penalty > 0)
+      if (item.penaltyKobo && item.penaltyKobo > BigInt(0)) {
+        await tx.orgLedger.create({
+          data: {
+            entryRef: `ORG-PEN-${Date.now()}`,
+            type: 'EARLY_EXIT_PENALTY',
+            description: `Early exit penalty income — Pre-termination`,
+            amountKobo: item.penaltyKobo,
+            clientId: item.clientId,
+            preTermId: item.preTermId ?? undefined,
+            fqItemId: id,
+            recordedById: adminId,
+          },
+        });
+      }
+
+      // Update pre-termination and write investment history entry
+      if (item.preTermId && item.preTermination?.investment) {
+        await tx.preTermination.update({
+          where: { id: item.preTermId },
+          data: { status: 'DISBURSED', financeApprovedById: adminId, financeApprovedAt: new Date(), disbursedAt: new Date() },
+        });
+        await tx.investmentEvent.create({
+          data: {
+            investmentId: item.preTermination.investment.id,
+            action: 'Pre-Termination Disbursed — Net payout credited to wallet',
+            performedById: adminId,
+          },
+        });
+      } else if (item.preTermId) {
         await tx.preTermination.update({
           where: { id: item.preTermId },
           data: { status: 'DISBURSED', financeApprovedById: adminId, financeApprovedAt: new Date(), disbursedAt: new Date() },
@@ -62,6 +93,14 @@ export class FinanceQueueService {
       }
 
       return updated;
+    });
+  }
+
+  findAllOrgLedger(query: { type?: string } = {}) {
+    return this.prisma.orgLedger.findMany({
+      where: query.type ? { type: query.type } : undefined,
+      include: { client: true },
+      orderBy: { createdAt: 'desc' },
     });
   }
 

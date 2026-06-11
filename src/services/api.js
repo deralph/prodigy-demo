@@ -158,7 +158,7 @@ export const investmentApi = {
   getStatement: (id) => request(`/investments/${id}/statement`),
   getCertificate: (id) => request(`/investments/${id}/certificate`),
   requestPreTermination: (id, reason) =>
-    request(`/investments/${id}/preterminate`, { method: 'POST', body: JSON.stringify({ reason }) }),
+    request(`/investments/${id}/redeem`, { method: 'POST', body: JSON.stringify({ reason }) }),
 };
 
 export const adminInvestmentApi = {
@@ -263,9 +263,18 @@ export const adminFinanceQueueApi = {
     request(`/admin/finance-queue/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
 };
 
+/* ── ORG LEDGER ──────────────────────────────────────────── */
+export const orgLedgerApi = {
+  findAll: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/admin/finance-queue/org-ledger${qs ? '?' + qs : ''}`);
+  },
+};
+
 /* ── STAFF LOANS ─────────────────────────────────────────── */
 export const staffLoanApi = {
-  getMyLoans: () => request('/loans/corporate/me'),
+  getMyLoans:  () => request('/loans/corporate/me'),
+  applyLoan:   (data) => request('/loans/corporate/apply', { method: 'POST', body: JSON.stringify(data) }),
 };
 
 export const adminStaffLoanApi = {

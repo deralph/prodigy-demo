@@ -61,7 +61,7 @@ function ProductReportCard({ p, onView, onExport }) {
           <div style={{ fontSize:10,fontWeight:700,color:p.color,background:`${p.color}15`,padding:'4px 9px',borderRadius:6,letterSpacing:'0.06em' }}>{p.lockIn}</div>
         </div>
         <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14 }}>
-          {[['Investors',p.investorCount],['Active',p.activeCount],['Total AUM',fmt(p.totalInvested)],['Tax Rate',`${p.taxRate}%`]].map(([l,v])=>(
+          {[['Investors',p.investorCount],['Active',p.activeCount],['Active AUM',fmt(p.totalInvested)],['Tax Rate',`${p.withholdingTaxRate || p.taxRate || 10}%`]].map(([l,v])=>(
             <div key={l} style={{ background:'var(--gray-50)',borderRadius:8,padding:'9px 11px' }}>
               <div style={{ fontSize:9,color:'var(--gray-400)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:3 }}>{l}</div>
               <div style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:13,color:'var(--navy)' }}>{v}</div>
@@ -82,8 +82,12 @@ function ProductReportCard({ p, onView, onExport }) {
 }
 
 /* ── Product detail modal ── */
-function ProductDetailModal({ product, onClose, onExport }) {
+function ProductDetailModal({ product, onClose, onExport, clients }) {
   if (!product) return null;
+  const getClientName = (clientId) => {
+    const c = clients.find(c => c.id === clientId || c.clientId === clientId);
+    return c?.name || c?.clientRef || clientId?.slice(0, 8) || '—';
+  };
   return (
     <ModalOverlay onClose={onClose} maxWidth={720} scrollable
       headerContent={
@@ -111,7 +115,7 @@ function ProductDetailModal({ product, onClose, onExport }) {
             <tbody>
               {product.investments.map(i=>(
                 <tr key={i.id} style={{ borderTop:'1px solid var(--gray-100)' }}>
-                  <td style={{ padding:'11px 14px',fontSize:12,fontWeight:600,color:'var(--navy)' }}>{i.client}</td>
+                  <td style={{ padding:'11px 14px',fontSize:12,fontWeight:600,color:'var(--navy)' }}>{getClientName(i.clientId)}</td>
                   <td style={{ padding:'11px 14px',fontSize:12,fontWeight:700,color:'var(--navy)',whiteSpace:'nowrap' }}>{fmt(i.amount)}</td>
                   <td style={{ padding:'11px 14px',fontSize:11,color:'var(--gray-600)' }}>{i.tenor}</td>
                   <td style={{ padding:'11px 14px',fontSize:11,color:'var(--gray-600)',whiteSpace:'nowrap' }}>{i.valueDate}</td>
@@ -143,15 +147,19 @@ export default function AdminReports() {
   const [txSearch,    setTxSearch]    = useState('');
 
   const allTx = useMemo(() => {
-    const inv = clientInvestments.map(i => ({ id:i.id,date:i.valueDate,client:i.client,type:'investment',description:`${i.plan} booking`,amount:i.amount,status:'successful',product:i.plan,ref:i.id }));
-    return [...inv,...allTransactions.map(t=>({...t,type:t.type||'funding',product:t.plan||'Wallet'}))].sort((a,b)=>new Date(b.date)-new Date(a.date));
-  }, [clientInvestments, allTransactions]);
+    const getClientName = (clientId) => {
+      const c = clients.find(c => c.id === clientId || c.clientId === clientId);
+      return c?.name || c?.clientRef || clientId?.slice(0, 8) || '—';
+    };
+    const inv = clientInvestments.map(i => ({ id:i.id,date:i.valueDate,client:getClientName(i.clientId),type:'investment',description:`${i.plan} booking`,amount:i.amount,status:'successful',product:i.plan,ref:i.id }));
+    return [...inv,...allTransactions.map(t=>({...t,client:t.client||'—',type:t.type||'funding',product:t.plan||'Wallet'}))].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  }, [clientInvestments, allTransactions, clients]);
 
   const filteredTx = useMemo(() => allTx.filter(t => {
     return (txFilter==='all'||t.type===txFilter) && (!txSearch||(t.client||'').toLowerCase().includes(txSearch.toLowerCase())||(t.product||'').toLowerCase().includes(txSearch.toLowerCase()));
   }), [allTx, txFilter, txSearch]);
 
-  const inflowByProduct = plans.map(p => ({ name:p.name.replace('Prodigy ',''),value:clientInvestments.filter(i=>i.planId===p.id).reduce((s,i)=>s+i.amount,0),color:p.color })).filter(p=>p.value>0);
+  const inflowByProduct = plans.map(p => ({ name:p.name.replace('Prodigy ',''),value:clientInvestments.filter(i=>i.status==='active' && i.planId===p.id).reduce((s,i)=>s+i.amount,0),color:p.color })).filter(p=>p.value>0);
   const pieData = [
     { name:'Corporate',  value:clients.filter(c=>c.type==='corporate').reduce((s,c)=>s+(c.balance||0),0),  color:'#3b82f6' },
     { name:'Individual', value:clients.filter(c=>c.type==='individual').reduce((s,c)=>s+(c.balance||0),0), color:'#22c55e' },
@@ -160,16 +168,17 @@ export default function AdminReports() {
 
   const barData = (() => {
     const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    return months.map(month=>({ month, aum:Math.round(clientInvestments.filter(i=>new Date(i.valueDate||'').toLocaleString('en-US',{month:'short'})===month).reduce((s,i)=>s+(i.amount||0),0)/1e6) })).filter(m=>m.aum>0);
+    return months.map(month=>({ month, aum:Math.round(clientInvestments.filter(i=>i.status==='active' && new Date(i.valueDate||'').toLocaleString('en-US',{month:'short'})===month).reduce((s,i)=>s+(i.amount||0),0)/1e6) })).filter(m=>m.aum>0);
   })();
 
   const totalFunding    = allTransactions.filter(t=>t.type==='wallet_funding').reduce((s,t)=>s+t.amount,0);
-  const totalInvestment = clientInvestments.reduce((s,i)=>s+i.amount,0);
+  const totalInvestment = clientInvestments.filter(i=>i.status==='active').reduce((s,i)=>s+i.amount,0);
 
   const productStats = plans.map(p => {
     const invs = clientInvestments.filter(i=>i.planId===p.id);
-    return { ...p, investorCount:[...new Set(invs.map(i=>i.clientId))].length, totalInvested:invs.reduce((s,i)=>s+i.amount,0), activeCount:invs.filter(i=>i.status==='active').length, investments:invs };
-  }).filter(p=>p.totalInvested>0);
+    const activeInvs = invs.filter(i=>i.status==='active');
+    return { ...p, investorCount:[...new Set(activeInvs.map(i=>i.clientId))].length, totalInvested:activeInvs.reduce((s,i)=>s+i.amount,0), activeCount:activeInvs.length, investments:invs };
+  }).filter(p=>p.totalInvested>0 || p.investments.some(i=>i.status==='active'));
 
   const exportProduct = (p) => {
     const rows = p.investments.map(i=>`"${i.client}","${i.plan}",${i.amount},"${i.tenor}","${i.valueDate}","${i.maturityDate}","${i.roi}%","${i.tax}%","${i.status}"`).join('\n');
@@ -193,7 +202,7 @@ export default function AdminReports() {
       {tab === 'all' && (
         <div style={{ display:'flex',flexDirection:'column',gap:20 }} className="animate-in">
           <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:14 }}>
-            {[['Total Funding',fmt(totalFunding||4500000),'var(--green)'],['Total Investment',fmt(totalInvestment||109200670),'var(--navy)'],['Total Records',allTx.length,'#8b5cf6']].map(([l,v,c])=>(
+            {[['Total Funding',fmt(totalFunding),'var(--green)'],['Total Investment',fmt(totalInvestment),'var(--navy)'],['Total Records',allTx.length,'#8b5cf6']].map(([l,v,c])=>(
               <div key={l} style={{ background:'white',borderRadius:10,padding:'16px 18px',border:'1px solid var(--gray-200)' }}>
                 <div style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:20,color:c,marginBottom:4 }}>{v}</div>
                 <div style={{ fontSize:10,color:'var(--gray-400)',letterSpacing:'0.08em',textTransform:'uppercase' }}>{l}</div>
@@ -260,14 +269,18 @@ export default function AdminReports() {
           <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:22,marginBottom:22 }}>
             <ChartCard title="AUM by Client Type" className="animate-in delay-1"><PieLegend data={pieData} /></ChartCard>
             <ChartCard title="AUM Growth (₦M)" className="animate-in delay-2">
-              <ResponsiveContainer width="100%" height={150}>
-                <BarChart data={barData} barSize={24}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
-                  <XAxis dataKey="month" tick={{ fontSize:11 }}/><YAxis tick={{ fontSize:11 }}/>
-                  <Tooltip formatter={v=>`₦${v}M`}/>
-                  <Bar dataKey="aum" fill="var(--navy)" radius={[4,4,0,0]}/>
-                </BarChart>
-              </ResponsiveContainer>
+              {barData.length === 0 ? (
+                <div style={{ textAlign:'center',padding:'40px 0',color:'var(--gray-400)',fontSize:13 }}>No active investments yet.</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={150}>
+                  <BarChart data={barData} barSize={24}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
+                    <XAxis dataKey="month" tick={{ fontSize:11 }}/><YAxis tick={{ fontSize:11 }} tickFormatter={v=>`₦${v}M`}/>
+                    <Tooltip formatter={v=>`₦${v}M`}/>
+                    <Bar dataKey="aum" fill="var(--navy)" radius={[4,4,0,0]}/>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </ChartCard>
           </div>
           <h3 style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:13,color:'var(--navy)',letterSpacing:'0.06em',textTransform:'uppercase',marginBottom:16 }}>Reports by Investment Product</h3>
@@ -298,7 +311,7 @@ export default function AdminReports() {
         </div>
       )}
 
-      <ProductDetailModal product={viewProduct} onClose={() => setViewProduct(null)} onExport={exportProduct} />
+      <ProductDetailModal product={viewProduct} onClose={() => setViewProduct(null)} onExport={exportProduct} clients={clients} />
       <style>{`@media(max-width:700px){div[style*="1fr 1fr"]{grid-template-columns:1fr!important;}}`}</style>
     </div>
   );

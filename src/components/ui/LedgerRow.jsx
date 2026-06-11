@@ -16,6 +16,7 @@ export const TYPE_META = {
   loan_disbursement:       { label: 'Loan Disbursement',     color: '#8b5cf6', dir: 'credit', icon: ArrowDownLeft },
   loan_repayment:          { label: 'Loan Repayment',        color: '#ef4444', dir: 'debit',  icon: ArrowUpRight },
   fee:                     { label: 'Fee',                   color: '#6b7280', dir: 'debit',  icon: ArrowUpRight },
+  early_exit_penalty:      { label: 'Penalty Income',        color: '#d97706', dir: 'credit', icon: TrendingUp },
 };
 
 export const STATUS_META = {

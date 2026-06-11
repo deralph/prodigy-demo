@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { StaffLoansService } from './staff-loans.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -16,6 +16,12 @@ export class StaffLoansController {
   @ApiOperation({ summary: 'Corporate client: get own entity staff loans' })
   getMyLoans(@Req() req: any) {
     return this.staffLoansService.getMyEntityLoans(req.user.clientDbId);
+  }
+
+  @Post('corporate/apply')
+  @ApiOperation({ summary: 'Corporate client: submit a new staff loan application' })
+  applyLoan(@Req() req: any, @Body() body: any) {
+    return this.staffLoansService.applyLoan(req.user.clientDbId, body);
   }
 }
 

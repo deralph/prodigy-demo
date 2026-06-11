@@ -13,18 +13,22 @@ const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
  *   principal      — principal amount
  *   netReturn      — estimated net return
  *   onDownloadCert — (reason: string) => void — called when termination certificate is requested
+ *   onSubmit       — async (reason: string) => void — called when user confirms pre-termination
  *   mandateNote    — extra string shown under confirm button (for joint mandate info)
  *   bullets        — array of strings shown as warning bullets (optional)
  */
-export default function TerminationFlow({ productName, principal, netReturn, onDownloadCert, mandateNote, bullets = [] }) {
+export default function TerminationFlow({ productName, principal, netReturn, penaltyRate = 0.1, onDownloadCert, onSubmit, mandateNote, bullets = [] }) {
   const [step, setStep] = useState('idle'); // idle | confirm | done
   const [reason, setReason] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const penalty   = Math.round(netReturn * 0.25);
-  const netAfter  = Math.round(principal + netReturn * 0.75);
+  const penaltyPct = Math.round(penaltyRate * 100);
+  const penalty    = Math.round(principal * penaltyRate);
+  const netAfter   = principal - penalty;
 
   const defaultBullets = [
-    'Early termination incurs a 25% penalty on net returns.',
+    `Early termination incurs a ${penaltyPct}% penalty on principal.`,
     'Requests are reviewed within 1–2 business days.',
     'Principal returned within 5 business days of approval.',
     'Termination Certificate issued upon processing.',
@@ -58,7 +62,7 @@ export default function TerminationFlow({ productName, principal, netReturn, onD
           <span style={{ fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 13, color: 'var(--red)' }}>Confirm Pre-Termination</span>
         </div>
         <p style={{ fontSize: 12, color: 'var(--navy)', lineHeight: 1.7 }}>
-          You are requesting early exit of <strong>{productName}</strong>. A 25% penalty applies on accrued net returns.
+          You are requesting early exit of <strong>{productName}</strong>. A {penaltyPct}% penalty on principal ({fmt(penalty)}) applies.
           {mandateNote && <><br /><strong>{mandateNote}</strong></>}
         </p>
       </div>
@@ -76,12 +80,28 @@ export default function TerminationFlow({ productName, principal, netReturn, onD
           onBlur={e => e.target.style.borderColor = '#e2e8f0'}
         />
       </div>
+      {error && <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 12px', marginBottom: 14, fontSize: 12, color: 'var(--red)', fontWeight: 600 }}>{error}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <button onClick={() => setStep('idle')} style={{ padding: '13px', background: 'var(--gray-100)', color: 'var(--navy)', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 12 }}>
+        <button onClick={() => { setStep('idle'); setError(''); }} disabled={loading} style={{ padding: '13px', background: 'var(--gray-100)', color: 'var(--navy)', border: 'none', borderRadius: 10, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 12, opacity: loading ? 0.6 : 1 }}>
           Cancel
         </button>
-        <button onClick={() => setStep('done')} style={{ padding: '13px', background: 'var(--red)', color: 'white', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 12 }}>
-          Submit Request
+        <button
+          onClick={async () => {
+            if (!reason.trim()) { setError('Please provide a reason for termination.'); return; }
+            setLoading(true); setError('');
+            try {
+              await onSubmit?.(reason);
+              setStep('done');
+            } catch (e) {
+              setError(e?.message || 'Failed to submit request. Please try again.');
+            } finally {
+              setLoading(false);
+            }
+          }}
+          disabled={loading}
+          style={{ padding: '13px', background: 'var(--red)', color: 'white', border: 'none', borderRadius: 10, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 12, opacity: loading ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+        >
+          {loading ? 'Submitting…' : 'Submit Request'}
         </button>
       </div>
     </div>

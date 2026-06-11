@@ -51,31 +51,35 @@ function RiskCard({ plan, rd, delay }) {
 export default function RiskStrategy() {
   const { plans, clientInvestments } = useAppStore();
 
-  const totalBalance = useMemo(() =>
-    clientInvestments.reduce((s, i) => s + (i.principalAmount || i.amount || 0), 0)
+  const activeInvs = useMemo(() =>
+    clientInvestments.filter(i => ['active','pending_approval'].includes(i.status) && i.preTermStatus !== 'disbursed')
   , [clientInvestments]);
 
+  const totalBalance = useMemo(() =>
+    activeInvs.reduce((s, i) => s + (i.amount || 0), 0)
+  , [activeInvs]);
+
   const tableRows = useMemo(() =>
-    clientInvestments.map((inv, idx) => {
-      const balance = inv.principalAmount || inv.amount || 0;
-      const weight  = totalBalance > 0 ? ((balance / totalBalance) * 100).toFixed(1) + '%' : '—';
-      const plan    = inv.plan || {};
+    activeInvs.map((inv, idx) => {
+      const balance  = inv.amount || 0;
+      const weight   = totalBalance > 0 ? ((balance / totalBalance) * 100).toFixed(1) + '%' : '—';
+      const planObj  = plans.find(p => p.id === inv.planId) || {};
       return {
-        name:      plan.name || inv.planName || `Investment ${idx + 1}`,
-        roi:       plan.roi  ? `${plan.roi}% ROI` : '—',
-        risk:      plan.riskCategory || 'N/A',
-        balance:   '₦' + Number(balance).toLocaleString('en-NG'),
+        name:    inv.plan || `Investment ${idx + 1}`,
+        roi:     inv.roi  ? `${inv.roi}% p.a.` : planObj.roi || '—',
+        risk:    planObj.riskLevel || 'Moderate',
+        balance: '₦' + Number(balance).toLocaleString('en-NG'),
         weight,
-        dot:       DOT_COLORS[idx % DOT_COLORS.length],
+        dot:     DOT_COLORS[idx % DOT_COLORS.length],
       };
     })
-  , [clientInvestments, totalBalance]);
+  , [activeInvs, totalBalance, plans]);
 
   const avgRoi = useMemo(() => {
-    const withRoi = clientInvestments.filter(i => i.plan?.roi);
+    const withRoi = activeInvs.filter(i => i.roi > 0);
     if (!withRoi.length) return null;
-    return (withRoi.reduce((s, i) => s + Number(i.plan.roi), 0) / withRoi.length).toFixed(1);
-  }, [clientInvestments]);
+    return (withRoi.reduce((s, i) => s + i.roi, 0) / withRoi.length).toFixed(1);
+  }, [activeInvs]);
 
   return (
     <div>

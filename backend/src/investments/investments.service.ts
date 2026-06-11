@@ -2,6 +2,8 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException 
 import { PrismaService } from '../prisma/prisma.service';
 import { addDays } from 'date-fns';
 
+const PENALTY_RATE = 0.1; // 10% default early exit penalty on principal
+
 @Injectable()
 export class InvestmentsService {
   constructor(private prisma: PrismaService) {}
@@ -10,7 +12,7 @@ export class InvestmentsService {
   async getMyInvestments(clientDbId: string) {
     return this.prisma.investment.findMany({
       where: { clientId: clientDbId },
-      include: { product: true, history: true },
+      include: { product: true, history: true, preTermination: true },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -144,19 +146,49 @@ export class InvestmentsService {
   async requestRedemption(clientDbId: string, investmentId: string, reason?: string) {
     const inv = await this.prisma.investment.findFirst({
       where: { id: investmentId, clientId: clientDbId, status: 'ACTIVE' },
+      include: { product: true },
     });
     if (!inv) throw new NotFoundException('Active investment not found');
 
-    return this.prisma.preTermination.create({
-      data: {
-        preTermRef: `PT-${Date.now()}`,
-        investmentId,
-        clientId: clientDbId,
-        requestedAmountKobo: inv.principalKobo,
-        penaltyKobo: BigInt(0),
-        netPayoutKobo: inv.principalKobo,
-        reason,
-      },
+    const existing = await this.prisma.preTermination.findUnique({ where: { investmentId } });
+    if (existing) {
+      const statusLabel = existing.status === 'PENDING_OPS' ? 'pending review'
+        : existing.status === 'PENDING_FINANCE' ? 'sent to finance for disbursement'
+        : existing.status === 'DISBURSED' ? 'already disbursed'
+        : existing.status.toLowerCase().replace('_', ' ');
+      throw new BadRequestException(`A pre-termination request for this investment is already ${statusLabel}.`);
+    }
+
+    // Calculate penalty upfront so admin sees real figures during review
+    const penaltyRate = inv.product?.earlyExitPenalty
+      ? Number(inv.product.earlyExitPenalty) / 100
+      : PENALTY_RATE;
+    const principalNum = Number(inv.principalKobo);
+    const penaltyKobo = BigInt(Math.round(principalNum * penaltyRate));
+    const netPayoutKobo = inv.principalKobo - penaltyKobo;
+
+    return this.prisma.$transaction(async (tx) => {
+      const preTermination = await tx.preTermination.create({
+        data: {
+          preTermRef: `PT-${Date.now()}`,
+          investmentId,
+          clientId: clientDbId,
+          requestedAmountKobo: inv.principalKobo,
+          penaltyKobo,
+          netPayoutKobo,
+          reason,
+        },
+      });
+
+      await tx.investmentEvent.create({
+        data: {
+          investmentId,
+          action: `Pre-Termination Requested — Penalty: ${Math.round(penaltyRate * 100)}% of principal`,
+          note: reason || undefined,
+        },
+      });
+
+      return preTermination;
     });
   }
 

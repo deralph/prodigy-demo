@@ -25,6 +25,7 @@ const INITIAL_STATE = {
   corpLoanEntities: [],
   preTermQueue: [],
   financeQueue: [],
+  orgLedger: [],
   clientInvestments: [],
   auditLog: [],
   adminUsers: [],
@@ -136,7 +137,9 @@ const mapInvestment = (inv) => {
     notes:        inv.notes,
     createdAt:    inv.createdAt,
     _createdAt:   inv.createdAt ? new Date(inv.createdAt) : null,
-    history:      (inv.history || []).map(h => ({ ...h, date: h.createdAt ? new Date(h.createdAt).toLocaleDateString('en-GB') : '—' })),
+    history:      (inv.history || []).map(h => ({ ...h, date: (h.occurredAt || h.createdAt) ? new Date(h.occurredAt || h.createdAt).toLocaleDateString('en-GB') : '—' })),
+    preTermination: inv.preTermination || null,
+    preTermStatus: inv.preTermination?.status?.toLowerCase() || null,
   };
 };
 
@@ -335,48 +338,101 @@ const useAppStore = create((set, get) => ({
         }).catch(() => {}));
         tasks.push(api.adminFinanceQueueApi.findAll().then(data => {
           if (data && Array.isArray(data)) {
-            const transformed = data.map(fq => ({
-              id: fq.id,
-              fqRef: fq.fqRef,
-              type: fq.type,
-              status: fq.status?.toLowerCase(),
-              clientId: fq.client?.clientRef,
-              client: fq.client?.name,
-              amount: Number(fq.amountKobo || 0) / 100,
-              penalty: Number(fq.penaltyKobo || 0) / 100,
-              notes: fq.notes,
-              preTermId: fq.preTermId,
-              preTermination: fq.preTermination,
-              createdAt: fq.createdAt,
-              approvedAt: fq.approvedAt,
-              rejectedAt: fq.rejectedAt,
-              rejectionReason: fq.rejectionReason,
-            }));
+            const transformed = data.map(fq => {
+              const pt  = fq.preTermination;
+              const inv = pt?.investment;
+              const cli = inv?.client;
+              return {
+                id:              fq.id,
+                fqRef:           fq.fqRef,
+                type:            fq.type,
+                status:          fq.status?.toLowerCase(),
+                clientId:        cli?.clientRef || fq.clientId,
+                client:          cli?.name || '—',
+                product:         inv?.product?.name || '—',
+                amount:          Number(fq.amountKobo || 0) / 100,
+                penalty:         Number(fq.penaltyKobo || 0) / 100,
+                reason:          pt?.reason || '—',
+                requestDate:     pt?.requestedAt ? new Date(pt.requestedAt).toLocaleDateString('en-GB') : '—',
+                requestedBy:     fq.requestedById || '—',
+                notes:           fq.notes,
+                preTermId:       fq.preTermId,
+                preTermination:  pt,
+                createdAt:       fq.createdAt,
+                approvedAt:      fq.approvedAt,
+                rejectedAt:      fq.rejectedAt,
+                rejectionReason: fq.rejectionReason,
+              };
+            });
             set({ financeQueue: transformed });
           }
         }).catch(() => {}));
         tasks.push(api.adminPreTermApi.findAll().then(data => {
           if (data && Array.isArray(data)) {
-            const transformed = data.map(pt => ({
-              id: pt.id,
-              preTermRef: pt.preTermRef,
-              investmentId: pt.investmentId,
-              investment: pt.investment,
-              clientId: pt.client?.clientRef,
-              client: pt.client?.name,
-              status: pt.status?.toLowerCase().replace('pending_ops', 'pending').replace('approved_ops', 'approved_ops').replace('pending_finance', 'pending'),
-              amount: Number(pt.requestedAmountKobo || 0) / 100,
-              penalty: Number(pt.penaltyKobo || 0) / 100,
-              netPayout: Number(pt.netPayoutKobo || 0) / 100,
-              reason: pt.reason,
-              requestedAt: pt.requestedAt,
-              opsApprovedAt: pt.opsApprovedAt,
-              financeApprovedAt: pt.financeApprovedAt,
-              disbursedAt: pt.disbursedAt,
-              rejectedAt: pt.rejectedAt,
-              rejectionReason: pt.rejectionReason,
-            }));
+            const transformed = data.map(pt => {
+              const inv = pt.investment;
+              const cli = inv?.client;
+              const tenorDays = inv?.tenorDays;
+              let tenor = '—';
+              if (tenorDays) {
+                if (tenorDays % 365 === 0)     tenor = `${tenorDays / 365} year${tenorDays / 365 === 1 ? '' : 's'}`;
+                else if (tenorDays % 30 === 0) tenor = `${tenorDays / 30} month${tenorDays / 30 === 1 ? '' : 's'}`;
+                else                           tenor = `${tenorDays} days`;
+              }
+              const rawStatus = pt.status?.toLowerCase() || 'pending_ops';
+              const status = rawStatus === 'pending_ops' ? 'pending'
+                           : rawStatus === 'pending_finance' ? 'approved_ops'
+                           : rawStatus === 'disbursed' ? 'disbursed'
+                           : rawStatus;
+              return {
+                id: pt.id,
+                preTermRef: pt.preTermRef,
+                investmentId: pt.investmentId,
+                investment: inv,
+                clientId: cli?.clientRef || pt.clientId,
+                client: cli?.name || '—',
+                status,
+                amount: Number(pt.requestedAmountKobo || 0) / 100,
+                penalty: Number(pt.penaltyKobo || 0) / 100,
+                netPayout: Number(pt.netPayoutKobo || 0) / 100,
+                reason: pt.reason || '—',
+                requestedAt: pt.requestedAt,
+                requestDate: pt.requestedAt ? new Date(pt.requestedAt).toLocaleDateString('en-GB') : '—',
+                opsApprovedAt: pt.opsApprovedAt,
+                financeApprovedAt: pt.financeApprovedAt,
+                disbursedAt: pt.disbursedAt,
+                rejectedAt: pt.rejectedAt,
+                rejectionReason: pt.rejectionReason,
+                rejectReason: pt.rejectionReason || '',
+                approvedBy: '',
+                rejectedBy: '',
+                product: inv?.product?.name || '—',
+                tenor,
+                maturityDate: inv?.maturityDate ? new Date(inv.maturityDate).toLocaleDateString('en-GB') : '—',
+              };
+            });
             set({ preTermQueue: transformed });
+          }
+        }).catch(() => {}));
+        tasks.push(api.orgLedgerApi.findAll().then(data => {
+          if (data && Array.isArray(data)) {
+            const transformed = data.map(entry => ({
+              id:          entry.id,
+              entryRef:    entry.entryRef,
+              type:        entry.type?.toLowerCase(),
+              description: entry.description || entry.type,
+              amount:      Number(entry.amountKobo || 0) / 100,
+              clientId:    entry.clientId,
+              clientName:  entry.client?.name || '—',
+              clientEmail: entry.client?.email || '—',
+              clientRef:   entry.client?.clientRef || '—',
+              preTermId:   entry.preTermId,
+              fqItemId:    entry.fqItemId,
+              recordedById: entry.recordedById,
+              date:        entry.createdAt ? new Date(entry.createdAt).toLocaleDateString('en-GB') : '—',
+              createdAt:   entry.createdAt,
+            }));
+            set({ orgLedger: transformed });
           }
         }).catch(() => {}));
         tasks.push(api.adminStaffLoanApi.getAllEntities().then(data => {
@@ -480,13 +536,6 @@ const useAppStore = create((set, get) => ({
     import('../services/api').then(m => m.adminInvestmentApi.book(inv)).catch(() => {});
   },
 
-  // Admin: sell pre-termination instrument
-  sellPreTerm: (id, sellData) => {
-    set((s) => ({
-      preTermQueue: s.preTermQueue.map(p => p.id === id ? { ...p, status:'sold', sellData } : p),
-    }));
-    import('../services/api').then(m => m.adminInvestmentApi.sell(id, sellData)).catch(() => {});
-  },
 
   // Register new client (adds to clients list + syncs mandate for joint)
   addClient: (client) => {
@@ -538,31 +587,54 @@ const useAppStore = create((set, get) => ({
   },
 
   // Admin: pre-termination actions
-  approvePreTerm: (id, approvedBy) => {
-    set((s) => ({
-      preTermQueue: s.preTermQueue.map(p => p.id === id ? { ...p, status:'approved_ops', approvedBy } : p),
-      financeQueue: [
-        ...s.financeQueue,
-        (() => { const p = s.preTermQueue.find(x=>x.id===id); return p ? { id:'FQ-'+Date.now(), client:p.client, clientId:p.clientId, product:p.product, type:'Pre-Termination', amount:p.amount, penalty:p.penalty, reason:p.reason, requestDate:p.requestDate, requestedBy:`${approvedBy} (Ops)`, status:'pending', approvedBy:'', rejectedBy:'', rejectReason:'' } : null; })()
-      ].filter(Boolean),
-    }));
-    import('../services/api').then(m => m.adminPreTermApi.approve(id)).catch(() => {});
+  approvePreTerm: async (id, approvedBy) => {
+    set(s => ({ preTermQueue: s.preTermQueue.map(p => p.id === id ? { ...p, status: 'approved_ops', approvedBy } : p) }));
+    try {
+      const api = await import('../services/api');
+      await api.adminPreTermApi.approve(id);
+      await get().fetchApiData();
+    } catch (err) {
+      console.error('Pre-term approval failed', err);
+    }
   },
-  rejectPreTerm: (id, rejectedBy, rejectReason) => {
-    set((s) => ({
-      preTermQueue: s.preTermQueue.map(p => p.id === id ? { ...p, status:'rejected', rejectedBy, rejectReason } : p),
-    }));
-    import('../services/api').then(m => m.adminPreTermApi.reject(id, rejectReason)).catch(() => {});
+  rejectPreTerm: async (id, rejectedBy, rejectReason) => {
+    set(s => ({ preTermQueue: s.preTermQueue.map(p => p.id === id ? { ...p, status: 'rejected', rejectedBy, rejectReason } : p) }));
+    try {
+      const api = await import('../services/api');
+      await api.adminPreTermApi.reject(id, rejectReason);
+      await get().fetchApiData();
+    } catch (err) {
+      console.error('Pre-term rejection failed', err);
+    }
+  },
+
+  // User: request pre-termination (adds to admin queue optimistically)
+  requestPreTermination: async (investmentId, reason) => {
+    const api = await import('../services/api');
+    await api.investmentApi.requestPreTermination(investmentId, reason);
+    await get().fetchApiData();
   },
 
   // Admin: finance queue actions
-  approveFinanceItem: (id, approvedBy) => {
-    set((s) => ({ financeQueue: s.financeQueue.map(f => f.id === id ? { ...f, status:'approved', approvedBy } : f) }));
-    import('../services/api').then(m => m.adminFinanceQueueApi.approve(id)).catch(() => {});
+  approveFinanceItem: async (id, approvedBy) => {
+    set(s => ({ financeQueue: s.financeQueue.map(f => f.id === id ? { ...f, status: 'approved', approvedBy } : f) }));
+    try {
+      const api = await import('../services/api');
+      await api.adminFinanceQueueApi.approve(id);
+      await get().fetchApiData();
+    } catch (err) {
+      console.error('Finance approval failed', err);
+    }
   },
-  rejectFinanceItem: (id, rejectedBy, rejectReason) => {
-    set((s) => ({ financeQueue: s.financeQueue.map(f => f.id === id ? { ...f, status:'rejected', rejectedBy, rejectReason } : f) }));
-    import('../services/api').then(m => m.adminFinanceQueueApi.reject(id, rejectReason)).catch(() => {});
+  rejectFinanceItem: async (id, rejectedBy, rejectReason) => {
+    set(s => ({ financeQueue: s.financeQueue.map(f => f.id === id ? { ...f, status: 'rejected', rejectedBy, rejectReason } : f) }));
+    try {
+      const api = await import('../services/api');
+      await api.adminFinanceQueueApi.reject(id, rejectReason);
+      await get().fetchApiData();
+    } catch (err) {
+      console.error('Finance rejection failed', err);
+    }
   },
 
   // Admin: user management

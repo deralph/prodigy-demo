@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { TrendingUp, Users, Eye, Download, Award } from 'lucide-react';
+import { TrendingUp, Users, Eye, Download, Award, Clock, CheckCircle, XCircle } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 import PageHeader from '../../components/ui/PageHeader';
 import StatCard from '../../components/ui/StatCard';
@@ -15,6 +15,14 @@ import TerminationFlow from '../../components/portfolio/TerminationFlow';
 import { AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
+const fmtSmart = v => {
+  if (!v && v !== 0) return '₦0';
+  const abs = Math.abs(v);
+  if (abs >= 1e9) return '₦' + (v / 1e9).toFixed(1) + 'B';
+  if (abs >= 1e6) return '₦' + (v / 1e6).toFixed(1) + 'M';
+  if (abs >= 1e3) return '₦' + (v / 1e3).toFixed(1) + 'K';
+  return '₦' + v.toFixed(0);
+};
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 function buildGrowth(inv) {
@@ -22,18 +30,44 @@ function buildGrowth(inv) {
   const monthlyRate = (inv.roi || 0) / 1200;
   const monthlyELI = principal * monthlyRate;
   const tenorMonths = Math.max(1, Math.round((inv.tenorDays || 365) / 30));
+  const startDate = inv._valueDate;
+  const maturityDate = inv._maturityDate;
+  const months = [];
 
-  return MONTHS.map((m, i) => {
-    const elapsed = Math.min(i + 1, tenorMonths);
-    const cumulativeELI = monthlyELI * elapsed;
-    return {
-      month: m,
+  if (!startDate || isNaN(startDate)) {
+    const label = new Date().toLocaleString('en-US', { month: 'short', year: '2-digit' });
+    return [{ month: label, principal: Math.round(principal), monthlyEli: 0, eli: 0, value: Math.round(principal) }];
+  }
+
+  const getMonthStart = d => new Date(d.getFullYear(), d.getMonth(), 1);
+  const monthDiff = (a, b) => (a.getFullYear() - b.getFullYear()) * 12 + (a.getMonth() - b.getMonth());
+  const startMonth = getMonthStart(startDate);
+  const today = getMonthStart(new Date());
+  let endMonth;
+  if (maturityDate && !isNaN(maturityDate)) {
+    endMonth = getMonthStart(maturityDate);
+  } else {
+    endMonth = new Date(startMonth);
+    endMonth.setMonth(startMonth.getMonth() + tenorMonths - 1);
+  }
+  endMonth = new Date(Math.max(endMonth, today));
+  const count = Math.max(1, monthDiff(endMonth, startMonth) + 1);
+
+  for (let mi = 0; mi < count; mi++) {
+    const monthDate = new Date(startMonth);
+    monthDate.setMonth(startMonth.getMonth() + mi);
+    const elapsed = monthDiff(monthDate, startMonth) + 1;
+    const capped = Math.min(elapsed, tenorMonths);
+    const cumulativeELI = monthlyELI * capped;
+    months.push({
+      month: monthDate.toLocaleString('en-US', { month: 'short', year: '2-digit' }),
       principal: Math.round(principal),
       monthlyEli: Math.round(monthlyELI),
       eli: Math.round(cumulativeELI),
       value: Math.round(principal + cumulativeELI),
-    };
-  });
+    });
+  }
+  return months;
 }
 
 function JointInvestmentDrawer({ inv, plans, user, client, onClose }) {
@@ -42,6 +76,8 @@ function JointInvestmentDrawer({ inv, plans, user, client, onClose }) {
   const gross   = (inv.amount * inv.roi) / 100;
   const tax     = (gross * (inv.tax || 0)) / 100;
   const net     = gross - tax;
+  const penaltyRate = plan?.earlyExitPenalty ? Number(plan.earlyExitPenalty) / 100 : 0.1;
+  const penaltyPct  = Math.round(penaltyRate * 100);
   const chart   = buildGrowth(inv);
   const [tab, setTab] = useState('overview');
 
@@ -156,7 +192,7 @@ function JointInvestmentDrawer({ inv, plans, user, client, onClose }) {
               <ResponsiveContainer width="100%" height={220}>
                 <AreaChart data={chart}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f4ff" />
-                  <XAxis dataKey="month" tick={{ fontSize: 10 }} /><YAxis tickFormatter={v => '₦' + (v / 1e6).toFixed(1) + 'M'} tick={{ fontSize: 10 }} />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} /><YAxis tickFormatter={fmtSmart} tick={{ fontSize: 10 }} />
                   <Tooltip formatter={v => [fmt(v)]} /><Legend />
                   <Area type="monotone" dataKey="value"     name="Total Value" stroke={color}           fill={`${color}18`} strokeWidth={2.5} />
                   <Area type="monotone" dataKey="principal" name="Principal"   stroke="var(--navy)"     fill="rgba(13,27,53,0.05)" strokeWidth={1.5} strokeDasharray="4 2" />
@@ -185,7 +221,21 @@ function JointInvestmentDrawer({ inv, plans, user, client, onClose }) {
                 <Download size={12} /> Export
               </button>
             </div>
-            {(inv.history || []).length === 0 && <div style={{ padding: '28px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 12 }}>No history available.</div>}
+            {inv.preTermination && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px', marginBottom: 8, background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 9 }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#b91c1c' }}>
+                    Pre-Termination Request — {inv.preTermStatus === 'pending_ops' ? 'Awaiting Ops Review' : inv.preTermStatus === 'pending_finance' ? 'Approved — Pending Disbursement' : inv.preTermStatus === 'disbursed' ? 'Disbursed' : inv.preTermStatus === 'rejected' ? 'Rejected' : 'Submitted'}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--gray-400)' }}>
+                    {inv.preTermination.requestedAt ? new Date(inv.preTermination.requestedAt).toLocaleDateString('en-GB') : '—'} · Ref: {inv.preTermination.preTermRef || '—'}
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}>−{fmt(Number(inv.preTermination.penaltyKobo || 0) / 100)} penalty</div>
+              </div>
+            )}
+            {(inv.history || []).length === 0 && !inv.preTermination && <div style={{ padding: '28px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 12 }}>No history available.</div>}
             {(inv.history || []).map((h, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid var(--gray-100)' }}>
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
@@ -199,21 +249,35 @@ function JointInvestmentDrawer({ inv, plans, user, client, onClose }) {
           </div>
         )}
         {tab === 'terminate' && (
-          <TerminationFlow
-            productName={inv.plan}
-            principal={inv.amount}
-            netReturn={net}
-            onDownloadCert={reason => downloadCert(true, reason)}
-            mandateNote={client?.mandate === 'AND'
-              ? `All ${holders.length} holders must co-authorise this termination.`
-              : 'Any holder may authorise this termination.'}
-            bullets={[
-              `25% penalty applies on net returns for early exit.`,
-              `Under ${client?.mandate || 'AND'} mandate: ${client?.mandate === 'AND' ? `all ${holders.length} signatories must co-authorise` : 'any signatory may initiate'}.`,
-              'Principal returned within 5 business days of approval.',
-              'Termination Certificate issued upon processing.',
-            ]}
-          />
+          inv.preTermStatus ? (
+            <div style={{ textAlign: 'center', padding: '32px 0' }}>
+              {inv.preTermStatus === 'pending_ops' && <><Clock size={48} color="var(--gold)" style={{ marginBottom: 14 }} /><div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 16, color: 'var(--navy)', marginBottom: 8 }}>Request Pending Review</div><p style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.6 }}>Your pre-termination request is awaiting operations review. You will be notified within 1–2 business days.</p></> }
+              {inv.preTermStatus === 'pending_finance' && <><CheckCircle size={48} color="var(--green)" style={{ marginBottom: 14 }} /><div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 16, color: 'var(--navy)', marginBottom: 8 }}>Approved — Pending Disbursement</div><p style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.6 }}>Operations has approved your request. Finance is processing your payout within 5 business days.</p></> }
+              {inv.preTermStatus === 'disbursed' && <><CheckCircle size={48} color="var(--green)" style={{ marginBottom: 14 }} /><div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 16, color: 'var(--navy)', marginBottom: 8 }}>Disbursed</div><p style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.6 }}>Your principal has been returned to your wallet.</p></> }
+              {inv.preTermStatus === 'rejected' && <><XCircle size={48} color="var(--red)" style={{ marginBottom: 14 }} /><div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 16, color: 'var(--navy)', marginBottom: 8 }}>Request Rejected</div><p style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.6 }}>{inv.preTermination?.rejectionReason || 'Your pre-termination request was rejected. Please contact support.'}</p></> }
+            </div>
+          ) : (
+            <TerminationFlow
+              productName={inv.plan}
+              principal={inv.amount}
+              netReturn={net}
+              penaltyRate={penaltyRate}
+              onDownloadCert={reason => downloadCert(true, reason)}
+              onSubmit={async (reason) => {
+                const { requestPreTermination } = useAppStore.getState();
+                await requestPreTermination(inv.id, reason);
+              }}
+              mandateNote={client?.mandate === 'AND'
+                ? `All ${holders.length} holders must co-authorise this termination.`
+                : 'Any holder may authorise this termination.'}
+              bullets={[
+                `${penaltyPct}% penalty on principal applies for early exit.`,
+                `Under ${client?.mandate || 'AND'} mandate: ${client?.mandate === 'AND' ? `all ${holders.length} signatories must co-authorise` : 'any signatory may initiate'}.`,
+                'Principal returned within 5 business days of approval.',
+                'Termination Certificate issued upon processing.',
+              ]}
+            />
+          )
         )}
       </div>
     </SlideDrawer>
@@ -232,7 +296,7 @@ export default function JointPortfolio() {
   const [chartType,    setChartType]    = useState('area');
   const [statusFilter, setStatusFilter] = useState('all');
 
-  const myInvs    = clientInvestments;
+  const myInvs    = clientInvestments.filter(i => i.preTermStatus !== 'disbursed');
   const displayed = statusFilter === 'all' ? myInvs : myInvs.filter(i => i.status === statusFilter);
   const totalAUM  = myInvs.reduce((s, i) => s + i.amount, 0);
   const activeAUM = myInvs.filter(i => i.status === 'active').reduce((s, i) => s + i.amount, 0);
@@ -242,18 +306,50 @@ export default function JointPortfolio() {
   const uniqueProducts = [...new Map(myInvs.map(i => [i.planId, { id: i.planId, name: i.plan, color: plans.find(p => p.id === i.planId)?.color || '#3b82f6' }])).values()];
 
   const perProductData = useMemo(() => {
-    const filtered = chartFilter === 'all' ? myInvs : myInvs.filter(i => i.planId === chartFilter);
-    return MONTHS.map((month, mi) => {
-      const row = { month };
-      filtered.forEach(inv => {
-        const label = plans.find(p => p.id === inv.planId)?.name || inv.plan;
-        const tenorMonths = Math.max(1, Math.round((inv.tenorDays || 365) / 30));
-        const elapsed = Math.min(mi + 1, tenorMonths);
-        const accrued = inv.amount * (inv.roi / 100) * (elapsed / 12);
-        row[label] = (row[label] || 0) + Math.round(inv.amount + accrued);
+    const activeInvs = myInvs.filter(i => i.status === 'active');
+    const filtered = chartFilter === 'all' ? activeInvs : activeInvs.filter(i => i.planId === chartFilter);
+    if (!filtered.length) return [];
+
+    const getMonthStart = d => new Date(d.getFullYear(), d.getMonth(), 1);
+    const monthDiff = (a, b) => (a.getFullYear() - b.getFullYear()) * 12 + (a.getMonth() - b.getMonth());
+    const valid = filtered.filter(i => i._valueDate && !isNaN(i._valueDate));
+    if (!valid.length) return [];
+
+    const startDates = valid.map(i => getMonthStart(i._valueDate));
+    const maturityDates = valid.map(i => i._maturityDate && !isNaN(i._maturityDate) ? getMonthStart(i._maturityDate) : getMonthStart(new Date()));
+    const todayStart = getMonthStart(new Date());
+    const earliest = new Date(Math.min(...startDates));
+    const latest = new Date(Math.max(...maturityDates, todayStart));
+    const monthCount = Math.max(1, monthDiff(latest, earliest) + 1);
+
+    const productNames = [...new Set(valid.map(i => {
+      const plan = plans.find(p => p.id === i.planId);
+      return plan?.name || i.plan || 'Unknown';
+    }))];
+
+    const rows = [];
+    for (let mi = 0; mi < monthCount; mi++) {
+      const monthDate = new Date(earliest);
+      monthDate.setMonth(earliest.getMonth() + mi);
+      const row = { month: monthDate.toLocaleString('en-US', { month: 'short', year: '2-digit' }) };
+      productNames.forEach(name => {
+        const invs = valid.filter(i => { const plan = plans.find(p => p.id === i.planId); return (plan?.name || i.plan || 'Unknown') === name; });
+        let total = 0;
+        invs.forEach(inv => {
+          const invStart = getMonthStart(inv._valueDate);
+          if (monthDate >= invStart) {
+            const elapsed = monthDiff(monthDate, invStart) + 1;
+            const tenorMonths = Math.max(1, Math.round((inv.tenorDays || 365) / 30));
+            const capped = Math.min(elapsed, tenorMonths);
+            const monthlyRate = (inv.roi || 0) / 1200;
+            total += inv.amount + inv.amount * monthlyRate * capped;
+          }
+        });
+        row[name] = Math.round(total);
       });
-      return row;
-    });
+      rows.push(row);
+    }
+    return rows;
   }, [myInvs, plans, chartFilter]);
 
   const pieData    = uniqueProducts.map(p => ({ name: p.name, value: myInvs.filter(i => i.planId === p.id).reduce((s, i) => s + i.amount, 0), color: p.color }));

@@ -46,14 +46,15 @@ function AumPieCard({ title, data, totalAUM }) {
   );
 }
 
-function EliTypeCard({ type, label, color, byType }) {
+function EliTypeCard({ type, label, color, byType, avgRate }) {
   const aum = byType[type.trim()] || 0;
+  const rate = avgRate || 0;
   const rows = [
     ['AUM', fmt(aum)],
-    ['Avg. Rate', '19.5% p.a.'],
-    ['Monthly ELI', fmt(aum * 0.195 / 12)],
-    ['Annual ELI', fmt(aum * 0.195)],
-    ['Net (post-tax)', fmt(aum * 0.195 * 0.88)],
+    ['Avg. Rate', `${rate.toFixed(1)}% p.a.`],
+    ['Monthly ELI', fmt(aum * (rate / 100) / 12)],
+    ['Annual ELI', fmt(aum * (rate / 100))],
+    ['Net (post-tax)', fmt(aum * (rate / 100) * 0.88)],
   ];
   return (
     <div style={{ background: 'white', borderRadius: 14, padding: '20px', border: '1px solid var(--gray-200)', borderTop: `4px solid ${color}` }}>
@@ -70,29 +71,38 @@ function EliTypeCard({ type, label, color, byType }) {
 
 /* ── Tab panels ──────────────────────────────────── */
 function OverviewTab({ pieData, planPie, aumTrend, totalAUM }) {
+  const hasAum = aumTrend.length > 0 && aumTrend.some(d => d.total > 0);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }} className="animate-in">
       <ChartCard title="AUM Trend by Account Type (₦M)" subtitle="Stacked growth of corporate, individual and joint AUM over 8 months">
-        <ResponsiveContainer width="100%" height={250}>
-          <AreaChart data={aumTrend}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="month" tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}M`} />
-            <Tooltip formatter={(v, n) => [`₦${v}M`, n]} /><Legend />
-            <Area type="monotone" dataKey="corporate"  name="Corporate"  stackId="1" stroke="#3b82f6" fill="#3b82f620" strokeWidth={2} />
-            <Area type="monotone" dataKey="individual" name="Individual" stackId="1" stroke="#22c55e" fill="#22c55e20" strokeWidth={2} />
-            <Area type="monotone" dataKey="joint"      name="Joint"      stackId="1" stroke="#8b5cf6" fill="#8b5cf620" strokeWidth={2} />
-          </AreaChart>
-        </ResponsiveContainer>
+        {hasAum ? (
+          <ResponsiveContainer width="100%" height={250}>
+            <AreaChart data={aumTrend}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="month" tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}M`} />
+              <Tooltip formatter={(v, n) => [`₦${v}M`, n]} /><Legend />
+              <Area type="monotone" dataKey="corporate"  name="Corporate"  stackId="1" stroke="#3b82f6" fill="#3b82f620" strokeWidth={2} />
+              <Area type="monotone" dataKey="individual" name="Individual" stackId="1" stroke="#22c55e" fill="#22c55e20" strokeWidth={2} />
+              <Area type="monotone" dataKey="joint"      name="Joint"      stackId="1" stroke="#8b5cf6" fill="#8b5cf620" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <EmptyState title="No AUM data" message="Charts will appear once investments are active." />
+        )}
       </ChartCard>
       <ChartCard title="Total AUM Growth Line" subtitle="Consolidated AUM trajectory — all account types combined">
-        <ResponsiveContainer width="100%" height={210}>
-          <LineChart data={aumTrend}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="month" tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 10 }} tickFormatter={v => `₦${v}M`} />
-            <Tooltip formatter={(v, n) => [`₦${v}M`, n]} />
-            <Line type="monotone" dataKey="total" name="Total AUM" stroke="var(--navy)" strokeWidth={3} dot={{ r: 5, fill: 'var(--gold)' }} activeDot={{ r: 7 }} />
-          </LineChart>
-        </ResponsiveContainer>
+        {hasAum ? (
+          <ResponsiveContainer width="100%" height={210}>
+            <LineChart data={aumTrend}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="month" tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 10 }} tickFormatter={v => `₦${v}M`} />
+              <Tooltip formatter={(v, n) => [`₦${v}M`, n]} />
+              <Line type="monotone" dataKey="total" name="Total AUM" stroke="var(--navy)" strokeWidth={3} dot={{ r: 5, fill: 'var(--gold)' }} activeDot={{ r: 7 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <EmptyState title="No AUM data" message="Charts will appear once investments are active." />
+        )}
       </ChartCard>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 22 }}>
         <AumPieCard title="AUM by Account Type" data={pieData} totalAUM={totalAUM} />
@@ -103,38 +113,47 @@ function OverviewTab({ pieData, planPie, aumTrend, totalAUM }) {
 }
 
 function GrowthTab({ data }) {
+  const hasData = data.length > 0 && data.some(d => d.capital > 0);
   const totalReturn = data[data.length - 1]?.cumReturn || 0;
-  const summaryStats = [
+  const summaryStats = hasData ? [
     { label: 'Starting AUM',    val: fmt(data[0].capital),               color: 'var(--gray-600)' },
     { label: 'Current AUM',     val: fmt(data[data.length - 1].capital), color: 'var(--navy)' },
     { label: 'AUM Growth',      val: `+₦${((data[data.length-1].capital - data[0].capital) / 1e6).toFixed(1)}M`, color: 'var(--green)' },
     { label: 'Starting ELI/mo', val: fmt(data[0].eli),                   color: 'var(--gray-600)' },
     { label: 'Latest ELI/mo',   val: fmt(data[data.length - 1].eli),     color: 'var(--gold)' },
     { label: 'Cumul. Return',   val: fmt(totalReturn),                    color: '#8b5cf6' },
-  ];
+  ] : [];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }} className="animate-in">
       <ChartCard title="Total AUM + Cumulative Return Over Time" subtitle="How total capital has grown alongside cumulative interest generated">
-        <ResponsiveContainer width="100%" height={260}>
-          <AreaChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 10 }} tickFormatter={v => '₦' + (v / 1e6).toFixed(0) + 'M'} />
-            <Tooltip formatter={(v, n) => ['₦' + (v / 1e6).toFixed(2) + 'M', n]} /><Legend />
-            <Area type="monotone" dataKey="capital"   name="Principal AUM" stroke="var(--navy)"  fill="rgba(13,27,53,0.07)"  strokeWidth={2.5} />
-            <Area type="monotone" dataKey="cumReturn" name="Cumul. Return"  stroke="var(--green)" fill="rgba(34,197,94,0.08)" strokeWidth={2} />
-          </AreaChart>
-        </ResponsiveContainer>
+        {hasData ? (
+          <ResponsiveContainer width="100%" height={260}>
+            <AreaChart data={data}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 10 }} tickFormatter={fmt} />
+              <Tooltip formatter={(v, n) => [fmt(v), n]} /><Legend />
+              <Area type="monotone" dataKey="capital"   name="Principal AUM" stroke="var(--navy)"  fill="rgba(13,27,53,0.07)"  strokeWidth={2.5} />
+              <Area type="monotone" dataKey="cumReturn" name="Cumul. Return"  stroke="var(--green)" fill="rgba(34,197,94,0.08)" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <EmptyState title="No growth data" message="Charts will appear once investments are active." />
+        )}
       </ChartCard>
       <ChartCard title="Monthly ELI (Earnings) Line Chart" subtitle="Monthly interest earned trending upward as AUM grows">
-        <ResponsiveContainer width="100%" height={220}>
-          <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 10 }} tickFormatter={v => '₦' + (v / 1e6).toFixed(1) + 'M'} />
-            <Tooltip formatter={(v, n) => ['₦' + (v / 1e6).toFixed(3) + 'M', n]} /><Legend />
-            <Line type="monotone" dataKey="eli"    name="Monthly ELI"   stroke="var(--gold)" strokeWidth={2.5} dot={{ r: 5 }} activeDot={{ r: 7 }} />
-            <Line type="monotone" dataKey="roiPct" name="Blended ROI %" stroke="#8b5cf6"     strokeWidth={2} dot={{ r: 4 }} />
-          </LineChart>
-        </ResponsiveContainer>
+        {hasData ? (
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={data}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 10 }} tickFormatter={fmt} />
+              <Tooltip formatter={(v, n) => [fmt(v), n]} /><Legend />
+              <Line type="monotone" dataKey="eli"    name="Monthly ELI"   stroke="var(--gold)" strokeWidth={2.5} dot={{ r: 5 }} activeDot={{ r: 7 }} />
+              <Line type="monotone" dataKey="roiPct" name="Blended ROI %" stroke="#8b5cf6"     strokeWidth={2} dot={{ r: 4 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <EmptyState title="No ELI data" message="Charts will appear once investments are active." />
+        )}
       </ChartCard>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
         {summaryStats.map(s => (
@@ -148,7 +167,13 @@ function GrowthTab({ data }) {
   );
 }
 
-function ProductsTab({ roiByProduct, perProductGrowth }) {
+function ProductsTab({ roiByProduct, perProductGrowth, plans }) {
+  const activeKeys = useMemo(() => {
+    const keys = new Set();
+    perProductGrowth.forEach(row => Object.keys(row).forEach(k => { if (k !== 'month') keys.add(k); }));
+    return Array.from(keys);
+  }, [perProductGrowth]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }} className="animate-in">
       {roiByProduct.length === 0 && <EmptyState icon={BarChart2} title="No product data yet" message="Charts will appear once investments are active." />}
@@ -171,13 +196,12 @@ function ProductsTab({ roiByProduct, perProductGrowth }) {
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="month" tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 10 }} tickFormatter={v => `₦${v}M`} />
             <Tooltip formatter={(v, n) => [`₦${v}M`, n]} /><Legend />
-            <Line type="monotone" dataKey="genesis"   name="Genesis"   stroke="#ec4899" strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="vcf"       name="Corp Fund" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="apex"      name="Apex"      stroke="#22c55e" strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="vantage"   name="Vantage"   stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="aura"      name="Aura"      stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="flex"      name="Flexi"     stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="liquidity" name="Liquidity" stroke="#0d1b35" strokeWidth={2} dot={{ r: 3 }} />
+            {activeKeys.map(key => {
+              const plan = plans.find(p => p.name.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '') === key);
+              return (
+                <Line key={key} type="monotone" dataKey={key} name={plan?.name || key} stroke={plan?.color || '#3b82f6'} strokeWidth={2} dot={{ r: 3 }} />
+              );
+            })}
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -213,25 +237,30 @@ function ProductsTab({ roiByProduct, perProductGrowth }) {
   );
 }
 
-function EliTab({ portfolioGrowth, byType }) {
+function EliTab({ portfolioGrowth, byType, avgRates }) {
+  const hasData = portfolioGrowth.length > 0 && portfolioGrowth.some(d => d.capital > 0);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }} className="animate-in">
       <ChartCard title="ELI (Earnings) vs Capital — Combined Chart" subtitle="Bars = monthly ELI earned · Line = total AUM (capital deployed)">
-        <ResponsiveContainer width="100%" height={280}>
-          <ComposedChart data={portfolioGrowth}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis yAxisId="left"  tick={{ fontSize: 10 }} tickFormatter={v => '₦' + (v / 1e6).toFixed(0) + 'M'} />
-            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} tickFormatter={v => '₦' + (v / 1e6).toFixed(1) + 'M'} />
-            <Tooltip formatter={(v, n) => ['₦' + (v / 1e6).toFixed(2) + 'M', n]} /><Legend />
-            <Bar yAxisId="left" dataKey="eli" name="Monthly ELI" fill="rgba(232,184,75,0.7)" radius={[4, 4, 0, 0]} />
-            <Line yAxisId="right" type="monotone" dataKey="capital" name="Total Capital" stroke="var(--navy)" strokeWidth={2.5} dot={{ r: 4 }} />
-          </ComposedChart>
-        </ResponsiveContainer>
+        {hasData ? (
+          <ResponsiveContainer width="100%" height={280}>
+            <ComposedChart data={portfolioGrowth}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis yAxisId="left"  tick={{ fontSize: 10 }} tickFormatter={fmt} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} tickFormatter={fmt} />
+              <Tooltip formatter={(v, n) => [fmt(v), n]} /><Legend />
+              <Bar yAxisId="left" dataKey="eli" name="Monthly ELI" fill="rgba(232,184,75,0.7)" radius={[4, 4, 0, 0]} />
+              <Line yAxisId="right" type="monotone" dataKey="capital" name="Total Capital" stroke="var(--navy)" strokeWidth={2.5} dot={{ r: 4 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        ) : (
+          <EmptyState title="No ELI data" message="Charts will appear once investments are active." />
+        )}
       </ChartCard>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
         {[['corporate', 'Corporate', '#3b82f6'], ['individual', 'Individual', '#22c55e'], ['joint', 'Joint', '#8b5cf6']].map(([type, label, color]) => (
-          <EliTypeCard key={type} type={type} label={label} color={color} byType={byType} />
+          <EliTypeCard key={type} type={type} label={label} color={color} byType={byType} avgRate={avgRates?.[type] || 0} />
         ))}
       </div>
     </div>
@@ -239,6 +268,7 @@ function EliTab({ portfolioGrowth, byType }) {
 }
 
 function ClientGrowthTab({ data }) {
+  const hasData = data.length > 0 && data.some(d => d.total > 0);
   const monthlyNew = data.map((d, i, arr) => ({
     month: d.month,
     corporate:  i === 0 ? d.corporate  : d.corporate  - arr[i - 1].corporate,
@@ -248,29 +278,37 @@ function ClientGrowthTab({ data }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }} className="animate-in">
       <ChartCard title="Client Growth by Account Type" subtitle="Cumulative count of clients onboarded per account type">
-        <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} />
-            <Tooltip /><Legend />
-            <Line type="monotone" dataKey="total"      name="Total Clients" stroke="var(--navy)"  strokeWidth={3} dot={{ r: 5, fill: 'var(--gold)' }} />
-            <Line type="monotone" dataKey="corporate"  name="Corporate"     stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="individual" name="Individual"    stroke="#22c55e" strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="joint"      name="Joint"         stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
-          </LineChart>
-        </ResponsiveContainer>
+        {hasData ? (
+          <ResponsiveContainer width="100%" height={250}>
+            <LineChart data={data}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} />
+              <Tooltip /><Legend />
+              <Line type="monotone" dataKey="total"      name="Total Clients" stroke="var(--navy)"  strokeWidth={3} dot={{ r: 5, fill: 'var(--gold)' }} />
+              <Line type="monotone" dataKey="corporate"  name="Corporate"     stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="individual" name="Individual"    stroke="#22c55e" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="joint"      name="Joint"         stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <EmptyState title="No client data" message="Client growth charts will appear once clients are onboarded." />
+        )}
       </ChartCard>
       <ChartCard title="New Client Additions per Month (Bar)">
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={monthlyNew}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} />
-            <Tooltip /><Legend />
-            <Bar dataKey="corporate"  name="Corporate"  fill="#3b82f6" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="individual" name="Individual" fill="#22c55e" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="joint"      name="Joint"      fill="#8b5cf6" radius={[3, 3, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        {hasData ? (
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={monthlyNew}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} />
+              <Tooltip /><Legend />
+              <Bar dataKey="corporate"  name="Corporate"  fill="#3b82f6" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="individual" name="Individual" fill="#22c55e" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="joint"      name="Joint"      fill="#8b5cf6" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <EmptyState title="No client data" message="Client growth charts will appear once clients are onboarded." />
+        )}
       </ChartCard>
     </div>
   );
@@ -310,30 +348,38 @@ function PrtTab({ principalRateTime, roiByProduct }) {
         </div>
       </ChartCard>
       <ChartCard title="Net Return by Product (₦)">
-        <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={principalRateTime} margin={{ bottom: 40 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="product" tick={{ fontSize: 9 }} angle={-30} textAnchor="end" interval={0} />
-            <YAxis tick={{ fontSize: 10 }} tickFormatter={v => '₦' + (v / 1e6).toFixed(1) + 'M'} />
-            <Tooltip formatter={(v, n) => ['₦' + (v / 1e6).toFixed(2) + 'M', n]} />
-            <Bar dataKey="netReturn" name="Net Return" radius={[4, 4, 0, 0]}>
-              {principalRateTime.map((_, i) => <Cell key={i} fill={['#22c55e', '#ec4899', '#3b82f6', '#6366f1', '#14b8a6', '#f97316', '#0d1b35'][i % 7]} />)}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        {principalRateTime.length > 0 ? (
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={principalRateTime} margin={{ bottom: 40 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="product" tick={{ fontSize: 9 }} angle={-30} textAnchor="end" interval={0} />
+              <YAxis tick={{ fontSize: 10 }} tickFormatter={fmt} />
+              <Tooltip formatter={(v, n) => [fmt(v), n]} />
+              <Bar dataKey="netReturn" name="Net Return" radius={[4, 4, 0, 0]}>
+                {principalRateTime.map((_, i) => <Cell key={i} fill={['#22c55e', '#ec4899', '#3b82f6', '#6366f1', '#14b8a6', '#f97316', '#0d1b35'][i % 7]} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <EmptyState title="No data" message="Charts will appear once investments are active." />
+        )}
       </ChartCard>
       <ChartCard title="Rate Comparison Across Products" subtitle="Gross rate vs net annualised — spot where tax erodes the most">
-        <ResponsiveContainer width="100%" height={230}>
-          <BarChart data={roiByProduct} margin={{ bottom: 40 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="product" tick={{ fontSize: 9 }} angle={-30} textAnchor="end" interval={0} />
-            <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 35]} />
-            <Tooltip formatter={(v, n) => [`${v}%`, n]} /><Legend />
-            <Bar dataKey="roi"    name="Gross Rate %" fill="#3b82f6" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="netRoi" name="Net Rate %"   fill="#22c55e" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="tax"    name="Tax (%)"      fill="rgba(239,68,68,0.6)" radius={[3, 3, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        {roiByProduct.length > 0 ? (
+          <ResponsiveContainer width="100%" height={230}>
+            <BarChart data={roiByProduct} margin={{ bottom: 40 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="product" tick={{ fontSize: 9 }} angle={-30} textAnchor="end" interval={0} />
+              <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 35]} />
+              <Tooltip formatter={(v, n) => [`${v}%`, n]} /><Legend />
+              <Bar dataKey="roi"    name="Gross Rate %" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="netRoi" name="Net Rate %"   fill="#22c55e" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="tax"    name="Tax (%)"      fill="rgba(239,68,68,0.6)" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <EmptyState title="No data" message="Charts will appear once investments are active." />
+        )}
       </ChartCard>
     </div>
   );
@@ -355,12 +401,25 @@ export default function Analytics() {
   const [filterType,    setFilterType]    = useState('all');
   const [filterProduct, setFilterProduct] = useState('all');
 
+  const getClientType = (clientId) => {
+    if (!clientId || !clients) return 'individual';
+    const c = clients.find(c => c.id === clientId || c.clientId === clientId);
+    return c?.type || 'individual';
+  };
+
   const activeInvs = clientInvestments.filter(i => i.status === 'active');
   const totalAUM   = activeInvs.reduce((s, i) => s + i.amount, 0);
   const byType = {
-    corporate:  activeInvs.filter(i => i.clientType === 'corporate').reduce((s, i) => s + i.amount, 0),
-    individual: activeInvs.filter(i => i.clientType === 'individual').reduce((s, i) => s + i.amount, 0),
-    joint:      activeInvs.filter(i => i.clientType === 'joint').reduce((s, i) => s + i.amount, 0),
+    corporate:  activeInvs.filter(i => getClientType(i.clientId) === 'corporate').reduce((s, i) => s + i.amount, 0),
+    individual: activeInvs.filter(i => getClientType(i.clientId) === 'individual').reduce((s, i) => s + i.amount, 0),
+    joint:      activeInvs.filter(i => getClientType(i.clientId) === 'joint').reduce((s, i) => s + i.amount, 0),
+  };
+
+  const avgRoiByType = (type) => {
+    const typeInvs = activeInvs.filter(i => getClientType(i.clientId) === type);
+    if (!typeInvs.length) return 0;
+    const total = typeInvs.reduce((s, i) => s + i.amount, 0);
+    return total > 0 ? typeInvs.reduce((s, i) => s + (i.roi || 0) * i.amount, 0) / total : 0;
   };
 
   const pieData = [
@@ -394,6 +453,102 @@ export default function Analytics() {
   const kycPending     = clients?.filter(c => c.kyc === 'pending').length || 0;
   const liveCumReturn  = activeInvs.reduce((s, i) => s + (i.returns || i.accruedReturn || 0), 0);
   const liquidityBal   = activeInvs.filter(i => i.planId === 'liquidity').reduce((s, i) => s + i.amount, 0);
+
+  /* ── Computed monthly chart data ───────────────── */
+  const aumTrend = useMemo(() => {
+    const months = [];
+    for (let i = 7; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      const label = d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+      const activeByMonth = clientInvestments.filter(inv => inv.status === 'active' && inv._valueDate && inv._valueDate <= monthEnd);
+      const corporate  = activeByMonth.filter(inv => getClientType(inv.clientId) === 'corporate').reduce((s, inv) => s + inv.amount, 0) / 1e6;
+      const individual = activeByMonth.filter(inv => getClientType(inv.clientId) === 'individual').reduce((s, inv) => s + inv.amount, 0) / 1e6;
+      const joint      = activeByMonth.filter(inv => getClientType(inv.clientId) === 'joint').reduce((s, inv) => s + inv.amount, 0) / 1e6;
+      months.push({
+        month: label,
+        corporate:  Math.round(corporate  * 10) / 10,
+        individual: Math.round(individual * 10) / 10,
+        joint:      Math.round(joint      * 10) / 10,
+        total:      Math.round((corporate + individual + joint) * 10) / 10,
+      });
+    }
+    return months;
+  }, [clientInvestments, clients]);
+
+  const clientGrowth = useMemo(() => {
+    const months = [];
+    for (let i = 7; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      const label = d.toLocaleDateString('en-GB', { month: 'short' });
+      const activeClients = (clients || []).filter(c => c.createdAt && new Date(c.createdAt) <= monthEnd);
+      months.push({
+        month: label,
+        corporate:  activeClients.filter(c => c.type === 'corporate').length,
+        individual: activeClients.filter(c => c.type === 'individual').length,
+        joint:      activeClients.filter(c => c.type === 'joint').length,
+        total:      activeClients.length,
+      });
+    }
+    return months;
+  }, [clients]);
+
+  const portfolioGrowth = useMemo(() => {
+    const months = [];
+    for (let i = 7; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      const label = d.toLocaleDateString('en-GB', { month: 'short' });
+      const activeByMonth = clientInvestments.filter(inv => inv.status === 'active' && inv._valueDate && inv._valueDate <= monthEnd);
+      const capital = activeByMonth.reduce((s, inv) => s + inv.amount, 0);
+      const eli = activeByMonth.reduce((s, inv) => s + (inv.amount * (inv.roi || 0) / 1200), 0);
+      const weightedRoi = capital > 0 ? activeByMonth.reduce((s, inv) => s + (inv.roi || 0) * inv.amount, 0) / capital : 0;
+      const cumReturn = activeByMonth.reduce((s, inv) => {
+        if (!inv._valueDate) return s;
+        const monthsActive = Math.max(0,
+          (monthEnd.getFullYear() - inv._valueDate.getFullYear()) * 12 +
+          (monthEnd.getMonth() - inv._valueDate.getMonth()) + 1
+        );
+        const tenorMonths = Math.max(1, Math.round((inv.tenorDays || 365) / 30));
+        const elapsed = Math.min(monthsActive, tenorMonths);
+        return s + (inv.amount * (inv.roi || 0) / 1200) * elapsed;
+      }, 0);
+      months.push({
+        month: label,
+        capital,
+        eli: Math.round(eli),
+        cumReturn: Math.round(cumReturn),
+        roiPct: Math.round(weightedRoi * 10) / 10,
+      });
+    }
+    return months;
+  }, [clientInvestments]);
+
+  const perProductGrowth = useMemo(() => {
+    const months = [];
+    for (let i = 7; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      const label = d.toLocaleDateString('en-GB', { month: 'short' });
+      const row = { month: label };
+      plans.forEach(p => {
+        const aum = clientInvestments
+          .filter(inv => inv.status === 'active' && inv.planId === p.id && inv._valueDate && inv._valueDate <= monthEnd)
+          .reduce((s, inv) => s + inv.amount, 0) / 1e6;
+        if (aum > 0) {
+          const key = p.name.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+          row[key] = Math.round(aum * 10) / 10;
+        }
+      });
+      months.push(row);
+    }
+    return months;
+  }, [clientInvestments, plans]);
 
   const kpis = [
     { label: 'Total AUM',         val: fmt(totalAUM),                                                                         color: 'var(--navy)',  icon: DollarSign },
@@ -433,11 +588,11 @@ export default function Analytics() {
 
       <TabBar tabs={TABS} active={tab} onChange={setTab} variant="pill" />
       <div style={{ marginTop: 20 }}>
-        {tab === 'overview'  && <OverviewTab pieData={pieData} planPie={planPie} aumTrend={AUM_TREND} totalAUM={totalAUM} />}
-        {tab === 'growth'    && <GrowthTab data={PORTFOLIO_GROWTH} />}
-        {tab === 'products'  && <ProductsTab roiByProduct={roiByProduct} perProductGrowth={PER_PRODUCT_GROWTH} />}
-        {tab === 'eli'       && <EliTab portfolioGrowth={PORTFOLIO_GROWTH} byType={byType} />}
-        {tab === 'clients'   && <ClientGrowthTab data={CLIENT_GROWTH} />}
+        {tab === 'overview'  && <OverviewTab pieData={pieData} planPie={planPie} aumTrend={aumTrend} totalAUM={totalAUM} />}
+        {tab === 'growth'    && <GrowthTab data={portfolioGrowth} />}
+        {tab === 'products'  && <ProductsTab roiByProduct={roiByProduct} perProductGrowth={perProductGrowth} plans={plans} />}
+        {tab === 'eli'       && <EliTab portfolioGrowth={portfolioGrowth} byType={byType} avgRates={{ corporate: avgRoiByType('corporate'), individual: avgRoiByType('individual'), joint: avgRoiByType('joint') }} />}
+        {tab === 'clients'   && <ClientGrowthTab data={clientGrowth} />}
         {tab === 'prt'       && <PrtTab principalRateTime={principalRateTime} roiByProduct={roiByProduct} />}
       </div>
 

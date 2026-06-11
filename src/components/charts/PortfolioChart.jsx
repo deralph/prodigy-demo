@@ -5,7 +5,14 @@ import {
 } from 'recharts';
 import SectionCard from '../ui/SectionCard';
 
-const fmtM = v => '₦' + (v / 1e6).toFixed(1) + 'M';
+const fmtSmart = v => {
+  if (!v && v !== 0) return '₦0';
+  const abs = Math.abs(v);
+  if (abs >= 1e9) return '₦' + (v / 1e9).toFixed(1) + 'B';
+  if (abs >= 1e6) return '₦' + (v / 1e6).toFixed(1) + 'M';
+  if (abs >= 1e3) return '₦' + (v / 1e3).toFixed(1) + 'K';
+  return '₦' + v.toFixed(0);
+};
 
 /**
  * PortfolioChart — switchable area/line/bar chart with product filter.
@@ -34,8 +41,8 @@ export default function PortfolioChart({ title, subtitle, data, products, chartF
     <>
       <CartesianGrid strokeDasharray="3 3" stroke="#f0f4ff" />
       <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-      <YAxis tickFormatter={fmtM} tick={{ fontSize: 10 }} />
-      <Tooltip formatter={v => [fmtM(v)]} />
+      <YAxis tickFormatter={fmtSmart} tick={{ fontSize: 10 }} />
+      <Tooltip formatter={v => [fmtSmart(v)]} />
       <Legend />
     </>
   );
@@ -62,27 +69,35 @@ export default function PortfolioChart({ title, subtitle, data, products, chartF
     </div>
   );
 
+  const hasData = data.length > 0 && data.some(row => Object.keys(row).some(k => k !== 'month' && row[k] > 0));
+
   return (
     <SectionCard title={title} titleAction={titleAction} style={{ marginBottom: 22 }}>
       {subtitle && <p style={{ fontSize: 11, color: 'var(--gray-400)', marginBottom: 16, marginTop: -8 }}>{subtitle}</p>}
-      <ResponsiveContainer width="100%" height={height}>
-        {chartType === 'bar' ? (
-          <BarChart data={data}>
-            {axes}
-            {displayed.map(p => <Bar key={p.id} dataKey={p.name} fill={p.color} radius={[3, 3, 0, 0]} />)}
-          </BarChart>
-        ) : chartType === 'line' ? (
-          <LineChart data={data}>
-            {axes}
-            {displayed.map(p => <Line key={p.id} type="monotone" dataKey={p.name} stroke={p.color} strokeWidth={2.5} dot={{ r: 3 }} />)}
-          </LineChart>
-        ) : (
-          <AreaChart data={data}>
-            {axes}
-            {displayed.map(p => <Area key={p.id} type="monotone" dataKey={p.name} stroke={p.color} fill={p.color + '22'} strokeWidth={2} />)}
-          </AreaChart>
-        )}
-      </ResponsiveContainer>
+      {hasData ? (
+        <ResponsiveContainer width="100%" height={height}>
+          {chartType === 'bar' ? (
+            <BarChart data={data}>
+              {axes}
+              {displayed.map(p => <Bar key={p.id} dataKey={p.name} fill={p.color} radius={[3, 3, 0, 0]} />)}
+            </BarChart>
+          ) : chartType === 'line' ? (
+            <LineChart data={data}>
+              {axes}
+              {displayed.map(p => <Line key={p.id} type="monotone" dataKey={p.name} stroke={p.color} strokeWidth={2.5} dot={{ r: 3 }} />)}
+            </LineChart>
+          ) : (
+            <AreaChart data={data}>
+              {axes}
+              {displayed.map(p => <Area key={p.id} type="monotone" dataKey={p.name} stroke={p.color} fill={p.color + '22'} strokeWidth={2} />)}
+            </AreaChart>
+          )}
+        </ResponsiveContainer>
+      ) : (
+        <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+          No data yet. Invest in a product to see growth projections.
+        </div>
+      )}
     </SectionCard>
   );
 }

@@ -10,25 +10,32 @@ import SignatoryRegistry from '../../components/ui/SignatoryRegistry';
 import ModalOverlay from '../../components/ui/ModalOverlay';
 
 const KYC_DOCS = [
-  { key:'cacCert',     label:'CAC Certificate' },
-  { key:'taxId',       label:'Tax ID / TIN' },
+  { key:'cac_cert',    label:'CAC Certificate' },
+  { key:'tax_id',      label:'Tax ID / TIN' },
   { key:'scuml',       label:'SCUML' },
-  { key:'utilityBill', label:'Utility Bill' },
+  { key:'utility_bill',label:'Utility Bill' },
   { key:'memart',      label:'MEMART' },
-  { key:'sigMandate',  label:'Sig. Mandate' },
+  { key:'sig_mandate', label:'Sig. Mandate' },
+  { key:'directors_id',label:"Directors' ID" },
+  { key:'sig_upload',  label:'Signature' },
 ];
 
 const ADDITIONAL_DOCS = [
+  { key:'cac_cert',     label:'CAC Certificate',      hint:'Certificate of Incorporation · PDF' },
+  { key:'memart',       label:'MEMART',                hint:'Memorandum & Articles of Association · PDF' },
+  { key:'scuml',        label:'SCUML Certificate',    hint:'Special Control Unit against ML · PDF' },
+  { key:'tax_id',       label:'Tax ID / TIN',         hint:'Federal Inland Revenue Service · PDF' },
   { key:'utility_bill', label:'Utility Bill',        hint:'Not older than 3 months · PDF/JPG/PNG' },
   { key:'directors_id', label:"Directors' Valid ID",  hint:'Government-issued ID for all directors' },
-  { key:'cac_cert',     label:'CAC Certificate',      hint:'Certificate of Incorporation · PDF' },
-  { key:'tax_id',       label:'Tax ID / TIN',         hint:'Federal Inland Revenue Service · PDF' },
-  { key:'scuml',        label:'SCUML Certificate',    hint:'Special Control Unit against ML · PDF' },
-  { key:'memart',       label:'MEMART',                hint:'Memorandum & Articles of Association · PDF' },
+  { key:'sig_mandate',  label:'Signature Mandate',    hint:'Authorised signatories mandate form specifying signing arrangement · PDF' },
 ];
 
 /* ── Signature upload block ── */
-function SignatureBlock({ sigFile, onFileChange, onDrawOpen }) {
+function SignatureBlock({ sigDoc, uploading, onFileChange }) {
+  const isUploaded = sigDoc && ['UPLOADED','VERIFIED'].includes(sigDoc.status);
+  const isVerified = sigDoc?.status === 'VERIFIED';
+  const isUpl      = uploading === 'sig_upload';
+  const canView    = sigDoc?.fileUrl && !sigDoc.fileUrl.startsWith('pending-cloud-upload://');
   return (
     <div className="card animate-in delay-2" style={{ padding:0, overflow:'hidden' }}>
       <div style={{ padding:'16px 24px',borderBottom:'1px solid var(--gray-100)',display:'flex',alignItems:'center',gap:8 }}>
@@ -36,30 +43,38 @@ function SignatureBlock({ sigFile, onFileChange, onDrawOpen }) {
         <h3 style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:13,color:'var(--navy)',letterSpacing:'0.06em',textTransform:'uppercase' }}>
           Authorised Signatory Signature
         </h3>
-        {sigFile && <span style={{ marginLeft:'auto',fontSize:10,fontWeight:700,color:'var(--green)',background:'rgba(34,197,94,0.1)',padding:'3px 8px',borderRadius:4 }}>UPLOADED</span>}
+        {isVerified && <span style={{ marginLeft:'auto',fontSize:9,fontWeight:700,color:'var(--green)',background:'rgba(34,197,94,0.1)',padding:'3px 8px',borderRadius:4,letterSpacing:'0.06em' }}>VERIFIED</span>}
+        {isUploaded && !isVerified && <span style={{ marginLeft:'auto',fontSize:9,fontWeight:700,color:'#3b82f6',background:'rgba(59,130,246,0.1)',padding:'3px 8px',borderRadius:4,letterSpacing:'0.06em' }}>UPLOADED</span>}
       </div>
       <div style={{ padding:'20px 24px' }}>
-        {sigFile ? (
-          <div style={{ display:'flex',alignItems:'center',gap:12,background:'rgba(34,197,94,0.06)',border:'1px solid rgba(34,197,94,0.2)',borderRadius:10,padding:'14px 16px' }}>
-            <CheckCircle size={20} color="var(--green)"/>
+        {isUploaded ? (
+          <div style={{ display:'flex',alignItems:'center',gap:12,background:isVerified?'rgba(34,197,94,0.06)':'rgba(59,130,246,0.05)',border:`1px solid ${isVerified?'rgba(34,197,94,0.2)':'rgba(59,130,246,0.2)'}`,borderRadius:10,padding:'14px 16px' }}>
+            <CheckCircle size={20} color={isVerified?'var(--green)':'#3b82f6'}/>
             <div style={{ flex:1 }}>
-              <div style={{ fontSize:13,fontWeight:700,color:'var(--navy)' }}>Signature uploaded</div>
-              <div style={{ fontSize:11,color:'var(--gray-400)' }}>{sigFile.name}</div>
+              <div style={{ fontSize:13,fontWeight:700,color:'var(--navy)' }}>Signature {isVerified?'verified':'uploaded'}</div>
+              <div style={{ fontSize:11,color:'var(--gray-400)' }}>{sigDoc.fileName || 'Signature file'}</div>
             </div>
-            <button onClick={() => onFileChange(null)} style={{ background:'none',border:'none',cursor:'pointer',color:'var(--gray-300)' }}><X size={16}/></button>
+            <div style={{ display:'flex',gap:8,alignItems:'center' }}>
+              {canView && (
+                <a href={sigDoc.fileUrl} target="_blank" rel="noreferrer" style={{ display:'flex',alignItems:'center',gap:5,padding:'7px 12px',background:'rgba(13,27,53,0.06)',color:'var(--navy)',borderRadius:7,fontSize:11,fontWeight:700,textDecoration:'none' }}>
+                  <ExternalLink size={11}/> View
+                </a>
+              )}
+              {!isVerified && (
+                <label style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 12px',background:'rgba(59,130,246,0.1)',color:'#3b82f6',borderRadius:7,fontSize:11,fontWeight:700,cursor:isUpl?'not-allowed':'pointer' }}>
+                  <input type="file" accept=".png,.jpg,.jpeg,.pdf" style={{ display:'none' }} disabled={isUpl} onChange={e=>onFileChange(e.target.files?.[0]||null)}/>
+                  {isUpl?'Uploading…':<><Upload size={12}/> Replace</>}
+                </label>
+              )}
+            </div>
           </div>
         ) : (
           <div>
             <p style={{ fontSize:12,color:'var(--gray-400)',marginBottom:14 }}>Upload a clear image of the authorised signatory's signature.</p>
-            <div style={{ display:'flex',gap:10 }}>
-              <label style={{ flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:7,padding:'12px',background:'var(--navy)',color:'white',borderRadius:9,cursor:'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:12,letterSpacing:'0.06em' }}>
-                <input type="file" accept=".png,.jpg,.jpeg,.pdf" style={{ display:'none' }} onChange={e => onFileChange(e.target.files?.[0] || null)}/>
-                <Upload size={14}/> UPLOAD SIGNATURE
-              </label>
-              <button onClick={onDrawOpen} style={{ display:'flex',alignItems:'center',gap:7,padding:'12px 16px',background:'rgba(13,27,53,0.06)',border:'1px solid var(--gray-200)',borderRadius:9,cursor:'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:12,color:'var(--navy)' }}>
-                <PenLine size={14}/> DRAW
-              </button>
-            </div>
+            <label style={{ display:'flex',alignItems:'center',justifyContent:'center',gap:7,padding:'12px',background:isUpl?'rgba(13,27,53,0.4)':'var(--navy)',color:'white',borderRadius:9,cursor:isUpl?'not-allowed':'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:12,letterSpacing:'0.06em' }}>
+              <input type="file" accept=".png,.jpg,.jpeg,.pdf" style={{ display:'none' }} disabled={isUpl} onChange={e=>onFileChange(e.target.files?.[0]||null)}/>
+              {isUpl?'Uploading…':<><Upload size={14}/> UPLOAD SIGNATURE</>}
+            </label>
           </div>
         )}
       </div>
@@ -145,7 +160,6 @@ export default function KYC() {
   const fileRefs  = useRef({});
 
   const [docData,     setDocData]     = useState({});
-  const [sigFile,     setSigFile]     = useState(null);
   const [drawOpen,    setDrawOpen]    = useState(false);
   const [uploading,   setUploading]   = useState(null);
   const [toastMsg,    setToastMsg]    = useState(null);
@@ -177,10 +191,17 @@ export default function KYC() {
   };
 
   const handleSigUpload = async (file) => {
-    if (!file) { setSigFile(null); return; }
-    setSigFile(file);
-    try { await kycApi.uploadDocument('sig_upload', file); showToast('success','Signature uploaded successfully.'); }
-    catch(e) { showToast('error', e.message||'Signature upload failed.'); }
+    if (!file) return;
+    setUploading('sig_upload');
+    try {
+      const result = await kycApi.uploadDocument('sig_upload', file);
+      setDocData(prev => ({ ...prev, sig_upload: { ...prev.sig_upload, status:'UPLOADED', fileName:file.name, fileUrl:result?.fileUrl||null } }));
+      showToast('success','Signature uploaded successfully.');
+    } catch(e) {
+      showToast('error', e.message||'Signature upload failed.');
+    } finally {
+      setUploading(null);
+    }
   };
 
   const refreshStatus = () => {
@@ -205,7 +226,7 @@ export default function KYC() {
         {/* Left column */}
         <div style={{ display:'flex',flexDirection:'column',gap:20 }}>
           <SignatoryRegistry directors={directors} />
-          <SignatureBlock sigFile={sigFile} onFileChange={handleSigUpload} onDrawOpen={() => setDrawOpen(true)} />
+          <SignatureBlock sigDoc={docData['sig_upload']} uploading={uploading} onFileChange={handleSigUpload} />
           <SupportingDocs docData={docData} uploading={uploading} onUpload={handleDocUpload} fileRefs={fileRefs} />
         </div>
 
@@ -214,7 +235,7 @@ export default function KYC() {
           <KycStatusPanel
             docs={KYC_DOCS}
             getStatus={getStatus}
-            extraItems={[{ label:'Signature', status: sigFile ? 'UPLOADED' : 'NOT_UPLOADED' }]}
+            extraItems={[{ label:'Signature', status: docData['sig_upload']?.status || 'NOT_UPLOADED' }]}
             onRefresh={refreshStatus}
           />
           <div style={{ background:'rgba(232,184,75,0.07)',border:'1px solid rgba(232,184,75,0.2)',borderRadius:10,padding:'14px 16px',fontSize:12,color:'var(--navy)',lineHeight:1.6 }}>
