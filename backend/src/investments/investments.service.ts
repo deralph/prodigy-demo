@@ -37,9 +37,6 @@ export class InvestmentsService {
     // Normalise tenorDays
     const tenorDays: number = dto.tenorDays ?? this.parseTenorDays(dto.tenor) ?? 30;
 
-    // Normalise valueDate
-    const valueDate: Date = dto.valueDate ? new Date(dto.valueDate) : new Date();
-
     const client = await this.prisma.client.findUnique({ where: { id: clientDbId } });
     if (!client) throw new NotFoundException('Client not found');
     console.log(client)
@@ -60,9 +57,6 @@ export class InvestmentsService {
     }
 
     const investRef = await this.generateInvestRef();
-    const maturityDate = product.lockInDays
-      ? addDays(valueDate, product.lockInDays)
-      : addDays(valueDate, tenorDays);
 
     // ── Atomic: deduct wallet + create subscription txn + create investment + approval ─
     return this.prisma.$transaction(async (tx) => {
@@ -97,8 +91,6 @@ export class InvestmentsService {
           roiRate: product.roiMin,
           taxRate: (product as any).withholdingTaxRate ?? 10,
           tenorDays,
-          valueDate,
-          maturityDate,
           autoRollover: dto.autoRollover ?? false,
           notes: dto.notes,
           history: {

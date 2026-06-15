@@ -15,6 +15,7 @@ import { StaffLoansModule } from './staff-loans/staff-loans.module';
 import { DividendsModule } from './dividends/dividends.module';
 import { LegacyModule } from './legacy/legacy.module';
 import { AuditModule } from './audit/audit.module';
+import { AuditPortalModule } from './audit-portal/audit-portal.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { ReportsModule } from './reports/reports.module';
 import { AdminUsersModule } from './admin-users/admin-users.module';
@@ -47,6 +48,7 @@ import { NibssModule } from './nibss/nibss.module';
     DividendsModule,
     LegacyModule,
     AuditModule,
+    AuditPortalModule,
     AnalyticsModule,
     ReportsModule,
     AdminUsersModule,

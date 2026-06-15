@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, UseGuards, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { StaffLoansService } from './staff-loans.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -49,5 +49,23 @@ export class AdminStaffLoansController {
   @ApiOperation({ summary: 'Get single staff loan detail' })
   findOne(@Param('id') id: string) {
     return this.staffLoansService.findOne(id);
+  }
+
+  @Post(':id/approve')
+  @ApiOperation({ summary: 'Approve a pending staff loan and disburse to corporate wallet' })
+  approveLoan(@Param('id') id: string, @Req() req: any) {
+    return this.staffLoansService.approveLoan(id, req.user?.id);
+  }
+
+  @Post(':id/reject')
+  @ApiOperation({ summary: 'Reject a pending staff loan' })
+  rejectLoan(@Param('id') id: string, @Body() body: { reason?: string }) {
+    return this.staffLoansService.rejectLoan(id, body?.reason || '');
+  }
+
+  @Post(':id/repayment')
+  @ApiOperation({ summary: 'Record a monthly repayment for an active staff loan' })
+  recordRepayment(@Param('id') id: string, @Body() body: { amountKobo: number; note?: string }, @Req() req: any) {
+    return this.staffLoansService.recordRepayment(id, BigInt(body.amountKobo), body.note, req.user?.id);
   }
 }

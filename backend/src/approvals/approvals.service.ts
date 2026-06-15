@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { addDays } from 'date-fns';
 
 @Injectable()
 export class ApprovalsService {
@@ -29,12 +30,16 @@ export class ApprovalsService {
     if (approval.type === 'SUBSCRIPTION' && approval.investmentId) {
       const inv = await this.prisma.investment.findUnique({ where: { id: approval.investmentId } });
       if (inv) {
+        const valueDate = new Date();
+        const maturityDate = addDays(valueDate, inv.tenorDays);
         await this.prisma.$transaction([
           // Activate investment
           this.prisma.investment.update({
             where: { id: approval.investmentId },
             data: {
               status: 'ACTIVE',
+              valueDate,
+              maturityDate,
               approvedById: adminId,
               approvedAt: new Date(),
               history: { create: { action: 'Approved & Activated', note: notes, performedById: adminId } },

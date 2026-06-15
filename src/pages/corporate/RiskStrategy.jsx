@@ -66,6 +66,7 @@ export default function RiskStrategy() {
       const planObj  = plans.find(p => p.id === inv.planId) || {};
       return {
         name:    inv.plan || `Investment ${idx + 1}`,
+        status:  inv.status,
         roi:     inv.roi  ? `${inv.roi}% p.a.` : planObj.roi || '—',
         risk:    planObj.riskLevel || 'Moderate',
         balance: '₦' + Number(balance).toLocaleString('en-NG'),
@@ -101,7 +102,7 @@ export default function RiskStrategy() {
               <table style={{ width:'100%', borderCollapse:'collapse' }}>
                 <thead>
                   <tr style={{ background:'var(--gray-50)' }}>
-                    {['Product','ROI','Risk','Balance (₦)','Weight'].map(h => (
+                    {['Product','Status','ROI','Risk','Balance (₦)','Weight'].map(h => (
                       <th key={h} style={{ padding:'10px 18px', textAlign:'left', fontSize:10, color:'var(--gray-400)', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', whiteSpace:'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -113,6 +114,7 @@ export default function RiskStrategy() {
                       onMouseLeave={e => e.currentTarget.style.background='transparent'}
                     >
                       <td style={{ padding:'14px 18px' }}><div style={{ display:'flex', alignItems:'center', gap:8 }}><span style={{ width:8, height:8, borderRadius:'50%', background:p.dot, display:'inline-block' }}/><span style={{ fontSize:13, fontWeight:600, color:'var(--navy)' }}>{p.name}</span></div></td>
+                      <td style={{ padding:'14px 18px' }}><span style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, letterSpacing:'0.06em', background: p.status === 'active' ? 'rgba(34,197,94,0.1)' : 'rgba(232,184,75,0.1)', color: p.status === 'active' ? 'var(--green)' : 'var(--gold)' }}>{p.status === 'pending_approval' ? 'Pending' : p.status}</span></td>
                       <td style={{ padding:'14px 18px' }}><span style={{ fontSize:12, fontWeight:700, color:'var(--green)' }}>{p.roi}</span></td>
                       <td style={{ padding:'14px 18px' }}><span style={{ fontSize:10, fontWeight:700, color:'#6366f1', background:'rgba(99,102,241,0.1)', padding:'3px 8px', borderRadius:4, letterSpacing:'0.06em' }}>{p.risk}</span></td>
                       <td style={{ padding:'14px 18px', fontSize:13, color:'var(--navy)', fontWeight:500 }}>{p.balance}</td>

@@ -7,6 +7,7 @@ import LoadingOverlay from './components/ui/LoadingOverlay';
 import OnboardingLogin from './pages/onboarding/OnboardingLogin';
 import MagicLogin      from './pages/onboarding/MagicLogin';
 import Landing  from './pages/Landing';
+import AuditPortal from './pages/AuditPortal';
 
 import CorporateLayout from './components/corporate/CorporateLayout';
 import Treasury    from './pages/corporate/Treasury';
@@ -123,6 +124,7 @@ export default function App() {
         <Route path="/"            element={<Landing />} />
         <Route path="/login"       element={<OnboardingLogin />} />
         <Route path="/magic-login" element={<MagicLogin />} />
+        <Route path="/audit-portal" element={<AuditPortal />} />
 
         {/* Corporate */}
         <Route path="/corporate" element={<ProtectedRoute allowedRoles={['corporate']}><CorporateLayout /></ProtectedRoute>}>

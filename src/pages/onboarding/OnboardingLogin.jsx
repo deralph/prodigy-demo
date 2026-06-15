@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, Phone, FileText, Building2, Shield, User } from 'lucide-react';
+import { Mail, Lock, Phone, FileText, Building2, Shield, User, X, CheckCircle } from 'lucide-react';
 import { KYC_REQUIREMENTS } from '../../store/useAppStore';
 import useAppStore from '../../store/useAppStore';
 import { authApi, setTokens, kycApi, nibssApi } from '../../services/api';
@@ -12,6 +12,129 @@ import AuthSubmitButton     from '../../components/auth/AuthSubmitButton';
 import KycDocUpload         from '../../components/auth/KycDocUpload';
 import AccountCreatedScreen from '../../components/auth/AccountCreatedScreen';
 import NibssVerifyField     from '../../components/auth/NibssVerifyField';
+
+/* ── Forgot Password Modal (2-step: email → OTP + new password) ── */
+function ForgotPasswordModal({ onClose }) {
+  const [step,     setStep]     = useState('email'); // email | otp | done
+  const [email,    setEmail]    = useState('');
+  const [otp,      setOtp]      = useState('');
+  const [pass,     setPass]     = useState('');
+  const [confirm,  setConfirm]  = useState('');
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState('');
+
+  const sendOtp = async e => {
+    e.preventDefault();
+    if (!email) return;
+    setLoading(true); setError('');
+    try {
+      await authApi.forgotPassword(email);
+      setStep('otp');
+    } catch (err) {
+      setError(err?.message || 'Unable to process request. Please try again.');
+    }
+    setLoading(false);
+  };
+
+  const resetPass = async e => {
+    e.preventDefault();
+    if (pass !== confirm) { setError('Passwords do not match.'); return; }
+    if (pass.length < 8)  { setError('Password must be at least 8 characters.'); return; }
+    setLoading(true); setError('');
+    try {
+      await authApi.resetPassword(email, otp.trim(), pass);
+      setStep('done');
+    } catch (err) {
+      const msg = err?.message || '';
+      setError(msg || 'Reset failed. Check your OTP and try again.');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ position:'fixed',inset:0,zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.5)' }} onClick={onClose}>
+      <div style={{ background:'white',borderRadius:16,maxWidth:420,width:'90%',boxShadow:'0 24px 48px rgba(0,0,0,0.2)',overflow:'hidden' }} onClick={e=>e.stopPropagation()}>
+        {/* Header */}
+        <div style={{ padding:'18px 22px',background:'var(--navy)',display:'flex',alignItems:'center',justifyContent:'space-between' }}>
+          <div>
+            <div style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:16,color:'white' }}>Reset Password</div>
+            <div style={{ fontSize:10,color:'rgba(255,255,255,0.5)',letterSpacing:'0.08em',textTransform:'uppercase',marginTop:2 }}>
+              {step==='email' ? 'Step 1 of 2 — Enter your email' : step==='otp' ? 'Step 2 of 2 — Enter OTP + new password' : 'Password updated'}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background:'rgba(255,255,255,0.1)',border:'none',borderRadius:'50%',width:30,height:30,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'white' }}><X size={14}/></button>
+        </div>
+
+        <div style={{ padding:'24px 22px' }}>
+          {/* Step 1: email */}
+          {step==='email' && (
+            <form onSubmit={sendOtp} style={{ display:'flex',flexDirection:'column',gap:16 }}>
+              <div style={{ fontSize:12,color:'var(--gray-500)',lineHeight:1.6 }}>
+                Enter your registered email address. We will send a 6-digit OTP to reset your password.
+              </div>
+              <AuthInput
+                label="Registered Email Address"
+                icon={Mail}
+                type="email"
+                placeholder="you@email.com"
+                value={email}
+                onChange={e=>setEmail(e.target.value)}
+              />
+              {error && <div style={{ fontSize:12,color:'var(--red)',background:'rgba(239,68,68,0.08)',padding:'10px 12px',borderRadius:8 }}>{error}</div>}
+              <AuthSubmitButton label="SEND OTP" loading={loading} loadingLabel="Sending…" disabled={!email} />
+            </form>
+          )}
+
+          {/* Step 2: OTP + new password */}
+          {step==='otp' && (
+            <form onSubmit={resetPass} style={{ display:'flex',flexDirection:'column',gap:14 }}>
+              <div style={{ padding:'10px 14px',background:'rgba(34,197,94,0.07)',border:'1px solid rgba(34,197,94,0.2)',borderRadius:8,fontSize:12,color:'var(--navy)' }}>
+                An OTP has been sent to <strong>{email}</strong>. Check your inbox (and spam folder). It expires in 10 minutes.
+              </div>
+              <AuthInput
+                label="6-Digit OTP"
+                icon={Shield}
+                type="text"
+                placeholder="123456"
+                value={otp}
+                onChange={e=>setOtp(e.target.value.replace(/\D/g,'').slice(0,6))}
+              />
+              <AuthInput
+                label="New Password"
+                icon={Lock}
+                type="password"
+                placeholder="min 8 characters"
+                value={pass}
+                onChange={e=>setPass(e.target.value)}
+              />
+              <AuthInput
+                label="Confirm New Password"
+                icon={Lock}
+                type="password"
+                placeholder="repeat new password"
+                value={confirm}
+                onChange={e=>setConfirm(e.target.value)}
+              />
+              {error && <div style={{ fontSize:12,color:'var(--red)',background:'rgba(239,68,68,0.08)',padding:'10px 12px',borderRadius:8 }}>{error}</div>}
+              <AuthSubmitButton label="SET NEW PASSWORD" loading={loading} loadingLabel="Updating…" disabled={otp.length!==6||!pass||!confirm} />
+              <button type="button" onClick={()=>{setStep('email');setOtp('');setPass('');setConfirm('');setError('');}} style={{ background:'none',border:'none',cursor:'pointer',color:'#3b6ef8',fontSize:11,fontWeight:700,textAlign:'center' }}>← Resend OTP</button>
+            </form>
+          )}
+
+          {/* Done */}
+          {step==='done' && (
+            <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:16,padding:'12px 0' }}>
+              <CheckCircle size={48} color="var(--green)" strokeWidth={1.5} />
+              <div style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:18,color:'var(--navy)' }}>Password Updated</div>
+              <div style={{ fontSize:12,color:'var(--gray-500)',textAlign:'center',lineHeight:1.6 }}>Your password has been successfully reset. You can now sign in with your new password.</div>
+              <button onClick={onClose} style={{ padding:'11px 28px',background:'var(--navy)',color:'white',border:'none',borderRadius:10,cursor:'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:13 }}>Back to Sign In</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ── Helpers ─────────────────────────────────────── */
 const isValidEmail = email => /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(email.trim());
@@ -50,12 +173,13 @@ function buildJointDocs(n) {
 
 /* ── Sign-in form ─────────────────────────────────── */
 function SignInForm({ isCorp, onApply, onCreate }) {
-  const [email, setEmail]     = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError]     = useState('');
-  const [loading, setLoading] = useState(false);
-  const { login }             = useAppStore();
-  const navigate              = useNavigate();
+  const [email,      setEmail]      = useState('');
+  const [password,   setPassword]   = useState('');
+  const [error,      setError]      = useState('');
+  const [loading,    setLoading]    = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const { login }                   = useAppStore();
+  const navigate                    = useNavigate();
 
   const handleSubmit = async e => {
     e.preventDefault();
@@ -110,7 +234,7 @@ function SignInForm({ isCorp, onApply, onCreate }) {
           value={password}
           onChange={e => setPassword(e.target.value)}
           rightSlot={
-            <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b6ef8', fontSize: 10, fontWeight: 700, letterSpacing: '0.1em' }}>
+            <button type="button" onClick={() => setShowForgot(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b6ef8', fontSize: 10, fontWeight: 700, letterSpacing: '0.1em' }}>
               FORGOT?
             </button>
           }
@@ -132,6 +256,7 @@ function SignInForm({ isCorp, onApply, onCreate }) {
           <button onClick={onCreate} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b6ef8', fontWeight: 700, fontSize: 12 }}>Create Account</button>
         </p>
       )}
+      {showForgot && <ForgotPasswordModal onClose={() => setShowForgot(false)} />}
     </div>
   );
 }

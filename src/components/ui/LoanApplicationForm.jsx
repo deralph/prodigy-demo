@@ -23,7 +23,7 @@ const LOAN_TYPES = [
  *   staffName   — string (optional)
  */
 export default function LoanApplicationForm({ onClose, onSubmit, walletBal, staffName }) {
-  const [form, setForm]     = useState({ type: 'emergency', staffName: staffName || '', department: '', amount: '', term: '', purpose: '' });
+  const [form, setForm]     = useState({ type: 'emergency', staffName: staffName || '', staffId: '', department: '', amount: '', term: '', purpose: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
   const upd = patch => setForm(f => ({ ...f, ...patch }));
@@ -38,7 +38,7 @@ export default function LoanApplicationForm({ onClose, onSubmit, walletBal, staf
     if (!canSubmit) { setError('Please fill all fields correctly.'); return; }
     setLoading(true);
     try {
-      await onSubmit({ staffName: form.staffName || staffName, department: form.department, type: form.type, amount, term: Number(form.term), purpose: form.purpose });
+      await onSubmit({ staffName: form.staffName || staffName, staffId: form.staffId, department: form.department, type: form.type, amount, term: Number(form.term), purpose: form.purpose });
       onClose();
     } catch {
       setError('Submission failed. Please try again.');
@@ -57,6 +57,39 @@ export default function LoanApplicationForm({ onClose, onSubmit, walletBal, staf
     }>
       {error && <AlertBanner message={error} type="error" />}
 
+      {/* Staff name */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gray-400)', marginBottom: 7, fontWeight: 700 }}>Staff Name</div>
+        <input type="text" placeholder="e.g. John Doe" value={form.staffName}
+          onChange={e => upd({ staffName: e.target.value })}
+          style={inputStyle}
+          onFocus={e => e.target.style.borderColor = loanType.color}
+          onBlur={e  => e.target.style.borderColor = 'var(--gray-200)'}
+        />
+      </div>
+
+      {/* Staff ID */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gray-400)', marginBottom: 7, fontWeight: 700 }}>Staff ID / Employee Number</div>
+        <input type="text" placeholder="e.g. EMP-0042" value={form.staffId}
+          onChange={e => upd({ staffId: e.target.value })}
+          style={inputStyle}
+          onFocus={e => e.target.style.borderColor = loanType.color}
+          onBlur={e  => e.target.style.borderColor = 'var(--gray-200)'}
+        />
+      </div>
+
+      {/* Department */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gray-400)', marginBottom: 7, fontWeight: 700 }}>Department</div>
+        <input type="text" placeholder="e.g. Finance, HR, Operations" value={form.department}
+          onChange={e => upd({ department: e.target.value })}
+          style={inputStyle}
+          onFocus={e => e.target.style.borderColor = loanType.color}
+          onBlur={e  => e.target.style.borderColor = 'var(--gray-200)'}
+        />
+      </div>
+
       {/* Loan type selector */}
       <div style={{ marginBottom: 18 }}>
         <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gray-400)', marginBottom: 10, fontWeight: 700 }}>Loan Category</div>
@@ -74,7 +107,8 @@ export default function LoanApplicationForm({ onClose, onSubmit, walletBal, staf
       <div style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gray-400)', marginBottom: 7, fontWeight: 700 }}>Loan Amount (₦)</div>
         <div style={{ position: 'relative' }}>
-          <DollarSign size={14} color="var(--gray-400)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+        <div style={{ fontSize: 14, color: 'var(--gray-400)', position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>₦</div>
+          {/* <DollarSign size={14} color="var(--gray-400)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} /> */}
           <input type="text" placeholder="e.g. 500,000" value={form.amount}
             onChange={e => upd({ amount: e.target.value })}
             style={{ ...inputStyle, paddingLeft: 34 }}

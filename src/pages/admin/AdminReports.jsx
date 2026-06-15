@@ -181,8 +181,14 @@ export default function AdminReports() {
   }).filter(p=>p.totalInvested>0 || p.investments.some(i=>i.status==='active'));
 
   const exportProduct = (p) => {
-    const rows = p.investments.map(i=>`"${i.client}","${i.plan}",${i.amount},"${i.tenor}","${i.valueDate}","${i.maturityDate}","${i.roi}%","${i.tax}%","${i.status}"`).join('\n');
-    const blob = new Blob(['Client,Product,Amount,Tenor,Value Date,Maturity,ROI,Tax,Status\n'+rows],{type:'text/csv'});
+    const fmtDate = d => d ? new Date(d).toLocaleDateString('en-GB') : '—';
+    const rows = p.investments.map(i => {
+      const isPending = i.status === 'pending_approval';
+      const valueDate = isPending ? '— (pending approval)' : fmtDate(i.valueDate);
+      const maturityDate = isPending ? '— (not yet active)' : fmtDate(i.maturityDate);
+      return `"${i.client}","${i.plan}",${i.amount},"${i.tenor}","${valueDate}","${maturityDate}","${i.roi}%","${i.tax}%","${i.status}"`;
+    }).join('\n');
+    const blob = new Blob(['Client,Product,Amount,Tenor,Value Date,Maturity Date,ROI,Tax,Status\n'+rows],{type:'text/csv'});
     const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`${p.name.replace(/\s/g,'_')}_report.csv`; a.click(); URL.revokeObjectURL(url);
   };
 

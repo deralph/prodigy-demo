@@ -115,7 +115,12 @@ function CorpProductDrawer({ product, investments, onClose }) {
     URL.revokeObjectURL(url);
   };
 
-  const TABS = [{ key: 'overview', label: 'Overview' }, { key: 'chart', label: 'Chart' }, { key: 'terminate', label: '⚠ Terminate' }];
+  const isPending = matchingInvs.some(i => i.status === 'pending_approval');
+  const TABS = [
+    { key: 'overview', label: 'Overview' },
+    { key: 'chart', label: 'Chart' },
+    ...(!isPending ? [{ key: 'terminate', label: '⚠ Terminate' }] : []),
+  ];
 
   return (
     <SlideDrawer
@@ -137,14 +142,23 @@ function CorpProductDrawer({ product, investments, onClose }) {
       <div style={{ padding: '22px 24px' }}>
         {tab === 'overview' && (
           <div>
+            {isPending && (
+              <div style={{ background: 'rgba(232,184,75,0.08)', border: '1px solid rgba(232,184,75,0.25)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Clock size={18} color="var(--gold)" />
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy)' }}>Pending Approval</div>
+                  <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>This investment is awaiting admin approval. No actions are available until it is active.</div>
+                </div>
+              </div>
+            )}
             {[['Product', product.name], ['Balance', fmt(product.balance)], ['Portfolio Weight', product.weight], ['Est. Annual Return', fmt(net)], ['WHT (10%)', fmt(tax)], ['Net Return', fmt(netP)]].map(([l, v], i, arr) =>
               <DetailRow key={l} label={l} value={v} noBorder={i === arr.length - 1} />
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 18 }}>
-              <button onClick={() => downloadCert(false)} style={{ padding: '12px', background: `${product.color}18`, color: product.color, border: `1px solid ${product.color}30`, borderRadius: 10, cursor: 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+              <button disabled={isPending} onClick={() => !isPending && downloadCert(false)} style={{ padding: '12px', background: isPending ? 'var(--gray-100)' : `${product.color}18`, color: isPending ? 'var(--gray-400)' : product.color, border: isPending ? '1px solid var(--gray-200)' : `1px solid ${product.color}30`, borderRadius: 10, cursor: isPending ? 'not-allowed' : 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
                 <Award size={14} /> CERTIFICATE
               </button>
-              <button onClick={exportStatement} style={{ padding: '12px', background: 'rgba(13,27,53,0.07)', color: 'var(--navy)', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+              <button disabled={isPending} onClick={() => !isPending && exportStatement()} style={{ padding: '12px', background: isPending ? 'var(--gray-100)' : 'rgba(13,27,53,0.07)', color: isPending ? 'var(--gray-400)' : 'var(--navy)', border: 'none', borderRadius: 10, cursor: isPending ? 'not-allowed' : 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
                 <Download size={14} /> STATEMENT
               </button>
             </div>
@@ -297,6 +311,8 @@ export default function Treasury() {
   const [chartType,      setChartType]      = useState('area');
 
   const myInvs = useMemo(() => clientInvestments.filter(i => ['active','pending_approval'].includes(i.status) && i.preTermStatus !== 'disbursed'), [clientInvestments]);
+  const activeInvs = useMemo(() => myInvs.filter(i => i.status === 'active'), [myInvs]);
+  const pendingInvs = useMemo(() => myInvs.filter(i => i.status === 'pending_approval'), [myInvs]);
 
   const PORTFOLIO = useMemo(() => {
     const total   = myInvs.reduce((s, i) => s + (i.amount || 0), 0);
@@ -403,7 +419,7 @@ export default function Treasury() {
       <PortfolioHero
         label="Total Assets Under Management"
         value={fmtAUM(totalAUM)}
-        sub={`${PORTFOLIO.length} Product${PORTFOLIO.length !== 1 ? 's' : ''} Active · Live Portfolio`}
+        sub={`${activeInvs.length} Active · ${pendingInvs.length} Pending${pendingInvs.length ? ' ⚠' : ''}`}
         live
         actions={
           <>
@@ -531,9 +547,13 @@ export default function Treasury() {
                   <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy)' }}>{p.name}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: p.color }}>{fmtSmart(p.balance)} ({pct}%)</span>
-                    <button onClick={() => setDrawerProduct(p)} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 9px', background: p.color + '18', border: `1px solid ${p.color}30`, borderRadius: 6, cursor: 'pointer', fontSize: 10, fontWeight: 700, color: p.color }}>
-                      <Eye size={10} /> View
-                    </button>
+                    {p.status === 'pending' ? (
+                      <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--gold)', background: 'rgba(232,184,75,0.1)', padding: '4px 9px', borderRadius: 6, border: '1px solid rgba(232,184,75,0.2)' }}>Pending Approval</span>
+                    ) : (
+                      <button onClick={() => setDrawerProduct(p)} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 9px', background: p.color + '18', border: `1px solid ${p.color}30`, borderRadius: 6, cursor: 'pointer', fontSize: 10, fontWeight: 700, color: p.color }}>
+                        <Eye size={10} /> View
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div style={{ height: 8, background: 'var(--gray-100)', borderRadius: 4, overflow: 'hidden' }}>

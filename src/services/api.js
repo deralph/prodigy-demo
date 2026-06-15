@@ -78,6 +78,8 @@ export const authApi = {
     request('/auth/register/joint', { method: 'POST', body: JSON.stringify(data) }),
   forgotPassword: (email) =>
     request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  resetPassword: (email, otp, newPassword) =>
+    request('/auth/reset-password', { method: 'POST', body: JSON.stringify({ email, otp, newPassword }) }),
   getMe: () => request('/auth/me'),
   logout: () => request('/auth/logout', { method: 'POST' }),
 };
@@ -277,10 +279,19 @@ export const staffLoanApi = {
   applyLoan:   (data) => request('/loans/corporate/apply', { method: 'POST', body: JSON.stringify(data) }),
 };
 
+/* ── AUDIT PORTAL ──────────────────────────────────────── */
+export const auditPortalApi = {
+  generate: (email) => request('/audit-portal/generate', { method: 'POST', body: JSON.stringify({ email }) }),
+  verify: (token) => request(`/audit-portal/verify?token=${encodeURIComponent(token)}`),
+};
+
 export const adminStaffLoanApi = {
-  getAllEntities: () => request('/admin/loans/corporate'),
-  getEntityLoans: (entityId) => request(`/admin/loans/corporate/${entityId}/staff`),
-  findOne: (id) => request(`/admin/loans/${id}`),
+  getAllEntities:   () => request('/admin/loans/corporate'),
+  getEntityLoans:  (entityId) => request(`/admin/loans/corporate/${entityId}/staff`),
+  findOne:         (id) => request(`/admin/loans/${id}`),
+  approve:         (id) => request(`/admin/loans/${id}/approve`, { method: 'POST' }),
+  reject:          (id, reason) => request(`/admin/loans/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  recordRepayment: (id, amountKobo, note) => request(`/admin/loans/${id}/repayment`, { method: 'POST', body: JSON.stringify({ amountKobo, note }) }),
 };
 
 /* ── JOINT ACCOUNTS ──────────────────────────────────────── */

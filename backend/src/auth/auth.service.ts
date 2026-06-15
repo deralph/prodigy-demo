@@ -276,6 +276,27 @@ export class AuthService {
     return { message: 'If that email exists, a reset link has been sent.' };
   }
 
+  // ── Reset password (verify OTP + set new password) ───────────────
+  async resetPassword(email: string, otp: string, newPassword: string) {
+    const authUser = await this.prisma.authUser.findUnique({ where: { email } });
+    if (!authUser || !authUser.otpCode || !authUser.otpExpiry) {
+      throw new BadRequestException('No password reset was requested for this email.');
+    }
+    if (new Date() > authUser.otpExpiry) {
+      throw new BadRequestException('OTP has expired. Please request a new password reset.');
+    }
+    const otpValid = await bcrypt.compare(otp, authUser.otpCode);
+    if (!otpValid) {
+      throw new BadRequestException('Invalid OTP. Please check your email and try again.');
+    }
+    const hash = await bcrypt.hash(newPassword, 12);
+    await this.prisma.authUser.update({
+      where: { id: authUser.id },
+      data: { passwordHash: hash, otpCode: null, otpExpiry: null, refreshToken: null },
+    });
+    return { message: 'Password updated successfully. Please sign in.' };
+  }
+
   // ── Logout ───────────────────────────────────────────────────────
   async logout(authUserId: string) {
     await this.prisma.authUser.update({

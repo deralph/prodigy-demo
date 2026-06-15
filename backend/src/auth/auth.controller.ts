@@ -5,6 +5,7 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterCorporateDto } from './dto/register-corporate.dto';
 import { RegisterIndividualDto } from './dto/register-individual.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 
@@ -35,6 +36,12 @@ export class AuthController {
   @ApiOperation({ summary: 'Send OTP for password reset' })
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto.email);
+  }
+
+  @Post('reset-password')
+  @ApiOperation({ summary: 'Verify OTP and set a new password' })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto.email, dto.otp, dto.newPassword);
   }
 
   @Get('me')

@@ -203,8 +203,8 @@ model Investment {
   roiRate         Decimal           @db.Decimal(5, 2)
   taxRate         Decimal           @default(10.00) @db.Decimal(5, 2)
   tenorDays       Int
-  valueDate       DateTime
-  maturityDate    DateTime
+  valueDate       DateTime?
+  maturityDate    DateTime?
   autoRollover    Boolean           @default(false)
   bookedById      String?
   bookedAt        DateTime?
@@ -374,8 +374,10 @@ model StaffLoan {
   corporateId        String
   clientId           String?
   staffName          String
+  staffId            String?
   staffEmail         String?
   department         String?
+  rejectionReason    String?
   principalKobo      BigInt
   interestRate       Decimal         @db.Decimal(5, 2)
   tenorMonths        Int
@@ -384,6 +386,7 @@ model StaffLoan {
   maturityDate       DateTime?
   status             LoanStatus      @default(PENDING)
   outstandingKobo    BigInt          @default(0)
+  interestEarnedKobo BigInt          @default(0)
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
   repayments         LoanRepayment[]
@@ -534,7 +537,20 @@ model AuditLog {
 
   @@index([adminId])
   @@index([category])
-  @@index([occurredAt])
+}
+
+model AuditToken {
+  id         String    @id @default(cuid())
+  token      String    @unique
+  clientId   String
+  email      String
+  usedAt     DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+
+  @@index([token])
+  @@index([clientId])
+  @@index([expiresAt])
 }
 
 model EodRun {
@@ -681,6 +697,7 @@ enum FinanceQueueStatus {
 enum LoanStatus {
   PENDING
   ACTIVE
+  REJECTED
   REPAID
   DEFAULTED
 }

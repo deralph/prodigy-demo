@@ -5,11 +5,27 @@ import PageHeader from '../../components/ui/PageHeader';
 import SignatoryGroup from '../../components/ui/SignatoryGroup';
 import AuditPortalCard from '../../components/ui/AuditPortalCard';
 import CertificateGrid from '../../components/ui/CertificateGrid';
+import { auditPortalApi } from '../../services/api';
 
 export default function CorporateAudit() {
   const { user, clientInvestments } = useAppStore();
   const [auditEmail, setAuditEmail] = useState(user?.email || '');
   const [linkSent,   setLinkSent]   = useState(false);
+  const [sending,    setSending]    = useState(false);
+  const [genError,   setGenError]   = useState('');
+
+  const handleGenerate = async () => {
+    setSending(true);
+    setGenError('');
+    try {
+      await auditPortalApi.generate(auditEmail);
+      setLinkSent(true);
+    } catch (e) {
+      setGenError(e?.message || 'Failed to generate audit link. Please try again.');
+    } finally {
+      setSending(false);
+    }
+  };
 
   const mandate     = user?.secondaryName ? (user?.mandateType || 'AND') : 'SINGLE';
   const primaryName   = user?.name;
@@ -55,7 +71,7 @@ export default function CorporateAudit() {
           </div>
         </div>
 
-        <AuditPortalCard email={auditEmail} onEmailChange={setAuditEmail} onGenerate={() => setLinkSent(true)} sent={linkSent} />
+        <AuditPortalCard email={auditEmail} onEmailChange={v => { setAuditEmail(v); setGenError(''); }} onGenerate={handleGenerate} sent={linkSent} loading={sending} error={genError} />
       </div>
 
       <CertificateGrid certificates={certs} onDownload={cert => {
