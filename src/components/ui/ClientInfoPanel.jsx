@@ -14,6 +14,15 @@ const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
  *   onFlagSuspend — () => void (optional)
  */
 export default function ClientInfoPanel({ client: c, onApproveKyc, onFlagSuspend }) {
+  const holderRows = Array.isArray(c.holders) && c.holders.length > 0
+    ? c.holders
+    : c.secondaryName
+      ? [
+          { name: c.name, email: c.email, kyc: c.kyc },
+          { name: c.secondaryName, email: c.secondaryEmail || '—', kyc: c.kyc },
+        ]
+      : [];
+
   const fields = [
     ['Email',           c.email],
     ['Phone',           c.phone || '—'],
@@ -23,8 +32,12 @@ export default function ClientInfoPanel({ client: c, onApproveKyc, onFlagSuspend
     ['Account Status',  c.status],
     ['Wallet Balance',  fmt(c.balance)],
     ['Joined',          c.joined],
-    ...(c.secondaryName ? [['Secondary Holder', c.secondaryName]] : []),
-    ...(c.holders ? c.holders.map((h, i) => [`Holder ${i + 1}`, h.name]) : []),
+    ['Mandate',         c.mandateType || '—'],
+    ...holderRows.flatMap((h, i) => [
+      [`Holder ${i + 1} Name`,  h.name || '—'],
+      [`Holder ${i + 1} Email`, h.email || '—'],
+      [`Holder ${i + 1} KYC`,   h.kyc || h.kycStatus || 'pending'],
+    ]),
   ];
 
   return (

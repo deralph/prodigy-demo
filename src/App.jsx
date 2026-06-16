@@ -27,7 +27,6 @@ import ActivityLog       from './pages/individual/ActivityLog';
 import JointLayout     from './components/joint/JointLayout';
 import JointPortfolio  from './pages/joint/JointPortfolio';
 import JointCash       from './pages/joint/JointCash';
-import SharedLegacy    from './pages/joint/SharedLegacy';
 import AccessControl   from './pages/joint/AccessControl';
 import JointStatements from './pages/joint/JointStatements';
 
@@ -160,7 +159,6 @@ export default function App() {
           <Route index element={<Navigate to="portfolio" replace />} />
           <Route path="portfolio"   element={<JointPortfolio />} />
           <Route path="cash"        element={<JointCash />} />
-          <Route path="legacy"      element={<SharedLegacy />} />
           <Route path="access"      element={<AccessControl />} />
           <Route path="statements"  element={<JointStatements />} />
           <Route path="ledger"        element={<Ledger />} />

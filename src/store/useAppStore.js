@@ -148,7 +148,8 @@ export const KYC_REQUIREMENTS = {
   corporate: [
     { key:'cac_cert',        label:'CAC Certificate',                         required:true },
     { key:'memart',          label:'MEMART & Status of Directors',            required:true },
-    { key:'scuml_tax',       label:'SCUML & Tax ID',                         required:true },
+    { key:'scuml',           label:'SCUML Certificate',                       required:true },
+    { key:'tax_id',          label:'Tax ID / TIN',                            required:true },
     { key:'directors_id',    label:"Directors' Valid ID",                    required:true },
     { key:'utility_bill',    label:'Utility Bill (not older than 3 months)',  required:true },
     { key:'sig_mandate',     label:'Signature Mandate',                      required:true },
@@ -174,6 +175,26 @@ export const KYC_REQUIREMENTS = {
     { key:'utility_p2',      label:'Secondary Holder Utility Bill',          required:true },
   ],
 };
+
+export const getJointHolders = (client = {}, user = {}) => {
+  const primary = {
+    name: client.name || user.name || 'Primary Holder',
+    email: client.email || user.email || '—',
+  };
+  const secondaryName = client.secondaryName || user.secondaryName;
+  const secondaryEmail = client.secondaryEmail || user.secondaryEmail;
+  const holders = [primary];
+  if (secondaryName || secondaryEmail) {
+    holders.push({
+      name: secondaryName || 'Secondary Holder',
+      email: secondaryEmail || '—',
+    });
+  }
+  return holders;
+};
+
+export const getJointMandate = (client = {}, user = {}) =>
+  client.mandateType || user.mandateType || 'AND';
 
 
 
@@ -277,6 +298,7 @@ const useAppStore = create((set, get) => ({
               mandateType: c.mandateType,
               rcNumber: c.rcNumber,
               taxId: c.taxId,
+              holders: getJointHolders(c),
             }));
             set({ clients: transformed });
           }

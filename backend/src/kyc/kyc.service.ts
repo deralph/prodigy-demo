@@ -180,6 +180,13 @@ export class KycService {
 
   // Admin: approve a single KYC document
   async approveDocument(clientId: string, docKey: string, adminId: string) {
+    const existing = await this.prisma.kycDocument.findUnique({
+      where: { clientId_docKey: { clientId, docKey } },
+    });
+    if (!existing) {
+      throw new NotFoundException(`KYC document not found for client ${clientId} and key ${docKey}`);
+    }
+
     const doc = await this.prisma.kycDocument.update({
       where: { clientId_docKey: { clientId, docKey } },
       data: { status: 'VERIFIED', verifiedById: adminId, verifiedAt: new Date(), rejectionReason: null },
@@ -189,6 +196,13 @@ export class KycService {
 
   // Admin: reject a single KYC document
   async rejectDocument(clientId: string, docKey: string, adminId: string, reason: string) {
+    const existing = await this.prisma.kycDocument.findUnique({
+      where: { clientId_docKey: { clientId, docKey } },
+    });
+    if (!existing) {
+      throw new NotFoundException(`KYC document not found for client ${clientId} and key ${docKey}`);
+    }
+
     const doc = await this.prisma.kycDocument.update({
       where: { clientId_docKey: { clientId, docKey } },
       data: { status: 'REJECTED', verifiedById: adminId, verifiedAt: new Date(), rejectionReason: reason },

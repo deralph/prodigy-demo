@@ -161,11 +161,11 @@ function buildJointDocs(n) {
   for (let i = 1; i <= n; i++) {
     const ord = i === 1 ? 'Primary' : i === 2 ? 'Secondary' : 'Third';
     docs.push(
-      { key: `valid_id_h${i}`,  label: `${ord} Holder — Valid ID` },
-      { key: `nin_h${i}`,       label: `${ord} Holder — NIN` },
-      { key: `passport_h${i}`,  label: `${ord} Holder — Passport Photo` },
-      { key: `sig_h${i}`,       label: `${ord} Holder — Signature` },
-      { key: `utility_h${i}`,   label: `${ord} Holder — Utility Bill` },
+      { key: `valid_id_p${i}`,  label: `${ord} Holder — Valid ID` },
+      { key: `nin_p${i}`,       label: `${ord} Holder — NIN` },
+      { key: `passport_p${i}`,  label: `${ord} Holder — Passport Photo` },
+      { key: `sig_p${i}`,       label: `${ord} Holder — Signature` },
+      { key: `utility_p${i}`,   label: `${ord} Holder — Utility Bill` },
     );
   }
   return docs;
@@ -301,7 +301,13 @@ function CorporateKycStep({ applyForm, onBack, onDone }) {
     setLoading(true); setError('');
     try {
       await authApi.registerCorporate({ entityName: applyForm.entityName, email: applyForm.email, password: applyForm.password, phone: applyForm.phone, rcNumber: applyForm.rcNumber });
-      kycApi.uploadCorporateDocs(uploads).catch(() => {});
+
+      if (Object.keys(uploads).length > 0) {
+        const loginRes = await authApi.login(applyForm.email, applyForm.password);
+        if (loginRes?.accessToken) setTokens(loginRes);
+        await kycApi.uploadCorporateDocs(uploads);
+      }
+
       setSubmitted(true);
     } catch (err) {
       const msg = err?.message || '';
@@ -390,12 +396,18 @@ function IndividualCreate({ onBack }) {
   const handleRegister = async () => {
     setRegLoading(true); setRegError('');
     try {
-      if (accountType === 'joint') {
-        await authApi.registerIndividual({ accountType: 'joint', primaryName: holders[0].name, email: holders[0].email, password: holders[0].password || '', secondaryName: holders[1]?.name, secondaryEmail: holders[1]?.email, phone: holders[0].phone, bvn: holders[0].bvn, holderIdentities: holders.map(h => ({ name: h.name, bvn: h.bvn, email: h.email, phone: h.phone })) });
-      } else {
-        await authApi.registerIndividual({ accountType: 'single', primaryName: single.name, email: single.email, phone: single.phone, password: single.password, bvn: single.bvn });
+      const registerData = accountType === 'joint'
+        ? { accountType: 'joint', primaryName: holders[0].name, email: holders[0].email, password: holders[0].password || '', secondaryName: holders[1]?.name, secondaryEmail: holders[1]?.email, phone: holders[0].phone, bvn: holders[0].bvn, holderIdentities: holders.map(h => ({ name: h.name, bvn: h.bvn, email: h.email, phone: h.phone })) }
+        : { accountType: 'single', primaryName: single.name, email: single.email, phone: single.phone, password: single.password, bvn: single.bvn };
+
+      await authApi.registerIndividual(registerData);
+
+      if (Object.keys(uploads).length > 0) {
+        const loginRes = await authApi.login(registerData.email, registerData.password);
+        if (loginRes?.accessToken) setTokens(loginRes);
+        await kycApi.uploadIndividualDocs(uploads);
       }
-      kycApi.uploadIndividualDocs(uploads).catch(() => {});
+
       setStep('done');
     } catch (err) {
       const msg = err?.message || '';
