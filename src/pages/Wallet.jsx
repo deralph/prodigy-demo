@@ -4,6 +4,7 @@ import useAppStore from '../store/useAppStore';
 import PageHeader from '../components/ui/PageHeader';
 import WalletBalanceCard from '../components/wallet/WalletBalanceCard';
 import FundWalletModal from '../components/wallet/FundWalletModal';
+import WithdrawModal from '../components/wallet/WithdrawModal';
 import Toast from '../components/ui/Toast';
 import DataTable from '../components/ui/DataTable';
 import StatusBadge from '../components/shared/StatusBadge';
@@ -22,6 +23,7 @@ const COLUMNS = [
 export default function Wallet() {
   const { walletBalance, pendingBalance, transactions } = useAppStore();
   const [showFund, setShowFund] = useState(false);
+  const [showWithdraw, setShowWithdraw] = useState(false);
   const [toast, setToast]       = useState(null);
 
   const dismissToast = useCallback(() => setToast(null), []);
@@ -32,6 +34,11 @@ export default function Wallet() {
     } else {
       setToast({ type: 'error', title: 'Payment Cancelled', message: 'You closed Paystack without completing payment. No charge was made.', sub: ref ? `Ref: ${ref}` : undefined });
     }
+  }, []);
+
+  const handleWithdrawDone = useCallback(({ success, amount, ref }) => {
+    if (success) setToast({ type: 'success', title: 'Withdrawal Requested', message: `${fmt(amount)} is pending admin review.`, sub: `Ref: ${ref}` });
+    else setToast({ type: 'error', title: 'Withdrawal Failed', message: 'Could not request withdrawal.' });
   }, []);
 
   const exportCSV = () => {
@@ -49,7 +56,7 @@ export default function Wallet() {
 
       {/* Balance cards */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
-        <WalletBalanceCard balance={walletBalance} onFund={() => setShowFund(true)} />
+        <WalletBalanceCard balance={walletBalance} onFund={() => setShowFund(true)} onWithdraw={() => setShowWithdraw(true)} />
         <div className="card animate-in delay-2">
           <div style={{ fontSize: 10, color: 'var(--gray-400)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>Awaiting Confirmation</div>
           <div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 'clamp(20px,4vw,30px)', color: 'var(--navy)', marginBottom: 8 }}>
@@ -73,6 +80,7 @@ export default function Wallet() {
       </div>
 
       {showFund && <FundWalletModal onClose={() => setShowFund(false)} onDone={handleDone} />}
+      {showWithdraw && <WithdrawModal onClose={() => setShowWithdraw(false)} onDone={(res) => { setShowWithdraw(false); handleWithdrawDone(res); }} />}
       <Toast toast={toast} onDismiss={dismissToast} />
 
       <style>{`@media(max-width:600px){div[style*="grid-template-columns: 1fr 1fr"]{grid-template-columns:1fr!important;}}`}</style>

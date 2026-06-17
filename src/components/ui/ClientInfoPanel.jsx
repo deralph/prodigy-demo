@@ -18,8 +18,8 @@ export default function ClientInfoPanel({ client: c, onApproveKyc, onFlagSuspend
     ? c.holders
     : c.secondaryName
       ? [
-          { name: c.name, email: c.email, kyc: c.kyc },
-          { name: c.secondaryName, email: c.secondaryEmail || '—', kyc: c.kyc },
+          { name: c.name, email: c.email, phone: c.phone || '—', kyc: c.kyc },
+          { name: c.secondaryName, email: c.secondaryEmail || '—', phone: c.secondaryPhone || '—', kyc: c.kyc },
         ]
       : [];
 
@@ -36,6 +36,7 @@ export default function ClientInfoPanel({ client: c, onApproveKyc, onFlagSuspend
     ...holderRows.flatMap((h, i) => [
       [`Holder ${i + 1} Name`,  h.name || '—'],
       [`Holder ${i + 1} Email`, h.email || '—'],
+      [`Holder ${i + 1} Phone`, h.phone || '—'],
       [`Holder ${i + 1} KYC`,   h.kyc || h.kycStatus || 'pending'],
     ]),
   ];

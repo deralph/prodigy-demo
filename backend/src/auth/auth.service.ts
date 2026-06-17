@@ -139,6 +139,7 @@ export class AuthService {
           phone: dto.phone,
           secondaryName: isJoint ? dto.secondaryName : undefined,
           secondaryEmail: isJoint ? dto.secondaryEmail : undefined,
+          secondaryPhone: isJoint ? dto.secondaryPhone : undefined,
           mandateType: isJoint ? 'AND' : undefined,
         },
       });
@@ -152,12 +153,38 @@ export class AuthService {
         },
       });
 
+      // Create a secondary auth user (joint co-holder) if provided — give them a temporary password
+      let secondaryAuthUser = null as any;
+      if (isJoint && dto.secondaryEmail) {
+        const tmp = Math.random().toString(36).slice(-10);
+        const tmpHash = await bcrypt.hash(tmp, 12);
+        const resetToken = createHmac('sha256', process.env.JWT_SECRET ?? process.env.JWT_MAGIC_SECRET ?? 'secret')
+          .update(dto.secondaryEmail + Date.now().toString()).digest('hex');
+        const expiry = new Date(Date.now() + 48 * 3600 * 1000);
+
+        // NOTE: AuthUser.clientId is unique in the schema (one auth user per client).
+        // To avoid violating the unique constraint we create the secondary auth user
+        // without linking `clientId` here. The magic token contains the `clientRef`
+        // so when the secondary redeems the magic link we will include the client
+        // context in the issued session tokens (see verifyMagicLink()).
+        secondaryAuthUser = await tx.authUser.create({
+          data: {
+            email: dto.secondaryEmail,
+            passwordHash: tmpHash,
+            role: 'joint',
+            // do NOT set clientId to avoid unique constraint conflict
+            passwordResetToken: resetToken,
+            passwordResetExpiry: expiry,
+          },
+        });
+      }
+
       await tx.kycRecord.create({ data: { clientId: client.id } });
       await Promise.all(verifiedIdentities.map((identity) => tx.identityVerification.create({
         data: { ...identity, clientId: client.id },
       })));
 
-      return { client, authUser };
+      return { client, authUser, secondaryAuthUser };
     });
 
     this.notifications.sendEmail(
@@ -166,8 +193,8 @@ export class AuthService {
       `<p>Dear ${dto.primaryName},</p><p>Your ${isJoint ? 'joint' : 'individual'} account has been created on Prodigy Finance. Your Client ID is <strong>${result.client.clientRef}</strong>.</p><p>Please log in and complete your KYC to activate your account.</p><p>Best regards,<br/>Prodigy Finance Team</p>`,
     ).catch(() => {});
 
-    if (isJoint && dto.secondaryEmail) {
-      const magicToken = await this.generateMagicToken(result.authUser.id, result.client.clientRef);
+    if (isJoint && dto.secondaryEmail && result.secondaryAuthUser) {
+      const magicToken = await this.generateMagicToken(result.secondaryAuthUser.id, result.client.clientRef);
       const magicLink = `${process.env.FRONTEND_URL ?? 'http://localhost:5173'}/magic-login?token=${magicToken}`;
       this.notifications.sendEmail(
         dto.secondaryEmail,
@@ -339,21 +366,42 @@ export class AuthService {
     }
     const authUser = await this.prisma.authUser.findUnique({
       where: { id: payload.sub },
-      include: { client: true },
     });
     if (!authUser) throw new UnauthorizedException('Account not found');
-    const tokens = await this.generateTokens(authUser.id, authUser.email, authUser.role, authUser.clientId, authUser.adminUserId);
+
+    // Determine client DB id: prefer authUser.clientId, fall back to clientRef in token
+    let clientDbId: string | null = authUser.clientId ?? null;
+    let clientRecord: any = null;
+    if (!clientDbId && payload.clientRef) {
+      clientRecord = await this.prisma.client.findUnique({ where: { clientRef: payload.clientRef } });
+      if (clientRecord) clientDbId = clientRecord.id;
+    } else if (clientDbId) {
+      clientRecord = await this.prisma.client.findUnique({ where: { id: clientDbId } });
+    }
+
+    const tokens = await this.generateTokens(authUser.id, authUser.email, authUser.role, clientDbId, authUser.adminUserId);
+    const needsPasswordSetup = !!authUser.passwordResetToken && !!authUser.passwordResetExpiry && new Date() < authUser.passwordResetExpiry;
     return {
       ...tokens,
+      needsPasswordSetup,
       user: {
         id: authUser.id,
         email: authUser.email,
         role: authUser.role,
-        name: authUser.client?.name,
-        clientId: authUser.client?.clientRef,
-        clientType: authUser.client?.type ?? null,
+        name: clientRecord?.name ?? authUser.email,
+        clientId: clientRecord?.clientRef ?? null,
+        clientType: clientRecord?.type ?? null,
       },
     };
+  }
+
+  async setPassword(authUserId: string, newPassword: string) {
+    const hash = await bcrypt.hash(newPassword, 12);
+    await this.prisma.authUser.update({
+      where: { id: authUserId },
+      data: { passwordHash: hash, passwordResetToken: null, passwordResetExpiry: null, refreshToken: null },
+    });
+    return { message: 'Password set successfully' };
   }
 
   private async generateMagicToken(authUserId: string, clientRef: string): Promise<string> {

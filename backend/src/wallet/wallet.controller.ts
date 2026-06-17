@@ -70,7 +70,8 @@ export class WalletController {
     if (!req.user.clientDbId) {
       throw new BadRequestException('Admin users cannot withdraw. Please use a client account.');
     }
-    return this.walletService.requestWithdrawal(req.user.clientDbId, body);
+    // Pass initiating auth user id so we can track requestor
+    return this.walletService.requestWithdrawal(req.user.clientDbId, body, req.user.sub);
   }
 }
 

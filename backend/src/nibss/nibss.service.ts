@@ -122,13 +122,15 @@ export class NibssService {
           timeout: this.getQoreIdTimeoutMs(),
         },
       );
-      // console.log(response.data)
+      
+      // console.log("bvn data  details = ", response.data)
+      
       const fieldMatches = this.extractBvnFieldMatches(response.data);
       const firstNameMatches = fieldMatches.firstname === true || fieldMatches.fistname === true;
       const lastNameMatches = fieldMatches.lastname === true;
       const verified = firstNameMatches && lastNameMatches;
       const providerReference = this.extractProviderReference(response.data);
-
+      
       this.logger.log(`QoreID BVN boolean match completed for ${this.maskIdentifier(clean)}: ${verified ? 'matched' : 'not matched'}`);
 
       return {
@@ -142,12 +144,13 @@ export class NibssService {
         providerReference,
       };
     } catch (error) {
-  if (axios.isAxiosError(error)) {
-    const status = error.response?.status;
-    const message = error.response?.data?.message;
-
-    // BVN does not exist
-    if (status === 404) {
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        const message = error.response?.data?.message;
+        
+        // BVN does not exist
+        if (status === 404) {
+      console.log("bvn data error details = ",error)
       this.logger.log(
         `QoreID BVN lookup completed for ${this.maskIdentifier(clean)}: BVN not found`,
       );

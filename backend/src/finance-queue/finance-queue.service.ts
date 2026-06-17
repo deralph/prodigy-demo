@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { WalletService } from '../wallet/wallet.service';
 
 @Injectable()
 export class FinanceQueueService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private walletService: WalletService) {}
 
   findAll(query: { status?: string }) {
     return this.prisma.financeQueueItem.findMany({
@@ -29,32 +30,35 @@ export class FinanceQueueService {
     });
     if (!item) throw new NotFoundException('Finance queue item not found');
     if (item.status !== 'PENDING') throw new BadRequestException('Item is not in pending state');
-
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.financeQueueItem.update({
+    // First, perform DB updates inside a transaction
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.financeQueueItem.update({
         where: { id },
         data: { status: 'APPROVED', approvedById: adminId, approvedAt: new Date(), notes },
       });
 
-      // Credit the client wallet with net payout
-      await tx.client.update({
-        where: { id: item.clientId },
-        data: { walletBalance: { increment: item.amountKobo } },
-      });
+      // For pre-termination payouts we credit the wallet as before
+      if (item.type !== 'WALLET_WITHDRAWAL') {
+        // Credit the client wallet with net payout
+        await tx.client.update({
+          where: { id: item.clientId },
+          data: { walletBalance: { increment: item.amountKobo } },
+        });
 
-      // Log the wallet transaction
-      await tx.walletTransaction.create({
-        data: {
-          txnRef: `WAL-PT-${Date.now()}`,
-          clientId: item.clientId,
-          type: 'PRE_TERMINATION_PAYOUT',
-          status: 'SUCCESSFUL',
-          amountKobo: item.amountKobo,
-          description: 'Pre-Termination Payout — Net of Early Exit Penalty',
-          processedAt: new Date(),
-          initiatedById: adminId,
-        },
-      });
+        // Log the wallet transaction
+        await tx.walletTransaction.create({
+          data: {
+            txnRef: `WAL-PT-${Date.now()}`,
+            clientId: item.clientId,
+            type: 'PRE_TERMINATION_PAYOUT',
+            status: 'SUCCESSFUL',
+            amountKobo: item.amountKobo,
+            description: 'Pre-Termination Payout — Net of Early Exit Penalty',
+            processedAt: new Date(),
+            initiatedById: adminId,
+          },
+        });
+      }
 
       // Record penalty as org income in OrgLedger (only if penalty > 0)
       if (item.penaltyKobo && item.penaltyKobo > BigInt(0)) {
@@ -92,8 +96,20 @@ export class FinanceQueueService {
         });
       }
 
-      return updated;
+      return u;
     });
+
+    // After commit, if this is a wallet withdrawal, trigger paystack disbursement
+    if (item.type === 'WALLET_WITHDRAWAL') {
+      try {
+        await this.walletService.disburseForFinanceItem(updated.id, adminId);
+      } catch (err) {
+        // If disbursement fails, bubble error so caller can handle it; WalletService handles rollback/refund
+        throw err;
+      }
+    }
+
+    return updated;
   }
 
   findAllOrgLedger(query: { type?: string } = {}) {

@@ -42,6 +42,11 @@ export class RegisterIndividualDto {
   @IsEmail()
   secondaryEmail?: string;
 
+  @ApiPropertyOptional({ example: '08023456789' })
+  @IsOptional()
+  @IsString()
+  secondaryPhone?: string;
+
   @ApiProperty({ example: 'john@example.com' })
   @IsEmail()
   email: string;

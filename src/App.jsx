@@ -6,6 +6,7 @@ import LoadingOverlay from './components/ui/LoadingOverlay';
 
 import OnboardingLogin from './pages/onboarding/OnboardingLogin';
 import MagicLogin      from './pages/onboarding/MagicLogin';
+import SetPassword     from './pages/onboarding/SetPassword';
 import Landing  from './pages/Landing';
 import AuditPortal from './pages/AuditPortal';
 
@@ -91,6 +92,7 @@ function SessionRestore() {
             taxId:          c.taxId           ?? null,
             secondaryName:  c.secondaryName   ?? null,
             secondaryEmail: c.secondaryEmail  ?? null,
+            secondaryPhone: c.secondaryPhone  ?? null,
             mandateType:    c.mandateType      ?? null,
             client:         c,
           });
@@ -123,6 +125,7 @@ export default function App() {
         <Route path="/"            element={<Landing />} />
         <Route path="/login"       element={<OnboardingLogin />} />
         <Route path="/magic-login" element={<MagicLogin />} />
+        <Route path="/set-password" element={<SetPassword />} />
         <Route path="/audit-portal" element={<AuditPortal />} />
 
         {/* Corporate */}

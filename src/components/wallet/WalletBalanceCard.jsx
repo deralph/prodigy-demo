@@ -12,7 +12,7 @@ const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractio
  *   onFund       — () => void — triggers fund wallet flow
  *   fundLabel    — button label (default 'Fund Wallet')
  */
-export default function WalletBalanceCard({ balance, label = 'Available Wallet Balance', onFund, fundLabel = 'Fund Wallet' }) {
+export default function WalletBalanceCard({ balance, label = 'Available Wallet Balance', onFund, fundLabel = 'Fund Wallet', onWithdraw, withdrawLabel = 'Withdraw' }) {
   return (
     <div className="card animate-in delay-1" style={{ background: 'var(--navy)', border: 'none', position: 'relative', overflow: 'hidden' }}>
       <div style={{ position: 'absolute', top: -30, right: -30, width: 120, height: 120, borderRadius: '50%', background: 'rgba(232,184,75,0.08)', pointerEvents: 'none' }} />
@@ -25,11 +25,18 @@ export default function WalletBalanceCard({ balance, label = 'Available Wallet B
       >
         {fmt(balance)}
       </div>
-      {onFund && (
-        <button className="btn-gold" style={{ fontSize: 12, padding: '10px 20px' }} onClick={onFund}>
-          <ArrowDownCircle size={14} /> {fundLabel}
-        </button>
-      )}
+      <div style={{ display: 'flex', gap: 10 }}>
+        {onFund && (
+          <button className="btn-gold" style={{ fontSize: 12, padding: '10px 20px' }} onClick={onFund}>
+            <ArrowDownCircle size={14} /> {fundLabel}
+          </button>
+        )}
+        {onWithdraw && (
+          <button className="btn-outline" style={{ fontSize: 12, padding: '10px 20px' }} onClick={onWithdraw}>
+            {withdrawLabel}
+          </button>
+        )}
+      </div>
       <style>{`
         @keyframes balanceFlash {
           0%  { color: var(--gold); transform: scale(1.04); }

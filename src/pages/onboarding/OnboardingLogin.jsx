@@ -397,7 +397,7 @@ function IndividualCreate({ onBack }) {
     setRegLoading(true); setRegError('');
     try {
       const registerData = accountType === 'joint'
-        ? { accountType: 'joint', primaryName: holders[0].name, email: holders[0].email, password: holders[0].password || '', secondaryName: holders[1]?.name, secondaryEmail: holders[1]?.email, phone: holders[0].phone, bvn: holders[0].bvn, holderIdentities: holders.map(h => ({ name: h.name, bvn: h.bvn, email: h.email, phone: h.phone })) }
+        ? { accountType: 'joint', primaryName: holders[0].name, email: holders[0].email, password: holders[0].password || '', secondaryName: holders[1]?.name, secondaryEmail: holders[1]?.email, secondaryPhone: holders[1]?.phone, phone: holders[0].phone, bvn: holders[0].bvn, holderIdentities: holders.map(h => ({ name: h.name, bvn: h.bvn, email: h.email, phone: h.phone })) }
         : { accountType: 'single', primaryName: single.name, email: single.email, phone: single.phone, password: single.password, bvn: single.bvn };
 
       await authApi.registerIndividual(registerData);

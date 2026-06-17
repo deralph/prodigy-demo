@@ -73,4 +73,12 @@ export class AuthController {
   magicLogin(@Query('token') token: string) {
     return this.authService.verifyMagicLink(token);
   }
+
+  @Post('set-password')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Set a new password for the currently authenticated user' })
+  setPassword(@Req() req: any, @Body() body: { newPassword: string }) {
+    return this.authService.setPassword(req.user.sub, body.newPassword);
+  }
 }

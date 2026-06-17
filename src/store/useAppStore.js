@@ -180,14 +180,19 @@ export const getJointHolders = (client = {}, user = {}) => {
   const primary = {
     name: client.name || user.name || 'Primary Holder',
     email: client.email || user.email || '—',
+    phone: client.phone || user.phone || '—',
+    kyc: client.kyc || user.kyc || 'pending',
   };
   const secondaryName = client.secondaryName || user.secondaryName;
   const secondaryEmail = client.secondaryEmail || user.secondaryEmail;
+  const secondaryPhone = client.secondaryPhone || user.secondaryPhone;
   const holders = [primary];
-  if (secondaryName || secondaryEmail) {
+  if (secondaryName || secondaryEmail || secondaryPhone) {
     holders.push({
       name: secondaryName || 'Secondary Holder',
       email: secondaryEmail || '—',
+      phone: secondaryPhone || '—',
+      kyc: client.kyc || user.kyc || 'pending',
     });
   }
   return holders;
@@ -295,6 +300,7 @@ const useAppStore = create((set, get) => ({
               createdAt: c.createdAt,
               secondaryName: c.secondaryName,
               secondaryEmail: c.secondaryEmail,
+              secondaryPhone: c.secondaryPhone,
               mandateType: c.mandateType,
               rcNumber: c.rcNumber,
               taxId: c.taxId,

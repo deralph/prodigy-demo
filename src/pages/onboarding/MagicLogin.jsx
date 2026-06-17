@@ -63,9 +63,14 @@ export default function MagicLogin() {
       .then(res => res.json())
       .then(data => {
         if (!data.accessToken) throw new Error(data.message || 'Invalid response');
-        setTokens(data.accessToken, data.refreshToken);
+        setTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken });
         login({ ...data.user, name: data.user.name || data.user.email, clientId: data.user.clientId });
         setStatus('success');
+        // If backend indicates the user should set a password, redirect to set-password flow
+        if (data.needsPasswordSetup) {
+          setTimeout(() => navigate('/set-password', { replace: true }), 800);
+          return;
+        }
         const dest = ROLE_DESTINATIONS[data.user.role] || `/${data.user.role}`;
         setTimeout(() => navigate(dest, { replace: true }), 1500);
       })
