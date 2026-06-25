@@ -63,11 +63,12 @@ describe('System E2E Tests', () => {
         client:   { create: jest.fn().mockResolvedValue({ ...MOCK.client, clientRef: 'CLI-001' }) },
         authUser: { create: jest.fn().mockResolvedValue(MOCK.authUser) },
         kycRecord:{ create: jest.fn().mockResolvedValue({}) },
+        identityVerification: { create: jest.fn().mockResolvedValue({}) },
       }));
 
       const res = await request(app.getHttpServer())
         .post('/api/v1/auth/register/individual')
-        .send({ accountType: 'single', primaryName: 'John Doe', email: 'john@example.com', password: 'Test1234!' });
+        .send({ accountType: 'single', primaryName: 'John Doe', email: 'john@example.com', password: 'Test1234!', bvn: '22345678901' });
 
       expect(res.status).toBe(201);
       expect(res.body.clientRef).toBe('CLI-001');
@@ -147,7 +148,7 @@ describe('System E2E Tests', () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/investments/subscribe')
         .set('Authorization', `Bearer ${makeAccessToken()}`)
-        .send({ productId: IDS.PRODUCT, principalKobo: '200000000', tenorDays: 90, valueDate: '2024-06-01T00:00:00.000Z' });
+        .send({ productId: IDS.PRODUCT, principalKobo: '50000000', tenorDays: 90, valueDate: '2024-06-01T00:00:00.000Z' });
 
       expect(res.status).toBe(201);
       expect(res.body.status).toBe('PENDING_APPROVAL');
@@ -165,11 +166,22 @@ describe('System E2E Tests', () => {
         client:   { create: jest.fn().mockResolvedValue({ ...MOCK.client, clientRef: 'CLI-006', type: 'JOINT', secondaryName: 'Jane Doe' }) },
         authUser: { create: jest.fn().mockResolvedValue(MOCK.authUser) },
         kycRecord:{ create: jest.fn().mockResolvedValue({}) },
+        identityVerification: { create: jest.fn().mockResolvedValue({}) },
       }));
 
       const res = await request(app.getHttpServer())
         .post('/api/v1/auth/register/individual')
-        .send({ accountType: 'joint', primaryName: 'John Doe', secondaryName: 'Jane Doe', email: 'joint@example.com', password: 'Test1234!' });
+        .send({
+          accountType: 'joint',
+          primaryName: 'John Doe',
+          secondaryName: 'Jane Doe',
+          email: 'joint@example.com',
+          password: 'Test1234!',
+          holderIdentities: [
+            { name: 'John Doe', bvn: '22345678901' },
+            { name: 'Jane Doe', bvn: '32345678901' },
+          ],
+        });
 
       expect(res.status).toBe(201);
       expect(res.body.clientRef).toBe('CLI-006');
@@ -222,7 +234,7 @@ describe('System E2E Tests', () => {
         .set('Authorization', `Bearer ${makeAccessToken()}`);
 
       expect(res.status).toBe(200);
-      expect(res.body.documents).toHaveLength(5);
+      expect(res.body.documents).toHaveLength(8);
       expect(res.body.documents.map((d: any) => d.key)).toContain('cac_cert');
     });
   });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowDownCircle } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -10,9 +10,10 @@ const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractio
  *   balance      — available wallet balance (number)
  *   label        — header label text
  *   onFund       — () => void — triggers fund wallet flow
+ *   onWithdraw   — () => void — triggers withdraw flow (optional)
  *   fundLabel    — button label (default 'Fund Wallet')
  */
-export default function WalletBalanceCard({ balance, label = 'Available Wallet Balance', onFund, fundLabel = 'Fund Wallet', onWithdraw, withdrawLabel = 'Withdraw' }) {
+export default function WalletBalanceCard({ balance, label = 'Available Wallet Balance', onFund, onWithdraw, fundLabel = 'Fund Wallet' }) {
   return (
     <div className="card animate-in delay-1" style={{ background: 'var(--navy)', border: 'none', position: 'relative', overflow: 'hidden' }}>
       <div style={{ position: 'absolute', top: -30, right: -30, width: 120, height: 120, borderRadius: '50%', background: 'rgba(232,184,75,0.08)', pointerEvents: 'none' }} />
@@ -25,15 +26,15 @@ export default function WalletBalanceCard({ balance, label = 'Available Wallet B
       >
         {fmt(balance)}
       </div>
-      <div style={{ display: 'flex', gap: 10 }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         {onFund && (
           <button className="btn-gold" style={{ fontSize: 12, padding: '10px 20px' }} onClick={onFund}>
             <ArrowDownCircle size={14} /> {fundLabel}
           </button>
         )}
         {onWithdraw && (
-          <button className="btn-outline" style={{ fontSize: 12, padding: '10px 20px' }} onClick={onWithdraw}>
-            {withdrawLabel}
+          <button style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '10px 20px', background: 'transparent', color: 'white', border: '1.5px solid rgba(255,255,255,0.25)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 700 }} onClick={onWithdraw}>
+            <ArrowUpCircle size={14} /> Withdraw
           </button>
         )}
       </div>

@@ -12,7 +12,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  validate(payload: { sub: string; email: string; role: string; clientId?: string | null; adminUserId?: string | null }) {
+  validate(payload: { sub: string; email: string; role: string; clientId?: string | null; adminUserId?: string | null; adminRole?: string | null }) {
     return {
       sub:        payload.sub,
       email:      payload.email,
@@ -20,6 +20,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       clientDbId: payload.clientId ?? null,
       clientId:   payload.clientId ?? null,
       adminUserId: payload.adminUserId ?? null,
+      adminRole:  payload.adminRole ?? null,
     };
   }
 }

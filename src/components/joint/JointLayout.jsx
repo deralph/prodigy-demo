@@ -7,6 +7,7 @@ import ContactButton from '../ContactButton';
 const navItems = [
   { to:'/joint/portfolio',   icon:BarChart3, label:'Asset Portfolio' },
   { to:'/joint/cash',        icon:Wallet,    label:'Cash Account' },
+  { to:'/joint/overview',    icon:Users,     label:'Joint Overview' },
   { to:'/joint/access',      icon:Lock,      label:'Access Control' },
   { to:'/joint/statements',  icon:FileText,  label:'Joint Statements' },
   { to:'/joint/ledger',      icon:BookOpen,  label:'Ledger' },

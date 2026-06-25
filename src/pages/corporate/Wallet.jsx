@@ -4,6 +4,7 @@ import useAppStore from '../../store/useAppStore';
 import PageHeader from '../../components/ui/PageHeader';
 import WalletBalanceCard from '../../components/wallet/WalletBalanceCard';
 import FundWalletModal from '../../components/wallet/FundWalletModal';
+import WithdrawModal from '../../components/wallet/WithdrawModal';
 import Toast from '../../components/ui/Toast';
 import DataTable from '../../components/ui/DataTable';
 import StatusBadge from '../../components/shared/StatusBadge';
@@ -22,6 +23,7 @@ const COLUMNS = [
 export default function CorporateWallet() {
   const { walletBalance, pendingBalance, transactions } = useAppStore();
   const [showFund, setShowFund] = useState(false);
+  const [showWithdraw, setShowWithdraw] = useState(false);
   const [toast, setToast]       = useState(null);
   const dismissToast             = useCallback(() => setToast(null), []);
 
@@ -47,7 +49,7 @@ export default function CorporateWallet() {
       <PageHeader title="Corporate Fund Management" subtitle="Bespoke Asset Management System V2.0" />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
-        <WalletBalanceCard balance={walletBalance} label="Corporate Wallet Balance" onFund={() => setShowFund(true)} fundLabel="Fund Corporate Wallet" />
+        <WalletBalanceCard balance={walletBalance} label="Corporate Wallet Balance" onFund={() => setShowFund(true)} onWithdraw={() => setShowWithdraw(true)} fundLabel="Fund Corporate Wallet" />
         <div className="card animate-in delay-2">
           <div style={{ fontSize: 10, color: 'var(--gray-400)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>Awaiting Confirmation</div>
           <div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 'clamp(20px,4vw,30px)', color: 'var(--navy)', marginBottom: 8 }}>{fmt(pendingBalance)}</div>
@@ -68,6 +70,15 @@ export default function CorporateWallet() {
       </div>
 
       {showFund && <FundWalletModal onClose={() => setShowFund(false)} onDone={handleDone} />}
+      {showWithdraw && (
+        <WithdrawModal
+          onClose={() => setShowWithdraw(false)}
+          onDone={({ type, amount }) => {
+            if (type === 'success') setToast({ type: 'success', title: 'Withdrawal Requested', message: `${fmt(amount)} withdrawal submitted for processing.` });
+          }}
+          maxAmount={walletBalance}
+        />
+      )}
       <Toast toast={toast} onDismiss={dismissToast} />
 
       <style>{`@media(max-width:600px){div[style*="grid-template-columns: 1fr 1fr"]{grid-template-columns:1fr!important;}}`}</style>

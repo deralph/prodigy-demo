@@ -142,23 +142,31 @@ export const MOCK = {
 // ── Mock PrismaService factory ────────────────────────────────────
 export function createMockPrisma() {
   const mock = {
-    authUser:    { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn() },
-    client:      { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn() },
+    authUser:    { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn() },
+    client:      { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn(), groupBy: jest.fn() },
     kycRecord:   { create: jest.fn(), update: jest.fn(), findUnique: jest.fn() },
-    kycDocument: { findMany: jest.fn(), upsert: jest.fn(), updateMany: jest.fn() },
+    kycDocument: { findMany: jest.fn(), findUnique: jest.fn(), upsert: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     identityVerification: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
-    product:     { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), count: jest.fn() },
-    investment:  { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn() },
-    walletTransaction: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn() },
+    product:     { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn() },
+    investment:  { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn(), groupBy: jest.fn() },
+    investmentEvent: { create: jest.fn(), findMany: jest.fn() },
+    walletTransaction: { findUnique: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
     approval:    { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
-    preTermination: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
+    preTermination: { findUnique: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     goal:        { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
     notification: { findMany: jest.fn(), create: jest.fn() },
     activityLog:  { findMany: jest.fn(), create: jest.fn() },
     auditLog:     { findMany: jest.fn(), create: jest.fn(), count: jest.fn() },
-    adminUser:    { findUnique: jest.fn(), findMany: jest.fn() },
+    auditToken:   { create: jest.fn(), findUnique: jest.fn() },
+    adminUser:    { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
     financeQueueItem: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
-    dividendEntry: { findMany: jest.fn() },
+    dividend:       { findMany: jest.fn(), create: jest.fn() },
+    dividendEntry:  { findMany: jest.fn(), create: jest.fn() },
+    orgLedger:      { findMany: jest.fn(), create: jest.fn() },
+    corporateEntity: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), count: jest.fn() },
+    staffLoan:      { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
+    loanRepayment:  { create: jest.fn() },
+    eodRun:         { findMany: jest.fn(), create: jest.fn() },
     $transaction: jest.fn(),
     $queryRaw: jest.fn().mockResolvedValue([]),
     $executeRaw: jest.fn().mockResolvedValue(1),
@@ -166,8 +174,12 @@ export function createMockPrisma() {
     $disconnect: jest.fn(),
   };
 
-  // Default: $transaction delegates to the callback with the mock itself
-  mock.$transaction.mockImplementation(async (fn: any) => fn(mock));
+  // Default: supports both Prisma $transaction forms —
+  // callback form: $transaction(async (tx) => ...) runs against the mock itself,
+  // array form:    $transaction([promiseA, promiseB]) resolves like Promise.all.
+  mock.$transaction.mockImplementation(async (arg: any) =>
+    Array.isArray(arg) ? Promise.all(arg) : arg(mock),
+  );
 
   return mock;
 }

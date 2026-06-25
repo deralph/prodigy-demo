@@ -39,11 +39,11 @@ describe('ProductsService', () => {
       );
     });
 
-    it('orders results by name ascending', async () => {
+    it('orders results by createdAt descending (newest products first)', async () => {
       prisma.product.findMany.mockResolvedValueOnce([]);
       await service.findAll();
       expect(prisma.product.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ orderBy: { name: 'asc' } }),
+        expect.objectContaining({ orderBy: { createdAt: 'desc' } }),
       );
     });
   });

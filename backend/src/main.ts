@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 // Prisma / PostgreSQL can return BigInt for count/sequence values;
@@ -9,6 +10,11 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Security headers (HSTS, X-Frame-Options, X-Content-Type-Options, etc.)
+  // — standard hardening for any production API, doubly important for a
+  // financial service handling money movement and PII.
+  app.use(helmet());
 
   // Global prefix
   app.setGlobalPrefix('api/v1');
@@ -29,19 +35,25 @@ async function bootstrap() {
     }),
   );
 
-  // Swagger docs
-  const config = new DocumentBuilder()
-    .setTitle('Prodigy Finance API')
-    .setDescription('Backend API for the Prodigy Finance platform')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+  // Swagger docs — only in non-production environments. Publicly exposing
+  // the full API schema (every admin route, every DTO field name) in
+  // production is unnecessary attack-surface for a financial application.
+  if (process.env.NODE_ENV !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('Prodigy Finance API')
+      .setDescription('Backend API for the Prodigy Finance platform')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   await app.listen(process.env.PORT ?? 3000);
   console.log(`🚀 Prodigy API running on http://localhost:${process.env.PORT ?? 3000}/api/v1`);
-  console.log(`📖 Swagger docs at http://localhost:${process.env.PORT ?? 3000}/api/docs`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`📖 Swagger docs at http://localhost:${process.env.PORT ?? 3000}/api/docs`);
+  }
 }
 
 bootstrap();

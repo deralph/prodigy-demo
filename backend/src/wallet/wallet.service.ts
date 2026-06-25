@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { lookupBankCodeByName } from './bank-codes';
+import { normalizeBankName, lookupBankCodeFallback } from './bank-codes';
 
 @Injectable()
 export class WalletService {
@@ -228,223 +228,469 @@ export class WalletService {
     });
   }
 
-  async requestWithdrawal(clientDbId: string, dto: { amountKobo: bigint; bankName: string; bankAcctNo: string; bankAcctName: string }, initiatedById?: string) {
+  async requestWithdrawal(
+    clientDbId: string,
+    requesterAuthUserId: string,
+    dto: { amountKobo: bigint; bankName: string; bankAcctNo: string; bankAcctName: string },
+  ) {
     const client = await this.prisma.client.findUnique({ where: { id: clientDbId } });
     if (!client) throw new NotFoundException('Client not found');
-    if (client.walletBalance < dto.amountKobo) throw new BadRequestException('Insufficient wallet balance');
 
-    return this.prisma.$transaction(async (tx) => {
+    // ── Basic input validation ──────────────────────────────────────────
+    // Without this guard a zero/negative amount would pass the balance check
+    // below (anything < a positive balance) and decrement/increment the
+    // ledger by a negative number — effectively minting wallet balance.
+    const amountKobo = BigInt(dto.amountKobo ?? 0);
+    if (amountKobo <= BigInt(0)) {
+      throw new BadRequestException('Withdrawal amount must be greater than zero.');
+    }
+    if (!dto.bankName?.trim() || !dto.bankAcctNo?.trim() || !dto.bankAcctName?.trim()) {
+      throw new BadRequestException('Destination bank name, account number, and account name are required.');
+    }
+    if (client.walletBalance < amountKobo) throw new BadRequestException('Insufficient wallet balance');
+
+    // ── Mandate enforcement ──────────────────────────────────────────────
+    // Single-signatory accounts (INDIVIDUAL, CORPORATE) have no co-signatory
+    // to enforce against, so the requester's own authorization is sufficient.
+    // JOINT accounts must strictly honour the mandate set at account
+    // creation:
+    //   - OR  → any one holder may authorise the withdrawal independently —
+    //           it goes straight to the admin disbursement queue.
+    //   - AND → any holder may *initiate* the request, but it cannot be
+    //           approved/disbursed until the OTHER holder separately logs
+    //           into their own account and co-signs it (see
+    //           cosignWithdrawal below). This is real second-signature
+    //           enforcement now that each joint holder has their own
+    //           login — not a checkbox one party can tick on the other's
+    //           behalf.
+    const mandate = client.mandateType ?? 'AND';
+    const isAndMandate = client.type === 'JOINT' && mandate === 'AND';
+
+    if (isAndMandate) {
+      // Guard against creating a co-sign request nobody can ever fulfil:
+      // if the secondary holder hasn't set up their own login yet, there
+      // is no second account to co-sign with.
+      const secondaryAuthUser = await this.prisma.authUser.findFirst({
+        where: { clientId: clientDbId, holderType: 'SECONDARY' },
+      });
+      if (!secondaryAuthUser) {
+        throw new BadRequestException(
+          'This account requires a co-signature from the secondary holder, but they have not yet set up their own login. Please ask them to use their invite link before requesting a withdrawal.',
+        );
+      }
+    }
+
+    const mandateNote = client.type === 'JOINT'
+      ? isAndMandate
+        ? 'Joint AND mandate — awaiting co-signature from the other holder'
+        : 'Joint OR mandate — single-holder authorization'
+      : 'Single-signatory authorization';
+
+    const result = await this.prisma.$transaction(async (tx) => {
       await tx.client.update({
         where: { id: clientDbId },
         data: {
-          walletBalance: { decrement: dto.amountKobo },
-          pendingBalance: { increment: dto.amountKobo },
+          walletBalance: { decrement: amountKobo },
+          pendingBalance: { increment: amountKobo },
         },
       });
-      const txn = await tx.walletTransaction.create({
+      return tx.walletTransaction.create({
         data: {
           txnRef: `WAL-WD-${Date.now()}`,
           clientId: clientDbId,
           type: 'WALLET_WITHDRAWAL',
           status: 'PENDING',
-          amountKobo: dto.amountKobo,
-          description: 'Withdrawal to bank account',
+          amountKobo,
+          description: `Withdrawal to bank account (${mandateNote})`,
           bankName: dto.bankName,
           bankAcctNo: dto.bankAcctNo,
           bankAcctName: dto.bankAcctName,
-          initiatedById: initiatedById,
+          requestedByAuthUserId: requesterAuthUserId,
+          requiresCoSign: isAndMandate,
         },
       });
+    });
 
-      // Create finance queue item for admin review/disbursement
-      await tx.financeQueueItem.create({
+    // Auditable trail of every withdrawal request and the mandate basis it
+    // was authorized under — never blocks the withdrawal if logging fails.
+    try {
+      await this.prisma.activityLog.create({
         data: {
-          fqRef: `FQ-WD-${Date.now()}`,
-          type: 'WALLET_WITHDRAWAL',
-          status: 'PENDING',
           clientId: clientDbId,
-          amountKobo: dto.amountKobo,
-          notes: JSON.stringify({ bankName: dto.bankName, bankAcctNo: dto.bankAcctNo, bankAcctName: dto.bankAcctName, walletTxnId: txn.id }),
-          requestedById: initiatedById,
+          action: 'WALLET_WITHDRAWAL_REQUESTED',
+          description: `Withdrawal of ₦${(Number(amountKobo) / 100).toLocaleString()} requested to ${dto.bankName} (${dto.bankAcctNo}) — ${mandateNote}`,
+          amountKobo,
+          metadata: { mandate, clientType: client.type, requiresCoSign: isAndMandate } as any,
         },
       });
+    } catch (err) {
+      this.logger.warn(`ActivityLog write failed for withdrawal request: ${(err as Error).message}`);
+    }
 
-      return txn;
+    return result;
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // ADMIN WITHDRAWAL APPROVAL → AUTOMATIC PAYSTACK DISBURSEMENT
+  // ════════════════════════════════════════════════════════════════════
+
+  /**
+   * Resolve a free-typed bank name to a Paystack bank code.
+   * 1) Try Paystack's live /bank list (cached in-memory for the process
+   *    lifetime — bank codes essentially never change).
+   * 2) Fall back to the static NIGERIAN_BANK_CODES table for common name
+   *    variants the live list's exact-match might miss (abbreviations,
+   *    punctuation, "Plc"/"Limited" suffixes, etc).
+   */
+  private bankListCache: { code: string; name: string }[] | null = null;
+
+  private async resolveBankCode(bankName: string, secretKey: string): Promise<string | null> {
+    const normalized = normalizeBankName(bankName);
+    if (!normalized) return null;
+
+    try {
+      if (!this.bankListCache) {
+        const resp = await fetch('https://api.paystack.co/bank?country=nigeria', {
+          headers: { Authorization: `Bearer ${secretKey}` },
+        });
+        const body = (await resp.json()) as any;
+        if (body?.status && Array.isArray(body.data)) {
+          this.bankListCache = body.data.map((b: any) => ({ code: b.code, name: b.name }));
+        }
+      }
+      const exact = this.bankListCache?.find((b) => normalizeBankName(b.name) === normalized);
+      if (exact) return exact.code;
+      const partial = this.bankListCache?.find(
+        (b) => normalizeBankName(b.name).includes(normalized) || normalized.includes(normalizeBankName(b.name)),
+      );
+      if (partial) return partial.code;
+    } catch (err: any) {
+      this.logger.warn(`[BANK_LOOKUP] Live Paystack bank list unavailable (${err.message}) — using static fallback table.`);
+    }
+
+    return lookupBankCodeFallback(bankName);
+  }
+
+  private async createTransferRecipient(
+    name: string,
+    accountNumber: string,
+    bankCode: string,
+    secretKey: string,
+  ): Promise<{ recipient_code: string }> {
+    const resp = await fetch('https://api.paystack.co/transferrecipient', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'nuban', name, account_number: accountNumber, bank_code: bankCode, currency: 'NGN' }),
+    });
+    const body = (await resp.json()) as any;
+    if (!body?.status) {
+      throw new BadRequestException(`Could not verify destination bank account: ${body?.message || 'Unknown error'}`);
+    }
+    return body.data;
+  }
+
+  private async initiateTransfer(
+    recipientCode: string,
+    amountKobo: bigint,
+    reason: string,
+    reference: string,
+    secretKey: string,
+  ): Promise<{ transfer_code?: string; status: string; reference: string }> {
+    const resp = await fetch('https://api.paystack.co/transfer', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'balance',
+        amount: Number(amountKobo),
+        recipient: recipientCode,
+        reason,
+        reference,
+      }),
+    });
+    const body = (await resp.json()) as any;
+    if (!body?.status) {
+      throw new BadRequestException(`Paystack transfer could not be initiated: ${body?.message || 'Unknown error'}`);
+    }
+    return { ...body.data, reference };
+  }
+
+  /**
+   * Admin/finance approves a PENDING withdrawal — this single action both
+   * approves AND triggers the Paystack disbursement automatically (no
+   * separate manual "pay out" step). On any failure (bad bank details,
+   * Paystack error, etc.) the withdrawal is marked FAILED and the funds are
+   * returned to the client's available wallet balance — a withdrawal must
+   * never leave money stuck in limbo.
+   */
+  async approveWithdrawal(transactionId: string, admin: { adminId: string; adminRole: string }) {
+    const txn = await this.prisma.walletTransaction.findUnique({ where: { id: transactionId } });
+    if (!txn) throw new NotFoundException('Transaction not found');
+    if (txn.type !== 'WALLET_WITHDRAWAL') throw new BadRequestException('This action only applies to withdrawal transactions.');
+    if (txn.status !== 'PENDING') throw new BadRequestException(`This withdrawal is already ${txn.status.toLowerCase()}.`);
+    if (txn.requiresCoSign && !txn.coSignedByAuthUserId) {
+      throw new BadRequestException(
+        'This withdrawal is still awaiting co-signature from the other account holder and cannot be approved yet.',
+      );
+    }
+
+    const adminName = await this.resolveAdminName(admin.adminId);
+    const secretKey = this.config.get<string>('PAYSTACK_SECRET_KEY');
+    const isDemoMode = !secretKey || secretKey.startsWith('sk_test') || process.env.NODE_ENV === 'test';
+    const transferRef = `WAL-WD-PAYOUT-${txn.id.slice(-8)}-${Date.now()}`;
+
+    try {
+      let transferCode: string | null = null;
+
+      if (isDemoMode) {
+        // Demo/test mode — simulate a successful payout without calling Paystack,
+        // matching the same demo-mode contract used for funding & BVN verification.
+        this.logger.log(`[WITHDRAWAL_APPROVE] Demo mode — simulating disbursement for txn=${txn.id}`);
+        transferCode = `DEMO-${transferRef}`;
+      } else {
+        const bankCode = await this.resolveBankCode(txn.bankName || '', secretKey);
+        if (!bankCode) {
+          throw new BadRequestException(
+            `Could not resolve a bank code for "${txn.bankName}". Please verify the bank name with the client and try again.`,
+          );
+        }
+        const recipient = await this.createTransferRecipient(txn.bankAcctName || '', txn.bankAcctNo || '', bankCode, secretKey);
+        const transfer = await this.initiateTransfer(recipient.recipient_code, txn.amountKobo, `Prodigy Finance withdrawal ${txn.txnRef}`, transferRef, secretKey);
+        transferCode = transfer.transfer_code || transferRef;
+      }
+
+      const updated = await this.prisma.$transaction(async (tx) => {
+        await tx.client.update({
+          where: { id: txn.clientId },
+          data: { pendingBalance: { decrement: txn.amountKobo } },
+        });
+        return tx.walletTransaction.update({
+          where: { id: txn.id },
+          data: {
+            status: 'SUCCESSFUL',
+            paystackTransferCode: transferCode,
+            initiatedById: admin.adminId,
+            processedAt: new Date(),
+            description: `${txn.description || 'Withdrawal'} — approved & disbursed by ${adminName}`,
+          },
+        });
+      });
+
+      await this.logWithdrawalEvent(txn, { ...admin, adminName }, 'WALLET_WITHDRAWAL_APPROVED', 'SUCCESS', transferCode);
+      return updated;
+    } catch (err: any) {
+      // Disbursement failed — return funds to the client's available balance
+      // rather than leaving them stranded in pendingBalance indefinitely.
+      const reason = err?.message || 'Disbursement failed';
+      const failed = await this.prisma.$transaction(async (tx) => {
+        await tx.client.update({
+          where: { id: txn.clientId },
+          data: {
+            pendingBalance: { decrement: txn.amountKobo },
+            walletBalance: { increment: txn.amountKobo },
+          },
+        });
+        return tx.walletTransaction.update({
+          where: { id: txn.id },
+          data: {
+            status: 'FAILED',
+            failureReason: reason,
+            initiatedById: admin.adminId,
+            processedAt: new Date(),
+            description: `${txn.description || 'Withdrawal'} — disbursement failed, funds returned to wallet`,
+          },
+        });
+      });
+      await this.logWithdrawalEvent(txn, { ...admin, adminName }, 'WALLET_WITHDRAWAL_FAILED', 'FAILED', null, reason);
+      this.logger.warn(`[WITHDRAWAL_APPROVE] Failed for txn=${txn.id}: ${reason}`);
+      return failed;
+    }
+  }
+
+  /** Admin/finance rejects a PENDING withdrawal — funds return to wallet balance immediately. */
+  async rejectWithdrawal(transactionId: string, admin: { adminId: string; adminRole: string }, reason: string) {
+    const txn = await this.prisma.walletTransaction.findUnique({ where: { id: transactionId } });
+    if (!txn) throw new NotFoundException('Transaction not found');
+    if (txn.type !== 'WALLET_WITHDRAWAL') throw new BadRequestException('This action only applies to withdrawal transactions.');
+    if (txn.status !== 'PENDING') throw new BadRequestException(`This withdrawal is already ${txn.status.toLowerCase()}.`);
+
+    const adminName = await this.resolveAdminName(admin.adminId);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.client.update({
+        where: { id: txn.clientId },
+        data: {
+          pendingBalance: { decrement: txn.amountKobo },
+          walletBalance: { increment: txn.amountKobo },
+        },
+      });
+      return tx.walletTransaction.update({
+        where: { id: txn.id },
+        data: {
+          status: 'REVERSED',
+          failureReason: reason || 'Rejected by admin',
+          initiatedById: admin.adminId,
+          processedAt: new Date(),
+          description: `${txn.description || 'Withdrawal'} — rejected by ${adminName}: ${reason || 'No reason given'}`,
+        },
+      });
+    });
+
+    await this.logWithdrawalEvent(txn, { ...admin, adminName }, 'WALLET_WITHDRAWAL_REJECTED', 'FAILED', null, reason);
+    return updated;
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // JOINT HOLDER CO-SIGNATURE (AND mandate)
+  // ════════════════════════════════════════════════════════════════════
+
+  /** Withdrawals on this client's account awaiting the *current* holder's co-signature (not their own request). */
+  async getPendingCosignForHolder(clientDbId: string, authUserId: string) {
+    return this.prisma.walletTransaction.findMany({
+      where: {
+        clientId: clientDbId,
+        type: 'WALLET_WITHDRAWAL',
+        status: 'PENDING',
+        requiresCoSign: true,
+        coSignedByAuthUserId: null,
+        requestedByAuthUserId: { not: authUserId },
+      },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  /** Finance-triggered disbursement for a finance queue item. Handles Paystack recipient creation and transfer. */
-  async disburseForFinanceItem(fqItemId: string, adminId?: string) {
-    const item = await this.prisma.financeQueueItem.findUnique({ where: { id: fqItemId } });
-    if (!item) throw new NotFoundException('Finance queue item not found');
-    if (item.status !== 'APPROVED') throw new BadRequestException('Finance item is not approved');
-
-    // Expect details in notes as JSON (created above)
-    let details: any = {};
-    try { details = JSON.parse(item.notes || '{}'); } catch {}
-
-    const walletTxnId = details.walletTxnId;
-    const walletTxn = walletTxnId ? await this.prisma.walletTransaction.findUnique({ where: { id: walletTxnId } }) : null;
-    if (!walletTxn) throw new NotFoundException('Wallet transaction not found for finance item');
-
-    const secretKey = this.config.get<string>('PAYSTACK_SECRET_KEY');
-    const isTestMode = !secretKey || secretKey.startsWith('sk_test');
-
-    // Helper to mark success and record processedAt
-    const markSuccess = async (txRef: string, transferResp?: any) => {
-      await this.prisma.$transaction([
-        this.prisma.walletTransaction.update({ where: { id: walletTxn.id }, data: { status: 'SUCCESSFUL', processedAt: new Date(), paystackRef: transferResp?.data?.reference ?? txRef } }),
-        this.prisma.client.update({ where: { id: walletTxn.clientId }, data: { pendingBalance: { decrement: walletTxn.amountKobo } } }),
-        this.prisma.financeQueueItem.update({ where: { id: fqItemId }, data: { status: 'DISBURSED', approvedById: adminId, approvedAt: new Date() } }),
-      ]);
-      // Logging: activity + audit
-      try {
-        await this.prisma.activityLog.create({
-          data: {
-            clientId: walletTxn.clientId,
-            action: 'WALLET_WITHDRAWAL_DISBURSED',
-            description: `₦${(Number(walletTxn.amountKobo) / 100).toLocaleString()} disbursed to ${walletTxn.bankAcctName} (${walletTxn.bankAcctNo}) — ref: ${txRef}`,
-            amountKobo: walletTxn.amountKobo,
-            metadata: { transferResp: transferResp?.data || transferResp, fqItemId } as any,
-          },
-        });
-      } catch (err) {
-        this.logger.warn(`ActivityLog write failed: ${(err as Error).message}`);
-      }
-      try {
-        await this.prisma.auditLog.create({
-          data: {
-            adminName: 'Finance',
-            adminRole: 'finance',
-            action: 'WALLET_WITHDRAWAL_DISBURSED',
-            targetEntity: walletTxn.clientId,
-            category: 'FINANCE',
-            metadata: { transferResp: transferResp?.data || transferResp, fqItemId, amountKobo: Number(walletTxn.amountKobo) } as any,
-          },
-        });
-      } catch (err) {
-        this.logger.warn(`AuditLog write failed: ${(err as Error).message}`);
-      }
-    };
-
-    // Helper to rollback on failure
-    const markFailedAndRefund = async (reason: string) => {
-      await this.prisma.$transaction([
-        this.prisma.walletTransaction.update({ where: { id: walletTxn.id }, data: { status: 'REVERSED', description: `Disbursement failed: ${reason}`, processedAt: new Date() } }),
-        this.prisma.client.update({ where: { id: walletTxn.clientId }, data: { walletBalance: { increment: walletTxn.amountKobo }, pendingBalance: { decrement: walletTxn.amountKobo } } }),
-        this.prisma.financeQueueItem.update({ where: { id: fqItemId }, data: { status: 'REJECTED', rejectedAt: new Date(), rejectionReason: reason } }),
-      ]);
-      // Log refund and audit
-      try {
-        await this.prisma.activityLog.create({
-          data: {
-            clientId: walletTxn.clientId,
-            action: 'WALLET_WITHDRAWAL_REFUNDED',
-            description: `Withdrawal of ₦${(Number(walletTxn.amountKobo) / 100).toLocaleString()} refunded due to: ${reason}`,
-            amountKobo: walletTxn.amountKobo,
-            metadata: { reason, fqItemId } as any,
-          },
-        });
-      } catch (err) {
-        this.logger.warn(`ActivityLog write failed: ${(err as Error).message}`);
-      }
-      try {
-        await this.prisma.auditLog.create({
-          data: {
-            adminName: 'Finance',
-            adminRole: 'finance',
-            action: 'WALLET_WITHDRAWAL_REFUNDED',
-            targetEntity: walletTxn.clientId,
-            category: 'FINANCE',
-            metadata: { reason, fqItemId, amountKobo: Number(walletTxn.amountKobo) } as any,
-          },
-        });
-      } catch (err) {
-        this.logger.warn(`AuditLog write failed: ${(err as Error).message}`);
-      }
-      // Create org ledger refund entry
-      try {
-        await this.prisma.orgLedger.create({
-          data: {
-            entryRef: `ORG-WD-RF-${Date.now()}`,
-            type: 'WALLET_WITHDRAWAL_REFUND',
-            description: `Refund for failed withdrawal (fq: ${fqItemId})`,
-            amountKobo: walletTxn.amountKobo,
-            clientId: walletTxn.clientId,
-            fqItemId,
-            recordedById: adminId,
-          },
-        });
-      } catch (err) {
-        this.logger.warn(`OrgLedger write failed: ${(err as Error).message}`);
-      }
-    };
-
-    if (isTestMode) {
-      // Demo mode: mark successful without calling Paystack
-      await markSuccess(`DEMO-${Date.now()}`, { data: { reference: `DEMO-${Date.now()}` } });
-      return { status: 'disbursed', demo: true };
+  /** The other joint holder approves a withdrawal — this is the real "second signature". */
+  async cosignWithdrawal(transactionId: string, clientDbId: string, authUserId: string) {
+    const txn = await this.prisma.walletTransaction.findUnique({ where: { id: transactionId } });
+    if (!txn || txn.clientId !== clientDbId) throw new NotFoundException('Withdrawal request not found');
+    if (txn.type !== 'WALLET_WITHDRAWAL') throw new BadRequestException('This action only applies to withdrawal requests.');
+    if (!txn.requiresCoSign) throw new BadRequestException('This withdrawal does not require a co-signature.');
+    if (txn.coSignedByAuthUserId) throw new BadRequestException('This withdrawal has already been co-signed.');
+    if (txn.status !== 'PENDING') throw new BadRequestException(`This withdrawal is already ${txn.status.toLowerCase()}.`);
+    if (txn.requestedByAuthUserId === authUserId) {
+      throw new BadRequestException('You initiated this withdrawal — the other account holder must co-sign it, not you.');
     }
 
-    // Live mode: perform Paystack recipient creation + transfer
+    const updated = await this.prisma.walletTransaction.update({
+      where: { id: txn.id },
+      data: {
+        coSignedByAuthUserId: authUserId,
+        coSignedAt: new Date(),
+        description: `${txn.description || 'Withdrawal'} — co-signed, awaiting admin disbursement`,
+      },
+    });
+
     try {
-        // Resolve bank code from Paystack banks list; fallback to local mapping if not found
-        let bankCode: string | undefined = details.bankCode;
-        try {
-          const banksResp = await fetch('https://api.paystack.co/bank?country=nigeria', { headers: { Authorization: `Bearer ${secretKey}` } });
-          const banksBody = await banksResp.json();
-          const bank = (banksBody?.data || []).find((b: any) => (details.bankName || '').toLowerCase().includes((b.name || '').toLowerCase()));
-          bankCode = bank?.code || bankCode;
-        } catch (err) {
-          this.logger.warn(`Could not fetch Paystack bank list: ${(err as Error).message}`);
-        }
-        if (!bankCode) {
-          bankCode = lookupBankCodeByName(details.bankName || walletTxn.bankName);
-        }
-        if (!bankCode) return await markFailedAndRefund('Unknown bank code');
-
-      // Create transfer recipient
-      const recipientResp = await fetch('https://api.paystack.co/transferrecipient', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'nuban', name: details.bankAcctName || walletTxn.bankAcctName, account_number: details.bankAcctNo || walletTxn.bankAcctNo, bank_code: bankCode, currency: 'NGN' }),
+      await this.prisma.activityLog.create({
+        data: {
+          clientId: clientDbId,
+          action: 'WALLET_WITHDRAWAL_COSIGNED',
+          description: `Withdrawal ${txn.txnRef} co-signed by the second account holder — now ready for review.`,
+          amountKobo: txn.amountKobo,
+          metadata: { txnRef: txn.txnRef, coSignedByAuthUserId: authUserId } as any,
+        },
       });
-      const recipientBody = await recipientResp.json();
-      if (!recipientBody?.status) return await markFailedAndRefund(recipientBody?.message || 'Recipient creation failed');
+    } catch (err) {
+      this.logger.warn(`ActivityLog write failed for co-sign: ${(err as Error).message}`);
+    }
 
-      const recipientCode = recipientBody.data.recipient_code;
-      // Initiate transfer
-      const transferResp = await fetch('https://api.paystack.co/transfer', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: 'balance', amount: Number(walletTxn.amountKobo), recipient: recipientCode, reason: 'Withdrawal to bank account' }),
+    return updated;
+  }
+
+  /** The other joint holder declines a withdrawal — funds return to wallet balance immediately. */
+  async declineCosignWithdrawal(transactionId: string, clientDbId: string, authUserId: string, reason?: string) {
+    const txn = await this.prisma.walletTransaction.findUnique({ where: { id: transactionId } });
+    if (!txn || txn.clientId !== clientDbId) throw new NotFoundException('Withdrawal request not found');
+    if (txn.type !== 'WALLET_WITHDRAWAL') throw new BadRequestException('This action only applies to withdrawal requests.');
+    if (!txn.requiresCoSign) throw new BadRequestException('This withdrawal does not require a co-signature.');
+    if (txn.coSignedByAuthUserId) throw new BadRequestException('This withdrawal has already been co-signed.');
+    if (txn.status !== 'PENDING') throw new BadRequestException(`This withdrawal is already ${txn.status.toLowerCase()}.`);
+    if (txn.requestedByAuthUserId === authUserId) {
+      throw new BadRequestException('You initiated this withdrawal — only the other account holder can decline it.');
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.client.update({
+        where: { id: clientDbId },
+        data: {
+          pendingBalance: { decrement: txn.amountKobo },
+          walletBalance: { increment: txn.amountKobo },
+        },
       });
-      const transferBody = await transferResp.json();
-      if (!transferBody?.status) return await markFailedAndRefund(transferBody?.message || 'Transfer initiation failed');
+      return tx.walletTransaction.update({
+        where: { id: txn.id },
+        data: {
+          status: 'REVERSED',
+          failureReason: reason || 'Declined by co-signing holder',
+          description: `${txn.description || 'Withdrawal'} — declined by the other account holder${reason ? `: ${reason}` : ''}`,
+        },
+      });
+    });
 
-      // Success — create org ledger + audit logs and mark transaction
-      await markSuccess(transferBody.data.reference, transferBody);
-      // Write org ledger entry for disbursement (outflow)
-      try {
-        await this.prisma.orgLedger.create({
-          data: {
-            entryRef: `ORG-WD-${Date.now()}`,
-            type: 'WALLET_WITHDRAWAL_DISBURSED',
-            description: `Withdrawal disbursed to ${walletTxn.bankAcctName} (${walletTxn.bankAcctNo}) via Paystack`,
-            amountKobo: walletTxn.amountKobo,
-            clientId: walletTxn.clientId,
-            fqItemId: fqItemId,
-            recordedById: adminId,
-          },
-        });
-      } catch (err) {
-        this.logger.warn(`OrgLedger write failed: ${(err as Error).message}`);
-      }
+    try {
+      await this.prisma.activityLog.create({
+        data: {
+          clientId: clientDbId,
+          action: 'WALLET_WITHDRAWAL_COSIGN_DECLINED',
+          description: `Withdrawal ${txn.txnRef} declined by the second account holder — funds returned to wallet.`,
+          amountKobo: txn.amountKobo,
+          metadata: { txnRef: txn.txnRef, declinedByAuthUserId: authUserId, reason } as any,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(`ActivityLog write failed for co-sign decline: ${(err as Error).message}`);
+    }
 
-      return { status: 'disbursed', reference: transferBody.data.reference };
-    } catch (err: any) {
-      await markFailedAndRefund(err?.message || 'Transfer error');
-      throw err;
+    return updated;
+  }
+
+  /** Look up an admin's display name for audit/ledger descriptions, with a safe fallback. */
+  private async resolveAdminName(adminId?: string | null): Promise<string> {
+    if (!adminId) return 'Unknown Admin';
+    try {
+      const adminUser = await this.prisma.adminUser.findUnique({ where: { id: adminId } });
+      return adminUser?.name || 'Unknown Admin';
+    } catch {
+      return 'Unknown Admin';
+    }
+  }
+
+  /** Auditable trail (admin-facing AuditLog + client-facing ActivityLog) for every withdrawal decision. */
+  private async logWithdrawalEvent(
+    txn: { id: string; clientId: string; amountKobo: bigint; txnRef: string },
+    admin: { adminId: string; adminName: string; adminRole: string },
+    action: string,
+    outcome: 'SUCCESS' | 'FAILED',
+    transferCode?: string | null,
+    reason?: string,
+  ) {
+    const amountNaira = (Number(txn.amountKobo) / 100).toLocaleString();
+    const description =
+      outcome === 'SUCCESS'
+        ? `₦${amountNaira} withdrawal disbursed via Paystack (ref: ${txn.txnRef}${transferCode ? `, transfer: ${transferCode}` : ''})`
+        : `₦${amountNaira} withdrawal ${action === 'WALLET_WITHDRAWAL_REJECTED' ? 'rejected' : 'failed'} (ref: ${txn.txnRef})${reason ? ` — ${reason}` : ''}`;
+
+    try {
+      await this.prisma.activityLog.create({
+        data: { clientId: txn.clientId, action, description, amountKobo: txn.amountKobo, metadata: { txnRef: txn.txnRef, transferCode, reason, outcome } as any },
+      });
+    } catch (err) {
+      this.logger.warn(`ActivityLog write failed: ${(err as Error).message}`);
+    }
+
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          adminId: admin.adminId,
+          adminName: admin.adminName,
+          adminRole: admin.adminRole,
+          action,
+          targetEntity: txn.id,
+          category: 'FINANCE',
+          metadata: { clientId: txn.clientId, txnRef: txn.txnRef, amountKobo: Number(txn.amountKobo), transferCode, reason, outcome } as any,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(`AuditLog write failed: ${(err as Error).message}`);
     }
   }
 

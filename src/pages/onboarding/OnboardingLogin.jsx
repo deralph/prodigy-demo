@@ -15,13 +15,25 @@ import NibssVerifyField     from '../../components/auth/NibssVerifyField';
 
 /* ── Forgot Password Modal (2-step: email → OTP + new password) ── */
 function ForgotPasswordModal({ onClose }) {
-  const [step,     setStep]     = useState('email'); // email | otp | done
-  const [email,    setEmail]    = useState('');
-  const [otp,      setOtp]      = useState('');
-  const [pass,     setPass]     = useState('');
-  const [confirm,  setConfirm]  = useState('');
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState('');
+  const [step,    setStep]    = useState('email'); // email | otp | done
+  const [email,   setEmail]   = useState('');
+  const [otp,     setOtp]     = useState('');
+  const [pass,    setPass]    = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [showPw,  setShowPw]  = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [error,   setError]   = useState('');
+  const [resendMsg, setResendMsg] = useState('');
+
+  const pwStrength = (() => {
+    if (!pass) return null;
+    const score = [pass.length >= 8, /[A-Z]/.test(pass), /[a-z]/.test(pass), /\d/.test(pass), /[^A-Za-z0-9]/.test(pass)].filter(Boolean).length;
+    if (score <= 2) return { label: 'Weak',   color: '#ef4444', width: '30%' };
+    if (score <= 3) return { label: 'Fair',   color: '#f97316', width: '55%' };
+    if (score <= 4) return { label: 'Good',   color: '#eab308', width: '75%' };
+    return           { label: 'Strong', color: '#22c55e', width: '100%' };
+  })();
 
   const sendOtp = async e => {
     e.preventDefault();
@@ -36,8 +48,23 @@ function ForgotPasswordModal({ onClose }) {
     setLoading(false);
   };
 
+  const resendOtp = async () => {
+    setResending(true); setResendMsg(''); setError('');
+    try {
+      await authApi.resendOtp(email);
+      setResendMsg('A new code has been sent to your email.');
+      setOtp('');
+    } catch (err) {
+      setError(err?.message || 'Could not resend. Please try again.');
+    }
+    setResending(false);
+  };
+
   const resetPass = async e => {
     e.preventDefault();
+    if (!(/[A-Z]/.test(pass) && /[a-z]/.test(pass) && /\d/.test(pass))) {
+      setError('Password must include uppercase, lowercase, and a number.'); return;
+    }
     if (pass !== confirm) { setError('Passwords do not match.'); return; }
     if (pass.length < 8)  { setError('Password must be at least 8 characters.'); return; }
     setLoading(true); setError('');
@@ -45,83 +72,67 @@ function ForgotPasswordModal({ onClose }) {
       await authApi.resetPassword(email, otp.trim(), pass);
       setStep('done');
     } catch (err) {
-      const msg = err?.message || '';
-      setError(msg || 'Reset failed. Check your OTP and try again.');
+      setError(err?.message || 'Reset failed. Check your code and try again.');
     }
     setLoading(false);
   };
 
   return (
     <div style={{ position:'fixed',inset:0,zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.5)' }} onClick={onClose}>
-      <div style={{ background:'white',borderRadius:16,maxWidth:420,width:'90%',boxShadow:'0 24px 48px rgba(0,0,0,0.2)',overflow:'hidden' }} onClick={e=>e.stopPropagation()}>
-        {/* Header */}
+      <div style={{ background:'white',borderRadius:16,maxWidth:430,width:'90%',boxShadow:'0 24px 48px rgba(0,0,0,0.2)',overflow:'hidden' }} onClick={e=>e.stopPropagation()}>
         <div style={{ padding:'18px 22px',background:'var(--navy)',display:'flex',alignItems:'center',justifyContent:'space-between' }}>
           <div>
             <div style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:16,color:'white' }}>Reset Password</div>
             <div style={{ fontSize:10,color:'rgba(255,255,255,0.5)',letterSpacing:'0.08em',textTransform:'uppercase',marginTop:2 }}>
-              {step==='email' ? 'Step 1 of 2 — Enter your email' : step==='otp' ? 'Step 2 of 2 — Enter OTP + new password' : 'Password updated'}
+              {step==='email' ? 'Step 1 of 2 — Enter your email' : step==='otp' ? 'Step 2 of 2 — Enter code + new password' : 'Password updated'}
             </div>
           </div>
           <button onClick={onClose} style={{ background:'rgba(255,255,255,0.1)',border:'none',borderRadius:'50%',width:30,height:30,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'white' }}><X size={14}/></button>
         </div>
 
         <div style={{ padding:'24px 22px' }}>
-          {/* Step 1: email */}
           {step==='email' && (
             <form onSubmit={sendOtp} style={{ display:'flex',flexDirection:'column',gap:16 }}>
               <div style={{ fontSize:12,color:'var(--gray-500)',lineHeight:1.6 }}>
-                Enter your registered email address. We will send a 6-digit OTP to reset your password.
+                Enter your registered email address. We'll send a 6-digit code to reset your password.
               </div>
-              <AuthInput
-                label="Registered Email Address"
-                icon={Mail}
-                type="email"
-                placeholder="you@email.com"
-                value={email}
-                onChange={e=>setEmail(e.target.value)}
-              />
+              <AuthInput label="Registered Email Address" icon={Mail} type="email" placeholder="you@email.com" value={email} onChange={e=>setEmail(e.target.value)} />
               {error && <div style={{ fontSize:12,color:'var(--red)',background:'rgba(239,68,68,0.08)',padding:'10px 12px',borderRadius:8 }}>{error}</div>}
-              <AuthSubmitButton label="SEND OTP" loading={loading} loadingLabel="Sending…" disabled={!email} />
+              <AuthSubmitButton label="SEND RESET CODE" loading={loading} loadingLabel="Sending…" disabled={!email} />
             </form>
           )}
 
-          {/* Step 2: OTP + new password */}
           {step==='otp' && (
             <form onSubmit={resetPass} style={{ display:'flex',flexDirection:'column',gap:14 }}>
               <div style={{ padding:'10px 14px',background:'rgba(34,197,94,0.07)',border:'1px solid rgba(34,197,94,0.2)',borderRadius:8,fontSize:12,color:'var(--navy)' }}>
-                An OTP has been sent to <strong>{email}</strong>. Check your inbox (and spam folder). It expires in 10 minutes.
+                A 6-digit code has been sent to <strong>{email}</strong>. Check your inbox and spam folder. It expires in 15 minutes.
               </div>
-              <AuthInput
-                label="6-Digit OTP"
-                icon={Shield}
-                type="text"
-                placeholder="123456"
-                value={otp}
-                onChange={e=>setOtp(e.target.value.replace(/\D/g,'').slice(0,6))}
-              />
-              <AuthInput
-                label="New Password"
-                icon={Lock}
-                type="password"
-                placeholder="min 8 characters"
-                value={pass}
-                onChange={e=>setPass(e.target.value)}
-              />
-              <AuthInput
-                label="Confirm New Password"
-                icon={Lock}
-                type="password"
-                placeholder="repeat new password"
-                value={confirm}
-                onChange={e=>setConfirm(e.target.value)}
-              />
+              {resendMsg && <div style={{ fontSize:11,color:'var(--green)',background:'rgba(34,197,94,0.08)',padding:'8px 12px',borderRadius:8 }}>{resendMsg}</div>}
+              <AuthInput label="6-Digit Code" icon={Shield} type="text" placeholder="123456" value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,'').slice(0,6))} />
+              <div>
+                <AuthInput label="New Password" icon={Lock} type={showPw ? 'text' : 'password'} placeholder="min 8 characters" value={pass} onChange={e=>setPass(e.target.value)} />
+                {pwStrength && (
+                  <div style={{ marginTop:6 }}>
+                    <div style={{ height:4,borderRadius:2,background:'var(--gray-100)',overflow:'hidden' }}>
+                      <div style={{ height:'100%',width:pwStrength.width,background:pwStrength.color,transition:'width 0.3s,background 0.3s' }} />
+                    </div>
+                    <div style={{ fontSize:10,color:pwStrength.color,marginTop:3,fontWeight:700 }}>{pwStrength.label}</div>
+                  </div>
+                )}
+              </div>
+              <AuthInput label="Confirm New Password" icon={Lock} type={showPw ? 'text' : 'password'} placeholder="repeat new password" value={confirm} onChange={e=>setConfirm(e.target.value)} />
+              <label style={{ display:'flex',alignItems:'center',gap:8,fontSize:11,color:'var(--gray-400)',cursor:'pointer' }}>
+                <input type="checkbox" checked={showPw} onChange={e=>setShowPw(e.target.checked)} /> Show passwords
+              </label>
+              {confirm && pass !== confirm && <div style={{ fontSize:11,color:'var(--red)' }}>Passwords don't match</div>}
               {error && <div style={{ fontSize:12,color:'var(--red)',background:'rgba(239,68,68,0.08)',padding:'10px 12px',borderRadius:8 }}>{error}</div>}
               <AuthSubmitButton label="SET NEW PASSWORD" loading={loading} loadingLabel="Updating…" disabled={otp.length!==6||!pass||!confirm} />
-              <button type="button" onClick={()=>{setStep('email');setOtp('');setPass('');setConfirm('');setError('');}} style={{ background:'none',border:'none',cursor:'pointer',color:'#3b6ef8',fontSize:11,fontWeight:700,textAlign:'center' }}>← Resend OTP</button>
+              <button type="button" onClick={resendOtp} disabled={resending} style={{ background:'none',border:'none',cursor:'pointer',color:'#3b6ef8',fontSize:11,fontWeight:700,textAlign:'center',opacity:resending?0.6:1 }}>
+                {resending ? 'Sending…' : "Didn't get the code? Resend"}
+              </button>
             </form>
           )}
 
-          {/* Done */}
           {step==='done' && (
             <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:16,padding:'12px 0' }}>
               <CheckCircle size={48} color="var(--green)" strokeWidth={1.5} />
@@ -397,7 +408,7 @@ function IndividualCreate({ onBack }) {
     setRegLoading(true); setRegError('');
     try {
       const registerData = accountType === 'joint'
-        ? { accountType: 'joint', primaryName: holders[0].name, email: holders[0].email, password: holders[0].password || '', secondaryName: holders[1]?.name, secondaryEmail: holders[1]?.email, secondaryPhone: holders[1]?.phone, phone: holders[0].phone, bvn: holders[0].bvn, holderIdentities: holders.map(h => ({ name: h.name, bvn: h.bvn, email: h.email, phone: h.phone })) }
+        ? { accountType: 'joint', primaryName: holders[0].name, email: holders[0].email, password: holders[0].password || '', secondaryName: holders[1]?.name, secondaryEmail: holders[1]?.email, phone: holders[0].phone, bvn: holders[0].bvn, holderIdentities: holders.map(h => ({ name: h.name, bvn: h.bvn, email: h.email, phone: h.phone })) }
         : { accountType: 'single', primaryName: single.name, email: single.email, phone: single.phone, password: single.password, bvn: single.bvn };
 
       await authApi.registerIndividual(registerData);

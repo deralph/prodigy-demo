@@ -74,6 +74,7 @@ describe('ApprovalsService', () => {
     it('also activates investment when type is SUBSCRIPTION', async () => {
       prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, type: 'SUBSCRIPTION', investmentId: IDS.INVESTMENT } as any);
       prisma.approval.update.mockResolvedValueOnce({ ...MOCK.approval, status: 'APPROVED' } as any);
+      prisma.investment.findUnique.mockResolvedValueOnce(MOCK.investment as any);
       prisma.investment.update.mockResolvedValueOnce({ ...MOCK.investment, status: 'ACTIVE' } as any);
 
       await service.approve(IDS.APPROVAL, IDS.ADMIN_USER);
@@ -106,6 +107,7 @@ describe('ApprovalsService', () => {
     it('also rejects the investment when type is SUBSCRIPTION', async () => {
       prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, type: 'SUBSCRIPTION', investmentId: IDS.INVESTMENT } as any);
       prisma.approval.update.mockResolvedValueOnce({ ...MOCK.approval, status: 'REJECTED' } as any);
+      prisma.investment.findUnique.mockResolvedValueOnce(MOCK.investment as any);
       prisma.investment.update.mockResolvedValueOnce({ ...MOCK.investment, status: 'REJECTED' } as any);
 
       await service.reject(IDS.APPROVAL, IDS.ADMIN_USER, 'Reason');

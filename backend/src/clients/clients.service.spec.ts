@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { ClientsService } from './clients.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { createMockPrisma, IDS, MOCK } from '../../test/helpers/mock-prisma';
@@ -63,6 +63,13 @@ describe('ClientsService', () => {
       prisma.client.findUnique.mockResolvedValueOnce(null);
       await expect(service.findOne('DOES-NOT-EXIST')).rejects.toThrow(NotFoundException);
     });
+
+    it('never requests raw kycDocuments — those are PII and must only flow through the role-gated KYC endpoints', async () => {
+      prisma.client.findUnique.mockResolvedValueOnce({ ...MOCK.client, investments: [] } as any);
+      await service.findOne('CLI-001');
+      const callArgs = prisma.client.findUnique.mock.calls[0][0];
+      expect(callArgs.include.kycDocuments).toBeUndefined();
+    });
   });
 
   // ── getMe ─────────────────────────────────────────────────────────
@@ -96,14 +103,35 @@ describe('ClientsService', () => {
     });
   });
 
-  // ── updateMandate ─────────────────────────────────────────────────
-  describe('updateMandate()', () => {
-    it('updates mandateType for joint client', async () => {
+  // ── updateMandateByClientRef ─────────────────────────────────────
+  describe('updateMandateByClientRef()', () => {
+    it('updates mandateType for joint client and writes an audit log', async () => {
+      prisma.client.findUnique.mockResolvedValueOnce({ ...MOCK.client, mandateType: 'AND' } as any);
       prisma.client.update.mockResolvedValueOnce({ ...MOCK.client, mandateType: 'OR' } as any);
-      const result = await service.updateMandate(IDS.CLIENT_DB, 'OR');
+      prisma.auditLog.create.mockResolvedValueOnce({});
+
+      const result = await service.updateMandateByClientRef('CLI-001', 'OR', { adminId: IDS.ADMIN_USER, adminRole: 'COMPLIANCE' });
+
+      expect(result.mandateType).toBe('OR');
       expect(prisma.client.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { mandateType: 'OR' } }),
       );
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ action: 'MANDATE_TYPE_CHANGED' }) }),
+      );
+    });
+
+    it('throws NotFoundException when clientRef not found', async () => {
+      prisma.client.findUnique.mockResolvedValueOnce(null);
+      await expect(
+        service.updateMandateByClientRef('BAD-REF', 'OR', { adminId: IDS.ADMIN_USER, adminRole: 'COMPLIANCE' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects an invalid mandate type', async () => {
+      await expect(
+        service.updateMandateByClientRef('CLI-001', 'INVALID' as any, { adminId: IDS.ADMIN_USER, adminRole: 'COMPLIANCE' }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });

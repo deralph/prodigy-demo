@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { ClientsModule } from './clients/clients.module';
@@ -24,6 +25,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { ActivityModule } from './activity/activity.module';
 import { StatementsModule } from './statements/statements.module';
 import { NibssModule } from './nibss/nibss.module';
+import { GoalsModule } from './goals/goals.module';
 
 @Module({
   imports: [
@@ -57,6 +59,13 @@ import { NibssModule } from './nibss/nibss.module';
     ActivityModule,
     StatementsModule,
     NibssModule,
+    GoalsModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
   ],
 })
 export class AppModule {}

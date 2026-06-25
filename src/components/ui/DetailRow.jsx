@@ -9,13 +9,13 @@ import React from 'react';
  *   noBorder   — suppress bottom border (optional)
  *   valueStyle — extra inline styles for value cell (optional)
  */
-export default function DetailRow({ label, value, noBorder = false, valueStyle = {} }) {
+export default function DetailRow({ label, value, noBorder = false, compact = false, valueStyle = {} }) {
   return (
     <div style={{
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'center',
-      padding: '10px 0',
+      padding: compact ? '6px 0' : '10px 0',
       borderBottom: noBorder ? 'none' : '1px solid var(--gray-100)',
     }}>
       <span style={{

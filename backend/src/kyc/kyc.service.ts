@@ -148,6 +148,46 @@ export class KycService {
     });
   }
 
+  // Admin: get KYC for a specific client — wraps getMyKyc with an audit trail
+  // entry so every admin view of a client's KYC documents is recorded.
+  async getClientKycForAdmin(clientId: string, admin: { adminUserId?: string | null; adminRole?: string | null }) {
+    const result = await this.getMyKyc(clientId);
+    await this.logKycAccess(clientId, admin, 'VIEW_CLIENT_KYC');
+    return result;
+  }
+
+  // Admin: get full compliance board — also auditable since it surfaces
+  // every client's KYC document list and status in one call.
+  async getComplianceBoardForAdmin(admin: { adminUserId?: string | null; adminRole?: string | null }) {
+    const result = await this.getComplianceBoard();
+    await this.logKycAccess(null, admin, 'VIEW_COMPLIANCE_BOARD');
+    return result;
+  }
+
+  private async logKycAccess(
+    clientId: string | null,
+    admin: { adminUserId?: string | null; adminRole?: string | null },
+    action: string,
+  ) {
+    try {
+      const adminUser = admin.adminUserId
+        ? await this.prisma.adminUser.findUnique({ where: { id: admin.adminUserId } })
+        : null;
+      await this.prisma.auditLog.create({
+        data: {
+          adminId: admin.adminUserId ?? null,
+          adminName: adminUser?.name ?? 'Unknown Admin',
+          adminRole: admin.adminRole ?? 'unknown',
+          action,
+          targetEntity: clientId ?? 'ALL_CLIENTS',
+          category: 'KYC',
+        },
+      });
+    } catch {
+      // Never block a read because the audit write failed.
+    }
+  }
+
   // Admin: approve KYC
   async approveKyc(clientId: string, adminId: string) {
     await this.prisma.kycRecord.update({

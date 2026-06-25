@@ -9,7 +9,7 @@ export const ADMIN_PERMISSIONS = {
   super_admin:  ['all'],
   operations:   ['clients','loans','kyc','risk','transactions','book_instrument','approval_hub','pretermination','product_setup','plans','accruals','eod','client_investments','analytics','reports'],
   compliance:   ['kyc','audit_trail','risk'],
-  finance:      ['transactions','finance_queue','reports','analytics','client_investments'],
+  finance:      ['transactions','finance_queue','withdrawals','reports','analytics','client_investments'],
   audit:        ['audit_trail','reports','transactions'],
   investment:   ['plans','book_instrument','approval_hub','pretermination','product_setup','accruals','client_investments','analytics','reports'],
 };
@@ -19,6 +19,7 @@ export const ADMIN_PERMISSIONS = {
 const INITIAL_STATE = {
   plans: [],
   clients: [],
+  clientProfile: null,
   approvals: [],
   allTransactions: [],
   instruments: [],
@@ -87,6 +88,34 @@ const mapAdminUser = (u) => ({
   ...u,
   adminRole: u.role?.toLowerCase() || 'operations',
   status:    u.status?.toLowerCase() || 'active',
+});
+
+const mapClientProfile = (c) => ({
+  id: c.id,
+  clientId: c.clientRef,
+  clientRef: c.clientRef,
+  name: c.name,
+  email: c.email,
+  phone: c.phone,
+  address: c.address,
+  type: c.type?.toLowerCase(),
+  status: c.status === 'ACTIVE' ? 'verified' : c.status === 'SUSPENDED' ? 'suspended' : 'pending',
+  accountStatus: c.status,
+  kyc: c.kycRecord?.status === 'APPROVED' ? 'approved' : c.kycRecord?.status === 'PENDING' ? 'pending' : 'flagged',
+  kycRecord: c.kycRecord,
+  riskProfile: c.riskProfile,
+  walletBalance: Number(c.walletBalance || 0) / 100,
+  pendingBalance: Number(c.pendingBalance || 0) / 100,
+  virtualAccountNo: c.virtualAccountNo ?? null,
+  virtualAccountBank: c.virtualAccountBank ?? null,
+  joined: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-GB') : '—',
+  createdAt: c.createdAt,
+  secondaryName: c.secondaryName,
+  secondaryEmail: c.secondaryEmail,
+  mandateType: c.mandateType,
+  rcNumber: c.rcNumber,
+  taxId: c.taxId,
+  holders: getJointHolders(c),
 });
 
 const mapWalletTxn = (t) => ({
@@ -180,19 +209,14 @@ export const getJointHolders = (client = {}, user = {}) => {
   const primary = {
     name: client.name || user.name || 'Primary Holder',
     email: client.email || user.email || '—',
-    phone: client.phone || user.phone || '—',
-    kyc: client.kyc || user.kyc || 'pending',
   };
   const secondaryName = client.secondaryName || user.secondaryName;
   const secondaryEmail = client.secondaryEmail || user.secondaryEmail;
-  const secondaryPhone = client.secondaryPhone || user.secondaryPhone;
   const holders = [primary];
-  if (secondaryName || secondaryEmail || secondaryPhone) {
+  if (secondaryName || secondaryEmail) {
     holders.push({
       name: secondaryName || 'Secondary Holder',
       email: secondaryEmail || '—',
-      phone: secondaryPhone || '—',
-      kyc: client.kyc || user.kyc || 'pending',
     });
   }
   return holders;
@@ -200,6 +224,27 @@ export const getJointHolders = (client = {}, user = {}) => {
 
 export const getJointMandate = (client = {}, user = {}) =>
   client.mandateType || user.mandateType || 'AND';
+
+// Given the holders array (from getJointHolders) and the documents array
+// returned by GET /kyc/me (which always includes one entry per required
+// doc, suffixed _p1/_p2 for joint accounts), compute each holder's
+// verification percentage and whether they're fully verified.
+export const getJointKycProgress = (holders = [], docs = []) =>
+  holders.map((holder, idx) => {
+    const suffix = `_p${idx + 1}`;
+    const holderDocs = (docs || []).filter(d => d.key?.endsWith(suffix));
+    const total = holderDocs.length;
+    const verifiedCount = holderDocs.filter(d => {
+      const s = (d.status || '').toString().toLowerCase();
+      return s === 'verified' || s === 'approved';
+    }).length;
+    return {
+      holder,
+      docs: holderDocs,
+      pct: total ? Math.round((verifiedCount / total) * 100) : 0,
+      allVerified: total > 0 && verifiedCount === total,
+    };
+  });
 
 
 
@@ -275,6 +320,9 @@ const useAppStore = create((set, get) => ({
         tasks.push(api.investmentApi.getMyInvestments().then(data => {
           if (data && Array.isArray(data)) set({ clientInvestments: data.map(mapInvestment) });
         }).catch(() => {}));
+        tasks.push(api.clientApi.getMe().then(data => {
+          if (data) set({ clientProfile: mapClientProfile(data) });
+        }).catch(() => {}));
       }
       // Admin-only: try to load admin data (silently fails for regular users)
       if (user?.role === 'admin') {
@@ -300,7 +348,6 @@ const useAppStore = create((set, get) => ({
               createdAt: c.createdAt,
               secondaryName: c.secondaryName,
               secondaryEmail: c.secondaryEmail,
-              secondaryPhone: c.secondaryPhone,
               mandateType: c.mandateType,
               rcNumber: c.rcNumber,
               taxId: c.taxId,
@@ -497,6 +544,17 @@ const useAppStore = create((set, get) => ({
     } catch {}
   },
 
+  // Re-fetch the logged-in client's own authoritative profile (secondaryName,
+  // mandateType, kycRecord, etc.) — call after any action that may have
+  // changed it (withdrawal, KYC upload, compliance updating the mandate).
+  refreshProfile: async () => {
+    const api = await import('../services/api');
+    try {
+      const data = await api.clientApi.getMe();
+      if (data) set({ clientProfile: mapClientProfile(data) });
+    } catch {}
+  },
+
   refreshInvestments: async () => {
     const api = await import('../services/api');
     try {
@@ -568,8 +626,8 @@ const useAppStore = create((set, get) => ({
   // Register new client (adds to clients list + syncs mandate for joint)
   addClient: (client) => {
     set((s) => ({ clients: [...s.clients, client] }));
-    if (client.mandate) {
-      import('../services/api').then(m => m.clientApi.updateMandate(client.mandate)).catch(() => {});
+    if (client.mandate && client.clientId) {
+      import('../services/api').then(m => m.adminClientApi.updateMandate(client.clientId, client.mandate)).catch(() => {});
     }
   },
 

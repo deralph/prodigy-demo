@@ -1,27 +1,38 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import PageHeader from '../../components/ui/PageHeader';
 import { Users, Shield, CheckCircle, Clock, Info } from 'lucide-react';
-import useAppStore from '../../store/useAppStore';
+import useAppStore, { getJointHolders, getJointMandate, getJointKycProgress } from '../../store/useAppStore';
+import { kycApi } from '../../services/api';
 
 const fmt = n => '₦' + Number(n).toLocaleString('en-NG');
 const HOLDER_COLORS = ['#3b82f6', '#22c55e', '#8b5cf6'];
 
 export default function SharedLegacy() {
-  const { user, clientInvestments, clients } = useAppStore();
-  const client  = clients.find(c => c.clientId === user?.clientId);
+  const { user, clientInvestments, clientProfile } = useAppStore();
+  const client  = clientProfile || user?.client || {};
   const myInvs  = clientInvestments.filter(i => i.clientId === user?.clientId);
   const totalAUM = myInvs.reduce((s, i) => s + i.amount, 0);
 
-  const holders = client?.holders || [];
-  const n = holders.length;
-  const mandate = client?.mandate || 'AND';
-  const allKycDone = holders.every(h => h.kycDone);
+  const holders = getJointHolders(client, user);
+  const n = Math.max(holders.length, 1); // guards every division below — never 0
+  const mandate = getJointMandate(client, user);
+
+  const [docs, setDocs] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    kycApi.getMyKyc().then(data => { if (alive) setDocs(data?.documents || []); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const progress = getJointKycProgress(holders, docs);
+  const allKycDone = progress.length > 0 && progress.every(p => p.allVerified);
+  const verifiedHolderCount = progress.filter(p => p.allVerified).length;
 
   return (
     <div>
       <PageHeader
         title="Joint Account Overview"
-        subtitle="Shared ownership · Equal distribution · {n}-holder account"
+        subtitle={`Shared ownership · Equal distribution · ${n}-holder account`}
       />
 
       {/* Policy banner */}
@@ -43,7 +54,7 @@ export default function SharedLegacy() {
         <div style={{ display:'flex',gap:20,flexWrap:'wrap' }}>
           <div>
             <div style={{ fontSize:9,color:'rgba(255,255,255,0.4)',letterSpacing:'0.08em',textTransform:'uppercase' }}>Each Holder's Share</div>
-            <div style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:16,color:'var(--gold)' }}>{fmt(totalAUM / (n||1))}</div>
+            <div style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:16,color:'var(--gold)' }}>{fmt(totalAUM / n)}</div>
           </div>
           <div>
             <div style={{ fontSize:9,color:'rgba(255,255,255,0.4)',letterSpacing:'0.08em',textTransform:'uppercase' }}>Split %</div>
@@ -82,22 +93,24 @@ export default function SharedLegacy() {
         <div style={{ padding:'16px 22px',borderBottom:'1px solid var(--gray-100)',display:'flex',alignItems:'center',justifyContent:'space-between' }}>
           <h3 style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:13,color:'var(--navy)',letterSpacing:'0.06em',textTransform:'uppercase' }}>Account Holders ({n})</h3>
           <span style={{ fontSize:10,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',color:allKycDone?'var(--green)':'#f97316',background:allKycDone?'rgba(34,197,94,0.1)':'rgba(249,115,22,0.1)',padding:'3px 9px',borderRadius:4 }}>
-            {allKycDone ? 'All KYC Complete' : `${holders.filter(h=>h.kycDone).length}/${n} KYC Done`}
+            {allKycDone ? 'All KYC Complete' : `${verifiedHolderCount}/${n} KYC Done`}
           </span>
         </div>
-        {holders.map((h, i) => (
+        {holders.map((h, i) => {
+          const kycDone = progress[i]?.allVerified;
+          return (
           <div key={i} style={{ padding:'16px 22px',borderBottom:i<holders.length-1?'1px solid var(--gray-100)':'none',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap',transition:'background 0.15s' }}
             onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'}
             onMouseLeave={e=>e.currentTarget.style.background='transparent'}
           >
             <div style={{ width:44,height:44,borderRadius:12,background:`${HOLDER_COLORS[i%HOLDER_COLORS.length]}18`,border:`2px solid ${HOLDER_COLORS[i%HOLDER_COLORS.length]}`,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:16,color:HOLDER_COLORS[i%HOLDER_COLORS.length],flexShrink:0 }}>
-              {h.name.charAt(0)}
+              {(h.name || 'Holder').charAt(0)}
             </div>
             <div style={{ flex:1,minWidth:0 }}>
               <div style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:13,color:'var(--navy)',marginBottom:2 }}>
                 {h.name} {i===0 && <span style={{ fontSize:9,letterSpacing:'0.06em',textTransform:'uppercase',color:'var(--gold)',background:'rgba(232,184,75,0.12)',padding:'2px 7px',borderRadius:4,marginLeft:4 }}>Primary</span>}
               </div>
-              <div style={{ fontSize:11,color:'var(--gray-400)' }}>{h.email} · {h.phone}</div>
+              <div style={{ fontSize:11,color:'var(--gray-400)' }}>{h.email}</div>
             </div>
             <div style={{ display:'flex',alignItems:'center',gap:14,flexShrink:0 }}>
               <div style={{ textAlign:'right' }}>
@@ -105,15 +118,16 @@ export default function SharedLegacy() {
                 <div style={{ fontSize:11,color:'var(--gray-400)' }}>{fmt(totalAUM/n)}</div>
               </div>
               <div style={{ display:'flex',alignItems:'center',gap:5 }}>
-                {h.kycDone
+                {kycDone
                   ? <CheckCircle size={16} color="var(--green)"/>
                   : <Clock size={16} color="#f97316"/>
                 }
-                <span style={{ fontSize:10,fontWeight:700,color:h.kycDone?'var(--green)':'#f97316' }}>{h.kycDone?'KYC Done':'KYC Pending'}</span>
+                <span style={{ fontSize:10,fontWeight:700,color:kycDone?'var(--green)':'#f97316' }}>{kycDone?'KYC Done':'KYC Pending'}</span>
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Mandate and policy note */}

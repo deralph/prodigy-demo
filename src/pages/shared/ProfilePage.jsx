@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Mail, Phone, Building2, Shield, Calendar, LogOut, Key, AlertTriangle } from 'lucide-react';
-import useAppStore, { getJointHolders } from '../../store/useAppStore';
+import useAppStore, { getJointHolders, getJointKycProgress } from '../../store/useAppStore';
+import { kycApi } from '../../services/api';
 import PageHeader from '../../components/ui/PageHeader';
 import ProfileHero from '../../components/ui/ProfileHero';
 import AccountInfoCard from '../../components/ui/AccountInfoCard';
@@ -70,8 +71,8 @@ function JointHoldersCard({ holders }) {
 }
 
 export default function ProfilePage() {
-  const { user, clients, clientInvestments, logout, walletBalance } = useAppStore();
-  const client  = clients.find(c => c.clientId === user?.clientId) || user?.client || {};
+  const { user, clientProfile, clientInvestments, logout, walletBalance } = useAppStore();
+  const client  = clientProfile || user?.client || {};
   const [copied, setCopied] = useState(false);
 
   const copyId = () => {
@@ -85,10 +86,20 @@ export default function ProfilePage() {
   const totalAUM      = clientInvestments.reduce((s,i) => s + (i.principalAmount||i.amount||0), 0);
   const activeCount   = clientInvestments.filter(i => i.status==='active').length;
 
-  const holders = getJointHolders(client, user).map((holder, idx) => ({
+  const [kycDocs, setKycDocs] = useState([]);
+  useEffect(() => {
+    if (!isJoint) return;
+    let alive = true;
+    kycApi.getMyKyc().then(data => { if (alive) setKycDocs(data?.documents || []); }).catch(() => {});
+    return () => { alive = false; };
+  }, [isJoint]);
+
+  const baseHolders = getJointHolders(client, user);
+  const kycProgress = getJointKycProgress(baseHolders, kycDocs);
+  const holders = baseHolders.map((holder, idx) => ({
     ...holder,
     role: idx === 0 ? 'Primary Holder' : idx === 1 ? 'Secondary Holder' : `Holder ${idx + 1}`,
-    kycComplete: client?.kycRecord?.status === 'APPROVED',
+    kycComplete: kycProgress[idx]?.allVerified ?? false,
   }));
 
   const statusLabel = client?.status

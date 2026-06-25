@@ -78,10 +78,15 @@ export const authApi = {
     request('/auth/register/joint', { method: 'POST', body: JSON.stringify(data) }),
   forgotPassword: (email) =>
     request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  resendOtp: (email) =>
+    request('/auth/resend-otp', { method: 'POST', body: JSON.stringify({ email }) }),
   resetPassword: (email, otp, newPassword) =>
     request('/auth/reset-password', { method: 'POST', body: JSON.stringify({ email, otp, newPassword }) }),
-  setPassword: (newPassword) =>
-    request('/auth/set-password', { method: 'POST', body: JSON.stringify({ newPassword }) }),
+  // Joint account secondary holder magic-link flow
+  inspectMagicLink: (token) =>
+    request(`/auth/magic-login?token=${encodeURIComponent(token)}`),
+  setSecondaryPassword: (token, password) =>
+    request('/auth/magic-login/set-password', { method: 'POST', body: JSON.stringify({ token, password }) }),
   getMe: () => request('/auth/me'),
   logout: () => request('/auth/logout', { method: 'POST' }),
 };
@@ -99,8 +104,9 @@ export const nibssApi = {
 /* ── CLIENTS (own profile) ───────────────────────────────── */
 export const clientApi = {
   getMe: () => request('/clients/me'),
-  updateMandate: (mandateType) =>
-    request('/clients/me/mandate', { method: 'PATCH', body: JSON.stringify({ mandateType }) }),
+  // NOTE: there is intentionally no self-service mandate update here.
+  // Changing a joint account's AND/OR mandate is a compliance action only —
+  // see adminClientApi.updateMandate below.
 };
 
 /* ── ADMIN CLIENTS ───────────────────────────────────────── */
@@ -112,6 +118,9 @@ export const adminClientApi = {
   findOne: (clientId) => request(`/admin/clients/${clientId}`),
   updateStatus: (clientId, status) =>
     request(`/admin/clients/${clientId}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  // Compliance/super-admin only — see backend AdminClientsController.updateMandate
+  updateMandate: (clientId, mandateType) =>
+    request(`/admin/clients/${clientId}/mandate`, { method: 'PATCH', body: JSON.stringify({ mandateType }) }),
 };
 
 /* ── KYC ─────────────────────────────────────────────────── */
@@ -190,6 +199,12 @@ export const walletApi = {
     request('/wallet/fund/verify', { method: 'POST', body: JSON.stringify({ reference, amountKobo }) }),
   requestWithdrawal: (data) =>
     request('/wallet/withdraw', { method: 'POST', body: JSON.stringify(data) }),
+  // Joint holder co-signature (AND mandate) — the OTHER holder must
+  // separately log in and approve/decline before admin can disburse.
+  getPendingCosign: () => request('/wallet/withdrawals/pending-cosign'),
+  cosignWithdrawal: (id) => request(`/wallet/withdrawals/${id}/cosign`, { method: 'POST' }),
+  declineCosignWithdrawal: (id, reason) =>
+    request(`/wallet/withdrawals/${id}/decline-cosign`, { method: 'POST', body: JSON.stringify({ reason }) }),
 };
 
 export const adminTransactionApi = {
@@ -197,6 +212,13 @@ export const adminTransactionApi = {
     const qs = new URLSearchParams(params).toString();
     return request(`/admin/transactions${qs ? '?' + qs : ''}`);
   },
+  // Pending wallet withdrawals queue
+  getPendingWithdrawals: () =>
+    request('/admin/transactions?type=WALLET_WITHDRAWAL&status=PENDING'),
+  approveWithdrawal: (id) =>
+    request(`/admin/transactions/${id}/approve-withdrawal`, { method: 'POST' }),
+  rejectWithdrawal: (id, reason) =>
+    request(`/admin/transactions/${id}/reject-withdrawal`, { method: 'POST', body: JSON.stringify({ reason }) }),
   exportCsv: (params = {}) => {
     const qs = new URLSearchParams({ ...params, format: 'csv' }).toString();
     return request(`/admin/transactions/export${qs ? '?' + qs : ''}`);

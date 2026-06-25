@@ -50,7 +50,18 @@ describe('KycService', () => {
       } as any);
 
       const result = await service.getMyKyc(IDS.CLIENT_DB);
-      expect(result.documents).toHaveLength(5); // 5 corporate requirements
+      expect(result.documents).toHaveLength(8); // 8 corporate requirements (CAC, MEMART, SCUML, TIN, utility, directors' ID, sig mandate, sig upload)
+    });
+
+    it('returns BOTH holders\' document requirements for JOINT accounts (10 total — 5 per holder)', async () => {
+      prisma.client.findUnique.mockResolvedValueOnce({
+        ...MOCK.client, type: 'JOINT', kycRecord: MOCK.kycRecord, kycDocuments: [],
+      } as any);
+
+      const result = await service.getMyKyc(IDS.CLIENT_DB);
+      expect(result.documents).toHaveLength(10);
+      expect(result.documents.some((d: any) => d.key === 'valid_id_p1')).toBe(true);
+      expect(result.documents.some((d: any) => d.key === 'valid_id_p2')).toBe(true);
     });
 
     it('returns document status as UPLOADED when document exists', async () => {

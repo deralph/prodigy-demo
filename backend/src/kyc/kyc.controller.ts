@@ -9,7 +9,15 @@ import { KycService } from './kyc.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { AdminRolesGuard } from '../common/guards/admin-roles.guard';
+import { AdminRoles } from '../common/decorators/admin-roles.decorator';
 import { uploadToCloudinary } from '../common/cloudinary.provider';
+
+// Admin sub-roles permitted to view and action KYC documents (which contain
+// sensitive PII). Mirrors the frontend's ADMIN_PERMISSIONS 'kyc' grant —
+// FINANCE, AUDIT, and INVESTMENT admins should not be able to pull a
+// client's raw identity documents.
+const KYC_ADMIN_ROLES = ['SUPER_ADMIN', 'OPERATIONS', 'COMPLIANCE'];
 
 @ApiTags('KYC')
 @ApiBearerAuth()
@@ -70,32 +78,36 @@ export class KycController {
   // ── Admin ────────────────────────────────────────────────────────
 
   @Get('client/:clientId')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, AdminRolesGuard)
   @Roles('admin')
+  @AdminRoles(...KYC_ADMIN_ROLES)
   @ApiOperation({ summary: 'Admin: get KYC for a specific client' })
-  getClientKyc(@Param('clientId') clientId: string) {
-    return this.kycService.getMyKyc(clientId);
+  getClientKyc(@Param('clientId') clientId: string, @Req() req: any) {
+    return this.kycService.getClientKycForAdmin(clientId, { adminUserId: req.user.adminUserId, adminRole: req.user.adminRole });
   }
 
   @Get('compliance-board')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, AdminRolesGuard)
   @Roles('admin')
+  @AdminRoles(...KYC_ADMIN_ROLES)
   @ApiOperation({ summary: 'Admin: get full KYC compliance board' })
-  getComplianceBoard() {
-    return this.kycService.getComplianceBoard();
+  getComplianceBoard(@Req() req: any) {
+    return this.kycService.getComplianceBoardForAdmin({ adminUserId: req.user.adminUserId, adminRole: req.user.adminRole });
   }
 
   @Post(':clientId/approve')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, AdminRolesGuard)
   @Roles('admin')
+  @AdminRoles(...KYC_ADMIN_ROLES)
   @ApiOperation({ summary: 'Admin: approve KYC for a client' })
   approveKyc(@Param('clientId') clientId: string, @Req() req: any) {
     return this.kycService.approveKyc(clientId, req.user.sub);
   }
 
   @Post(':clientId/reject')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, AdminRolesGuard)
   @Roles('admin')
+  @AdminRoles(...KYC_ADMIN_ROLES)
   @ApiOperation({ summary: 'Admin: reject KYC with reason' })
   rejectKyc(
     @Param('clientId') clientId: string,
@@ -106,8 +118,9 @@ export class KycController {
   }
 
   @Post('documents/:clientId/:docKey/approve')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, AdminRolesGuard)
   @Roles('admin')
+  @AdminRoles(...KYC_ADMIN_ROLES)
   @ApiOperation({ summary: 'Admin: approve a single KYC document' })
   approveDocument(
     @Param('clientId') clientId: string,
@@ -118,8 +131,9 @@ export class KycController {
   }
 
   @Post('documents/:clientId/:docKey/reject')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, AdminRolesGuard)
   @Roles('admin')
+  @AdminRoles(...KYC_ADMIN_ROLES)
   @ApiOperation({ summary: 'Admin: reject a single KYC document with reason' })
   rejectDocument(
     @Param('clientId') clientId: string,

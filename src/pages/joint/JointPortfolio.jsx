@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { TrendingUp, Users, Eye, Download, Award, Clock, CheckCircle, XCircle } from 'lucide-react';
-import useAppStore from '../../store/useAppStore';
+import useAppStore, { getJointHolders, getJointMandate } from '../../store/useAppStore';
 import PageHeader from '../../components/ui/PageHeader';
 import StatCard from '../../components/ui/StatCard';
 import InvestmentCard from '../../components/ui/InvestmentCard';
@@ -81,10 +81,8 @@ function JointInvestmentDrawer({ inv, plans, user, client, onClose }) {
   const chart   = buildGrowth(inv);
   const [tab, setTab] = useState('overview');
 
-  const holders = client?.holders || [
-    { name: user?.name || 'Primary Holder' },
-    { name: client?.secondaryName || 'Secondary Holder' },
-  ];
+  const holders = getJointHolders(client, user);
+  const mandate = getJointMandate(client, user);
 
   const TABS = [
     { key: 'overview',  label: 'Overview' },
@@ -103,7 +101,7 @@ function JointInvestmentDrawer({ inv, plans, user, client, onClose }) {
       `Issue Date      : ${date}`, '',
       '── JOINT ACCOUNT HOLDERS ────────────────────────────',
       ...holders.map((h, i) => `Holder ${i + 1}        : ${h.name} · ${i === 0 ? 'Primary' : 'Secondary'}`),
-      `Mandate         : ${client?.mandate || 'AND'}`, '',
+      `Mandate         : ${mandate}`, '',
       '── INVESTMENT DETAILS ───────────────────────────────',
       `Product         : ${inv.plan}`,
       `Principal       : ${fmt(inv.amount)}`,
@@ -145,7 +143,7 @@ function JointInvestmentDrawer({ inv, plans, user, client, onClose }) {
           <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 4 }}>Joint Investment Dashboard</div>
           <div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 18, color: 'white' }}>{inv.plan}</div>
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 3 }}>
-            {holders.map(h => h.name.split(' ')[0]).join(' & ')} · {client?.mandate || 'AND'} Mandate
+            {holders.map(h => h.name.split(' ')[0]).join(' & ')} · {mandate} Mandate
           </div>
         </div>
       }
@@ -172,7 +170,7 @@ function JointInvestmentDrawer({ inv, plans, user, client, onClose }) {
                 </div>
               ))}
             </div>
-            {[['Investment ID', inv.id], ['Product', inv.plan], ['Principal', fmt(inv.amount)], ['ROI Rate', `${inv.roi}% p.a.`], ['Tax', `${inv.tax || 0}%`], ['Tenor', inv.tenor], ['Value Date', inv.valueDate], ['Maturity', inv.maturityDate], ['Status', (inv.status || 'active').toUpperCase()], ['Gross Return', fmt(gross)], ['Tax Deducted', fmt(tax)], ['Net Return', fmt(net)], ['Mandate', client?.mandate || 'AND']].map(([l, v], i, arr) =>
+            {[['Investment ID', inv.id], ['Product', inv.plan], ['Principal', fmt(inv.amount)], ['ROI Rate', `${inv.roi}% p.a.`], ['Tax', `${inv.tax || 0}%`], ['Tenor', inv.tenor], ['Value Date', inv.valueDate], ['Maturity', inv.maturityDate], ['Status', (inv.status || 'active').toUpperCase()], ['Gross Return', fmt(gross)], ['Tax Deducted', fmt(tax)], ['Net Return', fmt(net)], ['Mandate', mandate]].map(([l, v], i, arr) =>
               <DetailRow key={l} label={l} value={v} noBorder={i === arr.length - 1} />
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 16 }}>
@@ -267,12 +265,12 @@ function JointInvestmentDrawer({ inv, plans, user, client, onClose }) {
                 const { requestPreTermination } = useAppStore.getState();
                 await requestPreTermination(inv.id, reason);
               }}
-              mandateNote={client?.mandate === 'AND'
+              mandateNote={mandate === 'AND'
                 ? `All ${holders.length} holders must co-authorise this termination.`
                 : 'Any holder may authorise this termination.'}
               bullets={[
                 `${penaltyPct}% penalty on principal applies for early exit.`,
-                `Under ${client?.mandate || 'AND'} mandate: ${client?.mandate === 'AND' ? `all ${holders.length} signatories must co-authorise` : 'any signatory may initiate'}.`,
+                `Under ${mandate} mandate: ${mandate === 'AND' ? `all ${holders.length} signatories must co-authorise` : 'any signatory may initiate'}.`,
                 'Principal returned within 5 business days of approval.',
                 'Termination Certificate issued upon processing.',
               ]}
@@ -285,12 +283,10 @@ function JointInvestmentDrawer({ inv, plans, user, client, onClose }) {
 }
 
 export default function JointPortfolio() {
-  const { user, clientInvestments, clients, plans } = useAppStore();
-  const client  = clients.find(c => c.clientId === user?.clientId);
-  const holders = client?.holders || [
-    { name: user?.name || 'Primary Holder' },
-    { name: client?.secondaryName || 'Secondary Holder' },
-  ];
+  const { user, clientInvestments, clientProfile, plans } = useAppStore();
+  const client  = clientProfile || user?.client || {};
+  const holders = getJointHolders(client, user);
+  const mandate = getJointMandate(client, user);
   const [drawer,       setDrawer]       = useState(null);
   const [chartFilter,  setChartFilter]  = useState('all');
   const [chartType,    setChartType]    = useState('area');
@@ -372,7 +368,7 @@ export default function JointPortfolio() {
           {holders.map((h, i) => <span key={i}>{i > 0 ? ' · ' : ''}<strong>{h.name}</strong></span>)}
         </span>
         <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--gold)', background: 'rgba(232,184,75,0.12)', padding: '3px 9px', borderRadius: 4 }}>
-          {client?.mandate || 'AND'} Mandate
+          {mandate} Mandate
         </span>
       </div>
 

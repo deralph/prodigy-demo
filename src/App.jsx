@@ -6,7 +6,6 @@ import LoadingOverlay from './components/ui/LoadingOverlay';
 
 import OnboardingLogin from './pages/onboarding/OnboardingLogin';
 import MagicLogin      from './pages/onboarding/MagicLogin';
-import SetPassword     from './pages/onboarding/SetPassword';
 import Landing  from './pages/Landing';
 import AuditPortal from './pages/AuditPortal';
 
@@ -30,6 +29,7 @@ import JointPortfolio  from './pages/joint/JointPortfolio';
 import JointCash       from './pages/joint/JointCash';
 import AccessControl   from './pages/joint/AccessControl';
 import JointStatements from './pages/joint/JointStatements';
+import SharedLegacy    from './pages/joint/SharedLegacy';
 
 import AdminLayout           from './components/admin/AdminLayout';
 import AdminOverview         from './pages/admin/AdminOverview';
@@ -37,6 +37,7 @@ import ClientManagement      from './pages/admin/ClientManagement';
 import ApprovalHub           from './pages/admin/ApprovalHub';
 import InvestmentPlans       from './pages/admin/InvestmentPlans';
 import TransactionLedger     from './pages/admin/TransactionLedger';
+import WithdrawalsQueue      from './pages/admin/WithdrawalsQueue';
 import StaffLoansAdmin       from './pages/admin/StaffLoansAdmin';
 import RiskCompliance        from './pages/admin/RiskCompliance';
 import AuditTrail            from './pages/admin/AuditTrail';
@@ -92,7 +93,6 @@ function SessionRestore() {
             taxId:          c.taxId           ?? null,
             secondaryName:  c.secondaryName   ?? null,
             secondaryEmail: c.secondaryEmail  ?? null,
-            secondaryPhone: c.secondaryPhone  ?? null,
             mandateType:    c.mandateType      ?? null,
             client:         c,
           });
@@ -125,7 +125,6 @@ export default function App() {
         <Route path="/"            element={<Landing />} />
         <Route path="/login"       element={<OnboardingLogin />} />
         <Route path="/magic-login" element={<MagicLogin />} />
-        <Route path="/set-password" element={<SetPassword />} />
         <Route path="/audit-portal" element={<AuditPortal />} />
 
         {/* Corporate */}
@@ -164,6 +163,7 @@ export default function App() {
           <Route path="cash"        element={<JointCash />} />
           <Route path="access"      element={<AccessControl />} />
           <Route path="statements"  element={<JointStatements />} />
+          <Route path="overview"    element={<SharedLegacy />} />
           <Route path="ledger"        element={<Ledger />} />
           <Route path="products"        element={<Products />} />
           <Route path="products/:id"    element={<ProductDetail />} />
@@ -177,6 +177,7 @@ export default function App() {
           <Route path="approvals"          element={<ApprovalHub />} />
           <Route path="plans"              element={<InvestmentPlans />} />
           <Route path="transactions"       element={<TransactionLedger />} />
+          <Route path="withdrawals"        element={<WithdrawalsQueue />} />
           <Route path="loans"              element={<StaffLoansAdmin />} />
           <Route path="risk"               element={<RiskCompliance />} />
           <Route path="audit"              element={<AuditTrail />} />

@@ -39,7 +39,6 @@ export class InvestmentsService {
 
     const client = await this.prisma.client.findUnique({ where: { id: clientDbId } });
     if (!client) throw new NotFoundException('Client not found');
-    console.log(client)
     if (client.status !== 'ACTIVE') throw new ForbiddenException('Account must be active to invest. Please complete KYC.');
 
     const product = await this.prisma.product.findUnique({ where: { id: dto.productId } });

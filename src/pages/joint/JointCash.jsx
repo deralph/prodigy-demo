@@ -1,23 +1,29 @@
 import React, { useState, useCallback } from 'react';
-import useAppStore from '../../store/useAppStore';
+import useAppStore, { getJointHolders, getJointMandate } from '../../store/useAppStore';
 import PageHeader from '../../components/ui/PageHeader';
 import HolderBanner from '../../components/ui/HolderBanner';
 import WalletHero from '../../components/ui/WalletHero';
 import TransactionList from '../../components/ui/TransactionList';
 import FundWalletModal from '../../components/wallet/FundWalletModal';
+import WithdrawModal from '../../components/wallet/WithdrawModal';
+import PendingCosignBanner from '../../components/wallet/PendingCosignBanner';
 import Toast from '../../components/ui/Toast';
 
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 const INFLOW_TYPES = new Set(['wallet_funding','redemption','pre_termination_payout','dividend_payout']);
 
 export default function JointCash() {
-  const { user, walletBalance, pendingBalance, transactions, allTransactions, clients, refreshWallet } = useAppStore();
-  const client   = clients.find(c => c.clientId === user?.clientId);
-  const [fundOpen, setFundOpen] = useState(false);
+  const { user, walletBalance, pendingBalance, transactions, allTransactions, clientProfile, refreshWallet } = useAppStore();
+  const client   = clientProfile || user?.client || {};
+  const [fundOpen, setFundOpen]     = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [copied,   setCopied]   = useState(false);
   const [search,   setSearch]   = useState('');
   const [toast, setToast]       = useState(null);
   const dismissToast            = useCallback(() => setToast(null), []);
+
+  const holderObjs = getJointHolders(client, user);
+  const mandate    = getJointMandate(client, user);
 
   const ACCOUNT = {
     bank: user?.virtualAccountBank || 'Not assigned',
@@ -62,13 +68,25 @@ export default function JointCash() {
   const totalSubbed  = myTxns.filter(t=>t.type==='subscription').reduce((s,t)=>s+t.amount,0);
   const totalPending = transactions.filter(t=>t.status==='pending').reduce((s,t)=>s+t.amount,0);
 
+  const handleWithdrawDone = useCallback(({ type, amount, requiresCoSign }) => {
+    if (type === 'success') {
+      setToast({
+        type: 'success',
+        title: requiresCoSign ? 'Awaiting Co-Signature' : 'Withdrawal Requested',
+        message: requiresCoSign
+          ? `${fmt(amount)} withdrawal submitted. The other account holder must log in to co-sign before it can be disbursed.`
+          : `${fmt(amount)} withdrawal submitted for processing.`,
+      });
+    }
+  }, []);
+
   return (
     <div>
       <PageHeader title="Cash Account" subtitle="Joint Wallet · Dual-Holder Account" />
 
       <HolderBanner
         holders={holders}
-        mandate={client?.mandate || 'AND'}
+        mandate={mandate}
         action={
           <span style={{ fontSize:10,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',color:'var(--gold)',background:'rgba(232,184,75,0.12)',padding:'3px 9px',borderRadius:4 }}>
             Joint Wallet
@@ -76,11 +94,14 @@ export default function JointCash() {
         }
       />
 
+      {mandate === 'AND' && <PendingCosignBanner onActed={refreshWallet} />}
+
       <WalletHero
         balance={walletBalance}
         pendingBalance={pendingBalance}
         label="Available Balance"
         onFund={() => setFundOpen(true)}
+        onWithdraw={() => setWithdrawOpen(true)}
         account={ACCOUNT}
         copied={copied}
         onCopy={copy}
@@ -104,6 +125,16 @@ export default function JointCash() {
       />
 
       {fundOpen && <FundWalletModal onClose={() => setFundOpen(false)} onDone={handleDone} />}
+      {withdrawOpen && (
+        <WithdrawModal
+          onClose={() => setWithdrawOpen(false)}
+          onDone={handleWithdrawDone}
+          maxAmount={walletBalance}
+          isJoint
+          mandate={mandate}
+          holderNames={holderObjs.map(h => h.name)}
+        />
+      )}
       <Toast toast={toast} onDismiss={dismissToast} />
     </div>
   );

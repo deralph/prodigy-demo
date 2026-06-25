@@ -42,7 +42,7 @@ export class RegisterIndividualDto {
   @IsEmail()
   secondaryEmail?: string;
 
-  @ApiPropertyOptional({ example: '08023456789' })
+  @ApiPropertyOptional({ example: '08087654321' })
   @IsOptional()
   @IsString()
   secondaryPhone?: string;
@@ -61,10 +61,11 @@ export class RegisterIndividualDto {
   @IsString()
   phone?: string;
 
-  @ApiProperty({ example: '22345678901', description: 'Primary holder BVN used for QoreID account authentication. Raw BVN is never stored.' })
+  @ApiPropertyOptional({ example: '22345678901', description: 'Primary holder BVN used for QoreID account authentication. Required for single accounts, or joint accounts that do not supply holderIdentities. Raw BVN is never stored.' })
+  @IsOptional()
   @IsString()
   @Length(11, 11)
-  bvn: string;
+  bvn?: string;
 
   @ApiPropertyOptional({ type: [RegisterIndividualHolderIdentityDto], description: 'BVNs for all holders on joint accounts. Raw BVNs are verified and discarded.' })
   @IsOptional()

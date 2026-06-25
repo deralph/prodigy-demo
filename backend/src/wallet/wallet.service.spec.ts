@@ -300,7 +300,7 @@ describe('WalletService', () => {
         return fn(txMock);
       });
 
-      const result = await service.requestWithdrawal(IDS.CLIENT_DB, withdrawDto);
+      const result = await service.requestWithdrawal(IDS.CLIENT_DB, IDS.AUTH_USER, withdrawDto);
       expect(result.status).toBe('PENDING');
       expect(result.type).toBe('WALLET_WITHDRAWAL');
     });
@@ -310,12 +310,283 @@ describe('WalletService', () => {
         ...MOCK.client, walletBalance: BigInt(1000),
       } as any);
       const bigWithdraw = { ...withdrawDto, amountKobo: BigInt(999_999_999) };
-      await expect(service.requestWithdrawal(IDS.CLIENT_DB, bigWithdraw)).rejects.toThrow(BadRequestException);
+      await expect(service.requestWithdrawal(IDS.CLIENT_DB, IDS.AUTH_USER, bigWithdraw)).rejects.toThrow(BadRequestException);
     });
 
     it('throws NotFoundException when client not found', async () => {
       prisma.client.findUnique.mockResolvedValueOnce(null);
-      await expect(service.requestWithdrawal('bad-id', withdrawDto)).rejects.toThrow(NotFoundException);
+      await expect(service.requestWithdrawal('bad-id', IDS.AUTH_USER, withdrawDto)).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects a zero-amount withdrawal', async () => {
+      prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
+      await expect(
+        service.requestWithdrawal(IDS.CLIENT_DB, IDS.AUTH_USER, { ...withdrawDto, amountKobo: BigInt(0) }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a negative-amount withdrawal (prevents balance-minting exploit)', async () => {
+      prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
+      await expect(
+        service.requestWithdrawal(IDS.CLIENT_DB, IDS.AUTH_USER, { ...withdrawDto, amountKobo: BigInt(-50_000_00) }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects withdrawal when bank details are missing', async () => {
+      prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
+      await expect(
+        service.requestWithdrawal(IDS.CLIENT_DB, IDS.AUTH_USER, { ...withdrawDto, bankAcctNo: '' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('blocks a JOINT/AND-mandate withdrawal when the secondary holder has not set up their own login yet', async () => {
+      const jointClient = { ...MOCK.client, type: 'JOINT', mandateType: 'AND' };
+      prisma.client.findUnique.mockResolvedValueOnce(jointClient as any);
+      prisma.authUser.findFirst.mockResolvedValueOnce(null); // no SECONDARY AuthUser yet
+      await expect(
+        service.requestWithdrawal(IDS.CLIENT_DB, IDS.AUTH_USER, withdrawDto),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('creates a JOINT/AND-mandate withdrawal as requiresCoSign=true (real second signature, not a checkbox)', async () => {
+      const jointClient = { ...MOCK.client, type: 'JOINT', mandateType: 'AND' };
+      prisma.client.findUnique.mockResolvedValueOnce(jointClient as any);
+      prisma.authUser.findFirst.mockResolvedValueOnce({ id: 'secondary-auth-1', holderType: 'SECONDARY' } as any);
+      const createTxMock = jest.fn().mockResolvedValue({ ...MOCK.walletTx, type: 'WALLET_WITHDRAWAL', status: 'PENDING', requiresCoSign: true });
+      prisma.$transaction.mockImplementationOnce(async (fn: any) => {
+        const txMock = {
+          client: { update: jest.fn().mockResolvedValue(jointClient) },
+          walletTransaction: { create: createTxMock },
+        };
+        return fn(txMock);
+      });
+
+      const result = await service.requestWithdrawal(IDS.CLIENT_DB, IDS.AUTH_USER, withdrawDto);
+      expect(result.status).toBe('PENDING');
+      expect(createTxMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ requiresCoSign: true, requestedByAuthUserId: IDS.AUTH_USER }) }),
+      );
+    });
+
+    it('allows a JOINT/OR-mandate withdrawal with no co-sign requirement', async () => {
+      const jointClient = { ...MOCK.client, type: 'JOINT', mandateType: 'OR' };
+      prisma.client.findUnique.mockResolvedValueOnce(jointClient as any);
+      const createTxMock = jest.fn().mockResolvedValue({ ...MOCK.walletTx, type: 'WALLET_WITHDRAWAL', status: 'PENDING', requiresCoSign: false });
+      prisma.$transaction.mockImplementationOnce(async (fn: any) => {
+        const txMock = {
+          client: { update: jest.fn().mockResolvedValue(jointClient) },
+          walletTransaction: { create: createTxMock },
+        };
+        return fn(txMock);
+      });
+
+      const result = await service.requestWithdrawal(IDS.CLIENT_DB, IDS.AUTH_USER, withdrawDto);
+      expect(result.status).toBe('PENDING');
+      expect(createTxMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ requiresCoSign: false }) }),
+      );
+    });
+  });
+
+  // ── cosignWithdrawal() / declineCosignWithdrawal() / getPendingCosignForHolder() ──
+  describe('joint holder co-signature', () => {
+    const coSignTxn = {
+      ...MOCK.walletTx, id: 'wtx-cosign-1', type: 'WALLET_WITHDRAWAL', status: 'PENDING',
+      requiresCoSign: true, coSignedByAuthUserId: null, requestedByAuthUserId: IDS.AUTH_USER,
+      clientId: IDS.CLIENT_DB, amountKobo: BigInt(30_000_00),
+    };
+    const OTHER_HOLDER = 'secondary-auth-1';
+
+    it('getPendingCosignForHolder excludes the requester\'s own request', async () => {
+      prisma.walletTransaction.findMany.mockResolvedValueOnce([coSignTxn] as any);
+      const result = await service.getPendingCosignForHolder(IDS.CLIENT_DB, OTHER_HOLDER);
+      expect(prisma.walletTransaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ requestedByAuthUserId: { not: OTHER_HOLDER } }),
+        }),
+      );
+      expect(result).toEqual([coSignTxn]);
+    });
+
+    it('cosignWithdrawal rejects the requester trying to co-sign their own request', async () => {
+      prisma.walletTransaction.findUnique.mockResolvedValueOnce(coSignTxn as any);
+      await expect(
+        service.cosignWithdrawal(coSignTxn.id, IDS.CLIENT_DB, IDS.AUTH_USER),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('cosignWithdrawal rejects a transaction belonging to a different client', async () => {
+      prisma.walletTransaction.findUnique.mockResolvedValueOnce({ ...coSignTxn, clientId: 'someone-elses-client' } as any);
+      await expect(
+        service.cosignWithdrawal(coSignTxn.id, IDS.CLIENT_DB, OTHER_HOLDER),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('cosignWithdrawal succeeds when the OTHER holder signs', async () => {
+      prisma.walletTransaction.findUnique.mockResolvedValueOnce(coSignTxn as any);
+      prisma.walletTransaction.update.mockResolvedValueOnce({ ...coSignTxn, coSignedByAuthUserId: OTHER_HOLDER } as any);
+
+      const result = await service.cosignWithdrawal(coSignTxn.id, IDS.CLIENT_DB, OTHER_HOLDER);
+      expect(result.coSignedByAuthUserId).toBe(OTHER_HOLDER);
+      expect(prisma.activityLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ action: 'WALLET_WITHDRAWAL_COSIGNED' }) }),
+      );
+    });
+
+    it('cosignWithdrawal rejects an already-cosigned transaction', async () => {
+      prisma.walletTransaction.findUnique.mockResolvedValueOnce({ ...coSignTxn, coSignedByAuthUserId: 'already-signed' } as any);
+      await expect(
+        service.cosignWithdrawal(coSignTxn.id, IDS.CLIENT_DB, OTHER_HOLDER),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('declineCosignWithdrawal returns funds to wallet and marks REVERSED', async () => {
+      prisma.walletTransaction.findUnique.mockResolvedValueOnce(coSignTxn as any);
+      const clientUpdate = jest.fn().mockResolvedValue({});
+      prisma.$transaction.mockImplementationOnce(async (fn: any) => fn({
+        client: { update: clientUpdate },
+        walletTransaction: { update: jest.fn().mockResolvedValue({ ...coSignTxn, status: 'REVERSED' }) },
+      }));
+
+      const result = await service.declineCosignWithdrawal(coSignTxn.id, IDS.CLIENT_DB, OTHER_HOLDER, 'Not authorized');
+      expect(result.status).toBe('REVERSED');
+      expect(clientUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ walletBalance: { increment: coSignTxn.amountKobo } }) }),
+      );
+    });
+
+    it('approveWithdrawal (admin) is blocked until the withdrawal has been co-signed', async () => {
+      prisma.walletTransaction.findUnique.mockResolvedValueOnce(coSignTxn as any); // coSignedByAuthUserId is null
+      await expect(
+        service.approveWithdrawal(coSignTxn.id, { adminId: IDS.ADMIN_USER, adminRole: 'FINANCE' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // ── approveWithdrawal() ──────────────────────────────────────────
+  describe('approveWithdrawal()', () => {
+    const pendingTxn = { ...MOCK.walletTx, id: 'wtx-1', type: 'WALLET_WITHDRAWAL', status: 'PENDING', bankName: 'GTBank', bankAcctNo: '0123456789', bankAcctName: 'John Doe', amountKobo: BigInt(50_000_00) };
+    const adminCtx = { adminId: IDS.ADMIN_USER, adminRole: 'FINANCE' };
+
+    it('throws NotFoundException when transaction not found', async () => {
+      prisma.walletTransaction.findUnique.mockResolvedValueOnce(null);
+      await expect(service.approveWithdrawal('missing', adminCtx)).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws BadRequestException for a non-withdrawal transaction', async () => {
+      prisma.walletTransaction.findUnique.mockResolvedValueOnce({ ...pendingTxn, type: 'WALLET_FUNDING' } as any);
+      await expect(service.approveWithdrawal('wtx-1', adminCtx)).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequestException if withdrawal is not PENDING', async () => {
+      prisma.walletTransaction.findUnique.mockResolvedValueOnce({ ...pendingTxn, status: 'SUCCESSFUL' } as any);
+      await expect(service.approveWithdrawal('wtx-1', adminCtx)).rejects.toThrow(BadRequestException);
+    });
+
+    it('demo mode (no Paystack key): disburses, decrements pendingBalance, marks SUCCESSFUL', async () => {
+      prisma.walletTransaction.findUnique.mockResolvedValueOnce(pendingTxn as any);
+      prisma.adminUser.findUnique.mockResolvedValueOnce({ id: IDS.ADMIN_USER, name: 'Jane Finance' } as any);
+      prisma.$transaction.mockImplementationOnce(async (fn: any) => fn({
+        client: { update: jest.fn().mockResolvedValue({}) },
+        walletTransaction: { update: jest.fn().mockResolvedValue({ ...pendingTxn, status: 'SUCCESSFUL' }) },
+      }));
+
+      const result = await service.approveWithdrawal('wtx-1', adminCtx);
+      expect(result.status).toBe('SUCCESSFUL');
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ action: 'WALLET_WITHDRAWAL_APPROVED', category: 'FINANCE' }) }),
+      );
+    });
+
+    it('live mode: resolves bank code, creates recipient, initiates transfer, marks SUCCESSFUL', async () => {
+      const prevEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      configGet.mockImplementation((key: string) => (key === 'PAYSTACK_SECRET_KEY' ? 'sk_live_abc123' : undefined));
+      prisma.walletTransaction.findUnique.mockResolvedValueOnce(pendingTxn as any);
+      prisma.adminUser.findUnique.mockResolvedValueOnce({ id: IDS.ADMIN_USER, name: 'Jane Finance' } as any);
+      (global as any).fetch = jest.fn()
+        .mockResolvedValueOnce({ json: async () => ({ status: true, data: [{ code: '058', name: 'Guaranty Trust Bank' }] }) }) // /bank
+        .mockResolvedValueOnce({ json: async () => ({ status: true, data: { recipient_code: 'RCP_123' } }) })                   // /transferrecipient
+        .mockResolvedValueOnce({ json: async () => ({ status: true, data: { transfer_code: 'TRF_456' } }) });                   // /transfer
+      prisma.$transaction.mockImplementationOnce(async (fn: any) => fn({
+        client: { update: jest.fn().mockResolvedValue({}) },
+        walletTransaction: { update: jest.fn().mockResolvedValue({ ...pendingTxn, status: 'SUCCESSFUL', paystackTransferCode: 'TRF_456' }) },
+      }));
+
+      try {
+        const result = await service.approveWithdrawal('wtx-1', adminCtx);
+        expect(result.status).toBe('SUCCESSFUL');
+        expect(result.paystackTransferCode).toBe('TRF_456');
+        expect((global as any).fetch).toHaveBeenCalledTimes(3);
+      } finally {
+        process.env.NODE_ENV = prevEnv;
+      }
+    });
+
+    it('live mode: unresolvable bank name fails the disbursement and returns funds to wallet balance', async () => {
+      const prevEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      configGet.mockImplementation((key: string) => (key === 'PAYSTACK_SECRET_KEY' ? 'sk_live_abc123' : undefined));
+      prisma.walletTransaction.findUnique.mockResolvedValueOnce({ ...pendingTxn, bankName: 'Totally Unknown Bank Xyz' } as any);
+      prisma.adminUser.findUnique.mockResolvedValueOnce({ id: IDS.ADMIN_USER, name: 'Jane Finance' } as any);
+      (global as any).fetch = jest.fn().mockResolvedValueOnce({ json: async () => ({ status: true, data: [] }) });
+
+      const txUpdate = jest.fn().mockResolvedValue({ ...pendingTxn, status: 'FAILED' });
+      prisma.$transaction.mockImplementationOnce(async (fn: any) => fn({
+        client: { update: jest.fn().mockResolvedValue({}) },
+        walletTransaction: { update: txUpdate },
+      }));
+
+      try {
+        const result = await service.approveWithdrawal('wtx-1', adminCtx);
+        expect(result.status).toBe('FAILED');
+        expect(txUpdate).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED' }) }),
+        );
+        // Funds must be returned to wallet balance, not left stranded
+        expect(prisma.auditLog.create).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ action: 'WALLET_WITHDRAWAL_FAILED' }) }),
+        );
+      } finally {
+        process.env.NODE_ENV = prevEnv;
+      }
+    });
+  });
+
+  // ── rejectWithdrawal() ───────────────────────────────────────────
+  describe('rejectWithdrawal()', () => {
+    const pendingTxn = { ...MOCK.walletTx, id: 'wtx-2', type: 'WALLET_WITHDRAWAL', status: 'PENDING', amountKobo: BigInt(20_000_00) };
+    const adminCtx = { adminId: IDS.ADMIN_USER, adminRole: 'SUPER_ADMIN' };
+
+    it('throws NotFoundException when transaction not found', async () => {
+      prisma.walletTransaction.findUnique.mockResolvedValueOnce(null);
+      await expect(service.rejectWithdrawal('missing', adminCtx, 'no reason')).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws BadRequestException if withdrawal is not PENDING', async () => {
+      prisma.walletTransaction.findUnique.mockResolvedValueOnce({ ...pendingTxn, status: 'REVERSED' } as any);
+      await expect(service.rejectWithdrawal('wtx-2', adminCtx, 'no reason')).rejects.toThrow(BadRequestException);
+    });
+
+    it('returns funds to wallet balance and marks REVERSED', async () => {
+      prisma.walletTransaction.findUnique.mockResolvedValueOnce(pendingTxn as any);
+      prisma.adminUser.findUnique.mockResolvedValueOnce({ id: IDS.ADMIN_USER, name: 'Compliance Officer' } as any);
+      const clientUpdate = jest.fn().mockResolvedValue({});
+      prisma.$transaction.mockImplementationOnce(async (fn: any) => fn({
+        client: { update: clientUpdate },
+        walletTransaction: { update: jest.fn().mockResolvedValue({ ...pendingTxn, status: 'REVERSED' }) },
+      }));
+
+      const result = await service.rejectWithdrawal('wtx-2', adminCtx, 'Suspicious bank details');
+      expect(result.status).toBe('REVERSED');
+      expect(clientUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            pendingBalance: { decrement: BigInt(20_000_00) },
+            walletBalance: { increment: BigInt(20_000_00) },
+          }),
+        }),
+      );
     });
   });
 });

@@ -18,8 +18,13 @@ describe('API Integration Tests', () => {
   let userToken: string;
   let adminToken: string;
 
-  beforeAll(async () => {
+  beforeAll(() => {
     setTestJwtEnv();
+    userToken  = makeAccessToken();
+    adminToken = makeAdminToken();
+  });
+
+  beforeEach(async () => {
     prisma = createMockPrisma();
 
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -34,11 +39,10 @@ describe('API Integration Tests', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
     await app.init();
 
-    userToken  = makeAccessToken();
-    adminToken = makeAdminToken();
+    setupUserAuth(); // Default to user auth
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     await app.close();
   });
 
@@ -57,11 +61,6 @@ describe('API Integration Tests', () => {
     } as any);
   }
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    setupUserAuth(); // Default to user auth
-  });
-
   // ════════════════════════════════════════════════════════════════
   // AUTH ENDPOINTS
   // ════════════════════════════════════════════════════════════════
@@ -73,11 +72,12 @@ describe('API Integration Tests', () => {
         client: { create: jest.fn().mockResolvedValue({ ...MOCK.client, clientRef: 'CLI-001' }) },
         authUser: { create: jest.fn().mockResolvedValue(MOCK.authUser) },
         kycRecord: { create: jest.fn().mockResolvedValue({}) },
+        identityVerification: { create: jest.fn().mockResolvedValue({}) },
       }));
 
       await request(app.getHttpServer())
         .post('/api/v1/auth/register/individual')
-        .send({ accountType: 'single', primaryName: 'John Doe', email: 'new@example.com', password: 'Test1234!' })
+        .send({ accountType: 'single', primaryName: 'John Doe', email: 'new@example.com', password: 'Test1234!', bvn: '22345678901' })
         .expect(201)
         .expect(res => {
           expect(res.body.clientRef).toBe('CLI-001');
@@ -89,7 +89,7 @@ describe('API Integration Tests', () => {
       prisma.authUser.findUnique.mockResolvedValueOnce(MOCK.authUser as any);
       await request(app.getHttpServer())
         .post('/api/v1/auth/register/individual')
-        .send({ accountType: 'single', primaryName: 'Dupe', email: 'john@example.com', password: 'Test1234!' })
+        .send({ accountType: 'single', primaryName: 'Dupe', email: 'john@example.com', password: 'Test1234!', bvn: '22345678901' })
         .expect(409);
     });
 
@@ -208,14 +208,34 @@ describe('API Integration Tests', () => {
     });
   });
 
-  describe('PATCH /api/v1/clients/me/mandate', () => {
-    it('200 — updates mandate type for joint accounts', async () => {
+  describe('PATCH /api/v1/admin/clients/:clientId/mandate', () => {
+    it('200 — compliance admin can update mandate type for a joint account', async () => {
+      const complianceToken = makeAdminToken({ adminRole: 'COMPLIANCE' });
+      prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
       prisma.client.update.mockResolvedValueOnce({ ...MOCK.client, mandateType: 'OR' } as any);
+      prisma.auditLog.create.mockResolvedValueOnce({} as any);
       await request(app.getHttpServer())
-        .patch('/api/v1/clients/me/mandate')
-        .set('Authorization', `Bearer ${userToken}`)
+        .patch(`/api/v1/admin/clients/${MOCK.client.clientRef}/mandate`)
+        .set('Authorization', `Bearer ${complianceToken}`)
         .send({ mandateType: 'OR' })
         .expect(200);
+    });
+
+    it('403 — a non-compliance admin role cannot update mandate type', async () => {
+      const financeToken = makeAdminToken({ adminRole: 'FINANCE' });
+      await request(app.getHttpServer())
+        .patch(`/api/v1/admin/clients/${MOCK.client.clientRef}/mandate`)
+        .set('Authorization', `Bearer ${financeToken}`)
+        .send({ mandateType: 'OR' })
+        .expect(403);
+    });
+
+    it('403 — a regular client cannot update their own mandate', async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/v1/admin/clients/${MOCK.client.clientRef}/mandate`)
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ mandateType: 'OR' })
+        .expect(403);
     });
   });
 
@@ -316,7 +336,7 @@ describe('API Integration Tests', () => {
         .set('Authorization', `Bearer ${userToken}`)
         .send({
           productId: IDS.PRODUCT,
-          principalKobo: '200000000',
+          principalKobo: '50000000',
           tenorDays: 90,
           valueDate: '2024-06-01T00:00:00.000Z',
         })
@@ -540,6 +560,27 @@ describe('API Integration Tests', () => {
         .send({ reason: 'ID is expired' })
         .expect(201)
         .expect(res => expect(res.body.message).toMatch(/rejected/i));
+    });
+
+    it('GET /api/v1/kyc/compliance-board — 403 for a FINANCE admin (not permitted to view KYC/PII)', async () => {
+      const financeToken = makeAdminToken({ adminRole: 'FINANCE' });
+      await request(app.getHttpServer())
+        .get('/api/v1/kyc/compliance-board')
+        .set('Authorization', `Bearer ${financeToken}`)
+        .expect(403);
+    });
+
+    it('GET /api/v1/kyc/client/:clientId — 200 for an OPERATIONS admin (permitted role)', async () => {
+      const opsToken = makeAdminToken({ adminRole: 'OPERATIONS' });
+      prisma.client.findUnique.mockResolvedValueOnce({
+        ...MOCK.client, type: 'INDIVIDUAL', kycRecord: MOCK.kycRecord, kycDocuments: [],
+      } as any);
+      prisma.auditLog.create.mockResolvedValueOnce({} as any);
+
+      await request(app.getHttpServer())
+        .get(`/api/v1/kyc/client/${IDS.CLIENT_DB}`)
+        .set('Authorization', `Bearer ${opsToken}`)
+        .expect(200);
     });
   });
 

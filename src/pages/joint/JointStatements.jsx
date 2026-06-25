@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { FileText, Download, ChevronDown, ChevronUp, Filter } from 'lucide-react';
-import useAppStore from '../../store/useAppStore';
+import { FileText, Download, ChevronDown, ChevronUp } from 'lucide-react';
+import useAppStore, { getJointMandate } from '../../store/useAppStore';
 import PageHeader from '../../components/ui/PageHeader';
 import HolderBanner from '../../components/ui/HolderBanner';
 import StatCard from '../../components/ui/StatCard';
@@ -24,7 +24,7 @@ function StatRow({ label, value }) {
 }
 
 /* ── Single statement accordion ── */
-function StatementAccordion({ inv, plan, user, client, myTxns, isOpen, onToggle, onExport }) {
+function StatementAccordion({ inv, plan, user, client, mandate, myTxns, isOpen, onToggle, onExport }) {
   const st     = STATUS_STYLE[inv.status] || STATUS_STYLE.active;
   const gross  = (inv.amount * inv.roi) / 100;
   const tax    = (gross * inv.tax) / 100;
@@ -66,7 +66,7 @@ function StatementAccordion({ inv, plan, user, client, myTxns, isOpen, onToggle,
       {isOpen && (
         <div style={{ padding:'0 22px 20px',borderTop:'1px solid var(--gray-100)' }}>
           <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:'10px 20px',padding:'16px 0',borderBottom:'1px solid var(--gray-100)',marginBottom:14 }}>
-            {[['Investment ID',inv.id],['Principal',fmt(inv.amount)],['ROI Rate',`${inv.roi}%`],['WHT',`${inv.tax}%`],['Gross Return',fmt(gross)],['Net Return',fmt(net)],['Tenor',inv.tenor],['Value Date',inv.valueDate||'—'],['Maturity Date',inv.maturityDate||'—'],['Primary Holder',user?.name||'—'],['Secondary Holder',client?.secondaryName||'—'],['Mandate','AND Signatory']].map(([l,v])=>(
+            {[['Investment ID',inv.id],['Principal',fmt(inv.amount)],['ROI Rate',`${inv.roi}%`],['WHT',`${inv.tax}%`],['Gross Return',fmt(gross)],['Net Return',fmt(net)],['Tenor',inv.tenor],['Value Date',inv.valueDate||'—'],['Maturity Date',inv.maturityDate||'—'],['Primary Holder',user?.name||'—'],['Secondary Holder',client?.secondaryName||'—'],['Mandate',`${mandate} Signatory`]].map(([l,v])=>(
               <StatRow key={l} label={l} value={v} />
             ))}
           </div>
@@ -111,19 +111,13 @@ function StatementAccordion({ inv, plan, user, client, myTxns, isOpen, onToggle,
 }
 
 export default function JointStatements() {
-  const { user, clientInvestments, clients, allTransactions, plans } = useAppStore();
-  const client  = clients.find(c => c.clientId === user?.clientId);
+  const { user, clientInvestments, clientProfile, allTransactions, plans } = useAppStore();
+  const client  = clientProfile || user?.client || {};
+  const mandate = getJointMandate(client, user);
   const myInvs  = clientInvestments.filter(i => i.clientId === user?.clientId);
   const myTxns  = allTransactions.filter(t => t.client === user?.name);
 
-  const [expanded,     setExpanded]     = useState(null);
-  const [holderFilter, setHolderFilter] = useState('all');
-
-  const holders = [
-    { id:'all',       label:'All Holders' },
-    { id:'primary',   label: user?.name || 'Primary' },
-    { id:'secondary', label: client?.secondaryName || 'Secondary' },
-  ];
+  const [expanded, setExpanded] = useState(null);
 
   const totalAUM = myInvs.reduce((s,i)=>s+i.amount,0);
 
@@ -160,7 +154,7 @@ export default function JointStatements() {
 
       <HolderBanner
         holders={holderNames}
-        mandate={client?.mandate || 'AND'}
+        mandate={mandate}
         action={
           <button onClick={exportAll} style={{ display:'flex',alignItems:'center',gap:5,padding:'7px 12px',background:'var(--navy)',color:'white',border:'none',borderRadius:7,cursor:'pointer',fontSize:11,fontWeight:700 }}>
             <Download size={12}/> Export All
@@ -175,16 +169,6 @@ export default function JointStatements() {
             <div style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:20,color:c }}>{v}</div>
             <div style={{ fontSize:10,color:'var(--gray-400)',letterSpacing:'0.08em',textTransform:'uppercase',marginTop:2 }}>{l}</div>
           </div>
-        ))}
-      </div>
-
-      {/* Holder filter */}
-      <div style={{ display:'flex',gap:8,marginBottom:16,alignItems:'center' }} className="animate-in delay-2">
-        <Filter size={12} color="var(--gray-400)"/>
-        {holders.map(h=>(
-          <button key={h.id} onClick={()=>setHolderFilter(h.id)} style={{ padding:'6px 12px',borderRadius:7,cursor:'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:10,letterSpacing:'0.06em',textTransform:'uppercase',background:holderFilter===h.id?'var(--navy)':'white',color:holderFilter===h.id?'white':'var(--gray-400)',border:`1px solid ${holderFilter===h.id?'var(--navy)':'var(--gray-200)'}`,transition:'all 0.2s' }}>
-            {h.label}
-          </button>
         ))}
       </div>
 
@@ -204,6 +188,7 @@ export default function JointStatements() {
               plan={plan}
               user={user}
               client={client}
+              mandate={mandate}
               myTxns={myTxns}
               isOpen={expanded===inv.id}
               onToggle={()=>setExpanded(expanded===inv.id?null:inv.id)}

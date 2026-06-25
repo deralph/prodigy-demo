@@ -43,7 +43,17 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     });
 
-    const tokens = await this.generateTokens(authUser.id, authUser.email, authUser.role, authUser.clientId, authUser.adminUserId);
+    const tokens = await this.generateTokens(
+      authUser.id,
+      authUser.email,
+      authUser.role,
+      authUser.clientId,
+      authUser.adminUserId,
+      authUser.adminUser?.role ?? null,
+      authUser.holderType,
+    );
+
+    const isSecondaryHolder = authUser.holderType === 'SECONDARY';
 
     return {
       accessToken: tokens.accessToken,
@@ -52,10 +62,11 @@ export class AuthService {
         id: authUser.id,
         email: authUser.email,
         role: authUser.role,
-        name: authUser.client?.name ?? authUser.adminUser?.name,
+        name: isSecondaryHolder ? (authUser.client?.secondaryName ?? authUser.client?.name) : (authUser.client?.name ?? authUser.adminUser?.name),
         clientId: authUser.client?.clientRef ?? authUser.adminUser?.adminRef,
         adminRole: authUser.adminUser?.role ?? null,
         clientType: authUser.client?.type ?? null,
+        holderType: authUser.holderType,
       },
     };
   }
@@ -128,6 +139,17 @@ export class AuthService {
     const clientRef = await this.generateClientRef();
     const isJoint = dto.accountType === 'joint';
 
+    // The secondary holder's display info can arrive two ways: the flat
+    // secondaryName/secondaryEmail/secondaryPhone fields, or as the second
+    // entry of holderIdentities[]. Prefer the flat fields when given, but
+    // fall back to holderIdentities[1] so a holder onboarded that way is
+    // never silently dropped from the account record or missed for the
+    // magic-link invite below.
+    const secondHolderIdentity = isJoint ? dto.holderIdentities?.[1] : undefined;
+    const secondaryName  = isJoint ? (dto.secondaryName  || secondHolderIdentity?.name)  : undefined;
+    const secondaryEmail = isJoint ? (dto.secondaryEmail || secondHolderIdentity?.email) : undefined;
+    const secondaryPhone = isJoint ? (dto.secondaryPhone || secondHolderIdentity?.phone) : undefined;
+
     const result = await this.prisma.$transaction(async (tx) => {
       const client = await tx.client.create({
         data: {
@@ -137,9 +159,9 @@ export class AuthService {
           name: dto.primaryName,
           email: dto.email,
           phone: dto.phone,
-          secondaryName: isJoint ? dto.secondaryName : undefined,
-          secondaryEmail: isJoint ? dto.secondaryEmail : undefined,
-          secondaryPhone: isJoint ? dto.secondaryPhone : undefined,
+          secondaryName,
+          secondaryEmail,
+          secondaryPhone,
           mandateType: isJoint ? 'AND' : undefined,
         },
       });
@@ -153,38 +175,12 @@ export class AuthService {
         },
       });
 
-      // Create a secondary auth user (joint co-holder) if provided — give them a temporary password
-      let secondaryAuthUser = null as any;
-      if (isJoint && dto.secondaryEmail) {
-        const tmp = Math.random().toString(36).slice(-10);
-        const tmpHash = await bcrypt.hash(tmp, 12);
-        const resetToken = createHmac('sha256', process.env.JWT_SECRET ?? process.env.JWT_MAGIC_SECRET ?? 'secret')
-          .update(dto.secondaryEmail + Date.now().toString()).digest('hex');
-        const expiry = new Date(Date.now() + 48 * 3600 * 1000);
-
-        // NOTE: AuthUser.clientId is unique in the schema (one auth user per client).
-        // To avoid violating the unique constraint we create the secondary auth user
-        // without linking `clientId` here. The magic token contains the `clientRef`
-        // so when the secondary redeems the magic link we will include the client
-        // context in the issued session tokens (see verifyMagicLink()).
-        secondaryAuthUser = await tx.authUser.create({
-          data: {
-            email: dto.secondaryEmail,
-            passwordHash: tmpHash,
-            role: 'joint',
-            // do NOT set clientId to avoid unique constraint conflict
-            passwordResetToken: resetToken,
-            passwordResetExpiry: expiry,
-          },
-        });
-      }
-
       await tx.kycRecord.create({ data: { clientId: client.id } });
       await Promise.all(verifiedIdentities.map((identity) => tx.identityVerification.create({
         data: { ...identity, clientId: client.id },
       })));
 
-      return { client, authUser, secondaryAuthUser };
+      return { client, authUser };
     });
 
     this.notifications.sendEmail(
@@ -193,13 +189,13 @@ export class AuthService {
       `<p>Dear ${dto.primaryName},</p><p>Your ${isJoint ? 'joint' : 'individual'} account has been created on Prodigy Finance. Your Client ID is <strong>${result.client.clientRef}</strong>.</p><p>Please log in and complete your KYC to activate your account.</p><p>Best regards,<br/>Prodigy Finance Team</p>`,
     ).catch(() => {});
 
-    if (isJoint && dto.secondaryEmail && result.secondaryAuthUser) {
-      const magicToken = await this.generateMagicToken(result.secondaryAuthUser.id, result.client.clientRef);
+    if (isJoint && secondaryEmail) {
+      const magicToken = await this.generateMagicToken(result.client.id, result.client.clientRef, secondaryEmail);
       const magicLink = `${process.env.FRONTEND_URL ?? 'http://localhost:5173'}/magic-login?token=${magicToken}`;
       this.notifications.sendEmail(
-        dto.secondaryEmail,
+        secondaryEmail,
         'You have been added as a Joint Account Holder — Prodigy Finance',
-        `<p>Dear ${dto.secondaryName || 'Co-holder'},</p><p><strong>${dto.primaryName}</strong> has created a joint investment account with you on Prodigy Finance.</p><p>Your Account ID is <strong>${result.client.clientRef}</strong>.</p><p>Click the link below to accept, set your access credentials, and complete your KYC:</p><p><a href="${magicLink}" style="background:#0d1b35;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;">Access Your Joint Account</a></p><p>This link expires in 48 hours.</p><p>Best regards,<br/>Prodigy Finance Team</p>`,
+        `<p>Dear ${secondaryName || 'Co-holder'},</p><p><strong>${dto.primaryName}</strong> has created a joint investment account with you on Prodigy Finance.</p><p>Your Account ID is <strong>${result.client.clientRef}</strong>.</p><p>Click the link below to accept, set your own password, and complete your KYC:</p><p><a href="${magicLink}" style="background:#0d1b35;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;">Access Your Joint Account</a></p><p>This link expires in 48 hours.</p><p>Best regards,<br/>Prodigy Finance Team</p>`,
       ).catch(() => {});
     }
 
@@ -256,7 +252,7 @@ export class AuthService {
     return createHmac('sha256', pepper).update(this.cleanBvn(value)).digest('hex');
   }
 
-  private cleanBvn(value: string): string {
+  private cleanBvn(value?: string | null): string {
     return (value ?? '').replace(/\D/g, '');
   }
 
@@ -268,9 +264,20 @@ export class AuthService {
   async getMe(authUserId: string) {
     const authUser = await this.prisma.authUser.findUnique({
       where: { id: authUserId },
-      include: {
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        isActive: true,
+        holderType: true,
+        lastLoginAt: true,
+        createdAt: true,
         client: { include: { kycRecord: true } },
         adminUser: true,
+        // Deliberately NOT selected: passwordHash, refreshToken, otpCode,
+        // otpExpiry, passwordResetToken, passwordResetExpiry. These are
+        // internal auth secrets (hashed, but still sensitive) and must
+        // never be sent to the client or land in browser storage.
       },
     });
     if (!authUser) throw new NotFoundException('User not found');
@@ -279,20 +286,33 @@ export class AuthService {
 
   // ── Refresh tokens ───────────────────────────────────────────────
   async refresh(authUserId: string, refreshToken: string) {
-    const authUser = await this.prisma.authUser.findUnique({ where: { id: authUserId } });
+    const authUser = await this.prisma.authUser.findUnique({
+      where: { id: authUserId },
+      include: { adminUser: true },
+    });
     if (!authUser || !authUser.refreshToken) throw new UnauthorizedException();
     const valid = await bcrypt.compare(refreshToken, authUser.refreshToken);
     if (!valid) throw new UnauthorizedException();
-    return this.generateTokens(authUser.id, authUser.email, authUser.role, authUser.clientId, authUser.adminUserId);
+    return this.generateTokens(
+      authUser.id,
+      authUser.email,
+      authUser.role,
+      authUser.clientId,
+      authUser.adminUserId,
+      authUser.adminUser?.role ?? null,
+      authUser.holderType,
+    );
   }
 
   // ── Forgot password (sends OTP) ──────────────────────────────────
   async forgotPassword(email: string) {
+    // Always return the same generic message regardless of whether the
+    // email exists — prevents user enumeration attacks.
     const authUser = await this.prisma.authUser.findUnique({ where: { email } });
-    if (!authUser) return { message: 'If that email exists, a reset link has been sent.' };
+    if (!authUser) return { message: 'If that email exists, a reset code has been sent.' };
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+    const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 min
 
     await this.prisma.authUser.update({
       where: { id: authUser.id },
@@ -300,28 +320,60 @@ export class AuthService {
     });
 
     this.notifications.sendOtpEmail(email, otp).catch(() => {});
-    return { message: 'If that email exists, a reset link has been sent.' };
+    return { message: 'If that email exists, a reset code has been sent.' };
+  }
+
+  // Resend a fresh OTP for the same email (rate-limited in production
+  // by the auth controller — identical to forgotPassword but explicit).
+  async resendOtp(email: string) {
+    return this.forgotPassword(email);
   }
 
   // ── Reset password (verify OTP + set new password) ───────────────
   async resetPassword(email: string, otp: string, newPassword: string) {
+    if (!newPassword || newPassword.length < 8) {
+      throw new BadRequestException('Password must be at least 8 characters.');
+    }
+    const hasUpper = /[A-Z]/.test(newPassword);
+    const hasLower = /[a-z]/.test(newPassword);
+    const hasDigit = /\d/.test(newPassword);
+    if (!hasUpper || !hasLower || !hasDigit) {
+      throw new BadRequestException(
+        'Password must contain at least one uppercase letter, one lowercase letter, and one number.',
+      );
+    }
+
     const authUser = await this.prisma.authUser.findUnique({ where: { email } });
     if (!authUser || !authUser.otpCode || !authUser.otpExpiry) {
       throw new BadRequestException('No password reset was requested for this email.');
     }
     if (new Date() > authUser.otpExpiry) {
-      throw new BadRequestException('OTP has expired. Please request a new password reset.');
+      throw new BadRequestException('Reset code has expired. Please request a new one.');
     }
     const otpValid = await bcrypt.compare(otp, authUser.otpCode);
     if (!otpValid) {
-      throw new BadRequestException('Invalid OTP. Please check your email and try again.');
+      throw new BadRequestException('Incorrect reset code. Please check your email and try again.');
     }
+
     const hash = await bcrypt.hash(newPassword, 12);
     await this.prisma.authUser.update({
       where: { id: authUser.id },
       data: { passwordHash: hash, otpCode: null, otpExpiry: null, refreshToken: null },
     });
-    return { message: 'Password updated successfully. Please sign in.' };
+
+    // Audit trail for password changes (important for financial services).
+    try {
+      await this.prisma.activityLog.create({
+        data: {
+          clientId: authUser.clientId ?? null,
+          action: 'PASSWORD_RESET',
+          description: `Password reset completed for ${email}`,
+          metadata: { email } as any,
+        },
+      });
+    } catch { /* never block the happy path */ }
+
+    return { message: 'Password updated successfully. You can now sign in.' };
   }
 
   // ── Logout ───────────────────────────────────────────────────────
@@ -334,8 +386,24 @@ export class AuthService {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────
-  private async generateTokens(userId: string, email: string, role: string, clientId?: string | null, adminUserId?: string | null) {
-    const payload = { sub: userId, email, role, clientId: clientId ?? null, adminUserId: adminUserId ?? null };
+  private async generateTokens(
+    userId: string,
+    email: string,
+    role: string,
+    clientId?: string | null,
+    adminUserId?: string | null,
+    adminRole?: string | null,
+    holderType?: string | null,
+  ) {
+    const payload = {
+      sub: userId,
+      email,
+      role,
+      clientId: clientId ?? null,
+      adminUserId: adminUserId ?? null,
+      adminRole: adminRole ?? null,
+      holderType: holderType ?? null,
+    };
     const [accessToken, refreshToken] = await Promise.all([
       this.jwt.signAsync(payload, {
         secret: process.env.JWT_SECRET,
@@ -357,56 +425,106 @@ export class AuthService {
   }
 
   // ── Magic link verification ────────────────────────────────────
+  /**
+   * Inspect a joint-account magic link without consuming it.
+   * Tells the frontend whether the secondary holder still needs to set
+   * their own password (first visit) or already has an account.
+   */
   async verifyMagicLink(token: string) {
-    let payload: any;
-    try {
-      payload = await this.jwt.verifyAsync(token, { secret: process.env.JWT_MAGIC_SECRET ?? process.env.JWT_SECRET });
-    } catch {
-      throw new UnauthorizedException('Magic link is invalid or expired');
-    }
-    const authUser = await this.prisma.authUser.findUnique({
-      where: { id: payload.sub },
+    const payload = this.decodeMagicToken(token);
+    const client = await this.prisma.client.findUnique({ where: { id: payload.clientId } });
+    if (!client) throw new UnauthorizedException('Account not found');
+
+    const existingSecondary = await this.prisma.authUser.findFirst({
+      where: { clientId: client.id, holderType: 'SECONDARY' },
     });
-    if (!authUser) throw new UnauthorizedException('Account not found');
 
-    // Determine client DB id: prefer authUser.clientId, fall back to clientRef in token
-    let clientDbId: string | null = authUser.clientId ?? null;
-    let clientRecord: any = null;
-    if (!clientDbId && payload.clientRef) {
-      clientRecord = await this.prisma.client.findUnique({ where: { clientRef: payload.clientRef } });
-      if (clientRecord) clientDbId = clientRecord.id;
-    } else if (clientDbId) {
-      clientRecord = await this.prisma.client.findUnique({ where: { id: clientDbId } });
+    return {
+      requiresPasswordSetup: !existingSecondary,
+      clientRef: client.clientRef,
+      primaryName: client.name,
+      secondaryName: client.secondaryName,
+      secondaryEmail: client.secondaryEmail ?? payload.secondaryEmail,
+    };
+  }
+
+  /**
+   * Secondary holder sets their own password for the first time via the
+   * magic link, creating their own independent login. Logs them in
+   * immediately. From then on they use email + password normally.
+   */
+  async setSecondaryPassword(token: string, password: string) {
+    if (!password || password.length < 8) {
+      throw new BadRequestException('Password must be at least 8 characters.');
+    }
+    const payload = this.decodeMagicToken(token);
+    const client = await this.prisma.client.findUnique({ where: { id: payload.clientId } });
+    if (!client) throw new UnauthorizedException('Account not found');
+
+    const secondaryEmail = client.secondaryEmail ?? payload.secondaryEmail;
+    if (!secondaryEmail) {
+      throw new BadRequestException('No secondary holder email is on file for this account. Please contact support.');
     }
 
-    const tokens = await this.generateTokens(authUser.id, authUser.email, authUser.role, clientDbId, authUser.adminUserId);
-    const needsPasswordSetup = !!authUser.passwordResetToken && !!authUser.passwordResetExpiry && new Date() < authUser.passwordResetExpiry;
+    const existingSecondary = await this.prisma.authUser.findFirst({
+      where: { clientId: client.id, holderType: 'SECONDARY' },
+    });
+    if (existingSecondary) {
+      throw new ConflictException('Access has already been set up for this holder. Please log in normally.');
+    }
+
+    const emailTaken = await this.prisma.authUser.findUnique({ where: { email: secondaryEmail } });
+    if (emailTaken) {
+      throw new ConflictException('This email is already registered to another account. Please contact support.');
+    }
+
+    const hash = await bcrypt.hash(password, 12);
+    const authUser = await this.prisma.authUser.create({
+      data: {
+        email: secondaryEmail,
+        passwordHash: hash,
+        role: 'joint',
+        clientId: client.id,
+        holderType: 'SECONDARY',
+      },
+    });
+
+    const tokens = await this.generateTokens(
+      authUser.id, authUser.email, authUser.role,
+      client.id, null, null, 'SECONDARY',
+    );
+
     return {
-      ...tokens,
-      needsPasswordSetup,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
       user: {
         id: authUser.id,
         email: authUser.email,
         role: authUser.role,
-        name: clientRecord?.name ?? authUser.email,
-        clientId: clientRecord?.clientRef ?? null,
-        clientType: clientRecord?.type ?? null,
+        name: client.secondaryName ?? client.name,
+        clientId: client.clientRef,
+        clientType: client.type,
+        holderType: 'SECONDARY',
       },
     };
   }
 
-  async setPassword(authUserId: string, newPassword: string) {
-    const hash = await bcrypt.hash(newPassword, 12);
-    await this.prisma.authUser.update({
-      where: { id: authUserId },
-      data: { passwordHash: hash, passwordResetToken: null, passwordResetExpiry: null, refreshToken: null },
-    });
-    return { message: 'Password set successfully' };
+  private decodeMagicToken(token: string): { clientId: string; clientRef: string; secondaryEmail?: string; purpose?: string } {
+    let payload: any;
+    try {
+      payload = this.jwt.verify(token, { secret: process.env.JWT_MAGIC_SECRET ?? process.env.JWT_SECRET });
+    } catch {
+      throw new UnauthorizedException('Magic link is invalid or expired.');
+    }
+    if (payload.purpose !== 'joint_secondary_setup' || !payload.clientId) {
+      throw new UnauthorizedException('Magic link is invalid or expired.');
+    }
+    return payload;
   }
 
-  private async generateMagicToken(authUserId: string, clientRef: string): Promise<string> {
+  private async generateMagicToken(clientId: string, clientRef: string, secondaryEmail: string): Promise<string> {
     return this.jwt.signAsync(
-      { sub: authUserId, clientRef },
+      { clientId, clientRef, secondaryEmail, purpose: 'joint_secondary_setup' },
       { secret: process.env.JWT_MAGIC_SECRET ?? process.env.JWT_SECRET, expiresIn: '48h' },
     );
   }

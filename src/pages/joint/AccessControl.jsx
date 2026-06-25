@@ -127,8 +127,8 @@ function DocRow({ doc, activeColor, onUpload, uploading, uploadError }) {
 }
 
 export default function AccessControl() {
-  const { user, clients } = useAppStore();
-  const client = clients.find(c => c.clientId === user?.clientId);
+  const { user, clientProfile } = useAppStore();
+  const client = clientProfile || user?.client || {};
   const holders = getJointHolders(client, user);
   const n = Math.max(holders.length, 2);
   const mandate = getJointMandate(client, user);

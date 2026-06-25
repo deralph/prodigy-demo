@@ -7,21 +7,31 @@ import { IDS } from './mock-prisma';
 export const TEST_JWT_SECRET         = 'prodigy-test-jwt-secret-do-not-use-in-prod';
 export const TEST_JWT_REFRESH_SECRET = 'prodigy-test-refresh-secret-do-not-use-in-prod';
 
-export function makeAccessToken(overrides: Partial<{
-  sub: string; email: string; role: string;
+export function makeMagicToken(overrides: Partial<{
+  clientId: string; clientRef: string; secondaryEmail: string; purpose: string;
 }> = {}) {
   return jwt.sign(
-    { sub: IDS.AUTH_USER, email: 'john@example.com', role: 'individual', ...overrides },
+    { clientId: IDS.CLIENT_DB, clientRef: 'CLI-001', secondaryEmail: 'jane@example.com', purpose: 'joint_secondary_setup', ...overrides },
+    TEST_JWT_SECRET,
+    { expiresIn: '48h' },
+  );
+}
+
+export function makeAccessToken(overrides: Partial<{
+  sub: string; email: string; role: string; clientId: string; adminRole: string;
+}> = {}) {
+  return jwt.sign(
+    { sub: IDS.AUTH_USER, email: 'john@example.com', role: 'individual', clientId: IDS.CLIENT_DB, ...overrides },
     TEST_JWT_SECRET,
     { expiresIn: '1h' },
   );
 }
 
 export function makeAdminToken(overrides: Partial<{
-  sub: string; email: string; role: string;
+  sub: string; email: string; role: string; adminRole: string;
 }> = {}) {
   return jwt.sign(
-    { sub: IDS.ADMIN_AUTH, email: 'admin@prodigy.ng', role: 'admin', ...overrides },
+    { sub: IDS.ADMIN_AUTH, email: 'admin@prodigy.ng', role: 'admin', adminRole: 'SUPER_ADMIN', adminUserId: IDS.ADMIN_USER, ...overrides },
     TEST_JWT_SECRET,
     { expiresIn: '1h' },
   );

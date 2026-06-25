@@ -7,6 +7,8 @@ import PageHeader from '../../components/ui/PageHeader';
 import WalletHero from '../../components/ui/WalletHero';
 import TransactionList from '../../components/ui/TransactionList';
 import ModalOverlay from '../../components/ui/ModalOverlay';
+import WithdrawModal from '../../components/wallet/WithdrawModal';
+import Toast from '../../components/ui/Toast';
 
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 const INFLOW_TYPES = new Set(['wallet_funding','redemption','pre_termination_payout','dividend_payout']);
@@ -134,8 +136,10 @@ function FundModal({ onClose, user, onSuccess }) {
 export default function CashAccount() {
   const { user, walletBalance, pendingBalance, transactions, refreshWallet } = useAppStore();
   const [fundOpen,    setFundOpen]    = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [filterType,  setFilterType]  = useState('all');
   const [copied,      setCopied]      = useState(false);
+  const [toast, setToast] = useState(null);
 
   const ACCOUNT = {
     bank: user?.virtualAccountBank || 'Not assigned',
@@ -179,6 +183,7 @@ export default function CashAccount() {
         balance={walletBalance}
         pendingBalance={pendingBalance}
         onFund={() => setFundOpen(true)}
+        onWithdraw={() => setWithdrawOpen(true)}
         account={ACCOUNT}
         copied={copied}
         onCopy={copy}
@@ -208,6 +213,16 @@ export default function CashAccount() {
           onSuccess={() => refreshWallet()}
         />
       )}
+      {withdrawOpen && (
+        <WithdrawModal
+          onClose={() => setWithdrawOpen(false)}
+          onDone={({ type, amount }) => {
+            if (type === 'success') setToast({ type: 'success', title: 'Withdrawal Requested', message: `${fmt(amount)} withdrawal submitted for processing.` });
+          }}
+          maxAmount={walletBalance}
+        />
+      )}
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>
   );
 }

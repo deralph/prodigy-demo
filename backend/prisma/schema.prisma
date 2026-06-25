@@ -68,13 +68,15 @@ model AuthUser {
   otpExpiry           DateTime?
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
-  clientId            String?    @unique
+  clientId            String?
   adminUserId         String?    @unique
+  holderType          HolderType @default(PRIMARY)
   adminUser           AdminUser? @relation(fields: [adminUserId], references: [id])
   client              Client?    @relation(fields: [clientId], references: [id])
   sessions            Session[]
 
   @@index([email])
+  @@index([clientId])
 }
 
 model Session {
@@ -271,10 +273,16 @@ model WalletTransaction {
   amountKobo    BigInt
   description   String?
   paystackRef   String?
+  paystackTransferCode String?
+  failureReason String?
   bankName      String?
   bankAcctNo    String?
   bankAcctName  String?
   initiatedById String?
+  requestedByAuthUserId String?
+  requiresCoSign        Boolean   @default(false)
+  coSignedByAuthUserId  String?
+  coSignedAt            DateTime?
   processedAt   DateTime?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
@@ -598,6 +606,11 @@ enum ClientStatus {
 enum MandateType {
   AND
   OR
+}
+
+enum HolderType {
+  PRIMARY
+  SECONDARY
 }
 
 enum KycDocStatus {

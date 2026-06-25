@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -26,7 +26,12 @@ export class ClientsService {
   async findOne(clientId: string) {
     const client = await this.prisma.client.findUnique({
       where: { clientRef: clientId },
-      include: { kycRecord: true, kycDocuments: true, investments: true, riskProfile: true },
+      // NOTE: deliberately NOT including kycDocuments here — those contain
+      // sensitive identity-document references and must only be reachable
+      // through the dedicated, role-gated, audited KYC endpoints
+      // (KycController.getClientKyc), not the general client profile view
+      // which every admin sub-role can call.
+      include: { kycRecord: true, investments: true, riskProfile: true },
     });
     if (!client) throw new NotFoundException('Client not found');
     return client;
@@ -41,11 +46,42 @@ export class ClientsService {
     });
   }
 
-  async updateMandate(clientDbId: string, mandateType: 'AND' | 'OR') {
-    return this.prisma.client.update({
-      where: { id: clientDbId },
+  async updateMandateByClientRef(
+    clientId: string,
+    mandateType: 'AND' | 'OR',
+    admin: { adminId?: string; adminRole?: string | null },
+  ) {
+    if (mandateType !== 'AND' && mandateType !== 'OR') {
+      throw new BadRequestException('Mandate type must be AND or OR.');
+    }
+    const client = await this.prisma.client.findUnique({ where: { clientRef: clientId } });
+    if (!client) throw new NotFoundException('Client not found');
+
+    const previousMandate = client.mandateType;
+    const updated = await this.prisma.client.update({
+      where: { id: client.id },
       data: { mandateType },
     });
+
+    // Mandate changes gate whether a withdrawal needs single- or
+    // dual-holder authorization, so every change must leave an audit trail.
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          adminId: admin.adminId ?? null,
+          adminName: 'Admin',
+          adminRole: admin.adminRole ?? 'unknown',
+          action: 'MANDATE_TYPE_CHANGED',
+          targetEntity: client.id,
+          category: 'COMPLIANCE',
+          metadata: { previousMandate, newMandate: mandateType } as any,
+        },
+      });
+    } catch {
+      // Never block the update because the audit write failed.
+    }
+
+    return updated;
   }
 
   async getMe(clientDbId: string) {

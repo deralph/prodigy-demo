@@ -5,7 +5,7 @@ import {
   CreditCard, FileText, ShieldAlert, Clock,
   LogOut, X, Menu, DollarSign,
   BarChart2, Layers, AlertTriangle,
-  RefreshCw, Building2, UserCog, BarChart
+  RefreshCw, Building2, UserCog, BarChart, ArrowUpRight
 } from 'lucide-react';
 import useAppStore, { ADMIN_PERMISSIONS, ROLE_LABELS, ROLE_COLORS } from '../../store/useAppStore';
 import ContactButton from '../ContactButton';
@@ -38,6 +38,7 @@ const NAV_GROUPS = [
     group: 'Finance',
     items: [
       { to:'/admin/finance-queue',icon:DollarSign,      label:'Finance Queue',      key:'finance_queue' },
+      { to:'/admin/withdrawals',  icon:ArrowUpRight,    label:'Withdrawals Queue',  key:'withdrawals' },
       { to:'/admin/transactions', icon:CreditCard,      label:'Transaction Ledger', key:'transactions' },
     ]
   },
