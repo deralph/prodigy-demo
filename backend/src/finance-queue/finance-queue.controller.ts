@@ -34,12 +34,12 @@ export class FinanceQueueController {
   @Post(':id/approve')
   @ApiOperation({ summary: 'Finance approves disbursement — credits client wallet' })
   approve(@Param('id') id: string, @Req() req: any, @Body('notes') notes?: string) {
-    return this.financeQueueService.approve(id, req.user.sub, notes);
+    return this.financeQueueService.approve(id, req.user.sub, notes, { adminUserId: req.user.adminUserId, adminRole: req.user.adminRole });
   }
 
   @Post(':id/reject')
   @ApiOperation({ summary: 'Finance rejects disbursement with reason' })
   reject(@Param('id') id: string, @Req() req: any, @Body('reason') reason: string) {
-    return this.financeQueueService.reject(id, req.user.sub, reason);
+    return this.financeQueueService.reject(id, req.user.sub, reason, { adminUserId: req.user.adminUserId, adminRole: req.user.adminRole });
   }
 }

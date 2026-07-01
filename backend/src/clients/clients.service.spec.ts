@@ -2,16 +2,24 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { ClientsService } from './clients.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { createMockPrisma, IDS, MOCK } from '../../test/helpers/mock-prisma';
+import { createMockNotifications } from '../../test/helpers/mock-notifications';
 
 describe('ClientsService', () => {
   let service: ClientsService;
   let prisma: ReturnType<typeof createMockPrisma>;
+  let notifications: ReturnType<typeof createMockNotifications>;
 
   beforeEach(async () => {
     prisma = createMockPrisma();
+    notifications = createMockNotifications();
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ClientsService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        ClientsService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: NotificationsService, useValue: notifications },
+      ],
     }).compile();
     service = module.get(ClientsService);
   });
@@ -94,6 +102,17 @@ describe('ClientsService', () => {
       expect(result.status).toBe('SUSPENDED');
       expect(prisma.client.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { status: 'SUSPENDED' } }),
+      );
+    });
+
+    it('writes an audit log entry recording who changed the status', async () => {
+      prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
+      prisma.client.update.mockResolvedValueOnce({ ...MOCK.client, status: 'SUSPENDED' } as any);
+      prisma.adminUser.findUnique.mockResolvedValueOnce({ id: IDS.ADMIN_USER, name: 'Compliance Officer' } as any);
+
+      await service.updateStatus('CLI-001', 'SUSPENDED', IDS.ADMIN_USER, { adminRole: 'OPERATIONS' });
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ action: 'CLIENT_STATUS_CHANGED', category: 'OPERATIONS' }) }),
       );
     });
 

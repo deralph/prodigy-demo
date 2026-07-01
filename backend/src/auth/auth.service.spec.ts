@@ -7,6 +7,7 @@ import { NibssService } from '../nibss/nibss.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { createMockPrisma, IDS, MOCK } from '../../test/helpers/mock-prisma';
+import { createMockNotifications } from '../../test/helpers/mock-notifications';
 import { TEST_JWT_SECRET, setTestJwtEnv, makeMagicToken } from '../../test/helpers/jwt.helper';
 
 // Hash used in all tests — bcrypt of 'Test1234!'
@@ -30,7 +31,7 @@ describe('AuthService', () => {
       providers: [
         AuthService,
         { provide: PrismaService, useValue: prisma },
-        { provide: NotificationsService, useValue: { sendEmail: jest.fn().mockResolvedValue(undefined), sendOtpEmail: jest.fn().mockResolvedValue(undefined) } },
+        { provide: NotificationsService, useValue: createMockNotifications() },
         NibssService,
       ],
     }).compile();

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { addMonths } from 'date-fns';
+import { logAdminAction } from '../common/audit/log-admin-action';
 
 @Injectable()
 export class StaffLoansService {
@@ -107,7 +108,7 @@ export class StaffLoansService {
   }
 
   // Admin: approve a pending staff loan — disburses to corporate wallet
-  async approveLoan(loanId: string, adminId?: string) {
+  async approveLoan(loanId: string, adminId?: string, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
     const loan = await this.prisma.staffLoan.findUnique({
       where: { id: loanId },
       include: { corporate: true },
@@ -119,8 +120,8 @@ export class StaffLoansService {
     const maturityDate = addMonths(now, loan.tenorMonths);
     const totalRepay = Number(loan.principalKobo) * (1 + Number(loan.interestRate) / 100);
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.staffLoan.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.staffLoan.update({
         where: { id: loanId },
         data: {
           status: 'ACTIVE',
@@ -164,24 +165,46 @@ export class StaffLoansService {
         },
       });
 
-      return updated;
+      return result;
     });
+
+    await logAdminAction(this.prisma, {
+      adminId: admin?.adminUserId,
+      adminRole: admin?.adminRole,
+      action: 'STAFF_LOAN_APPROVED_DISBURSED',
+      targetEntity: loanId,
+      category: 'FINANCE',
+      metadata: { staffName: loan.staffName, loanRef: loan.loanRef, principalKobo: Number(loan.principalKobo), clientId: loan.clientId },
+    });
+
+    return updated;
   }
 
   // Admin: reject a pending staff loan
-  async rejectLoan(loanId: string, reason: string) {
+  async rejectLoan(loanId: string, reason: string, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
     const loan = await this.prisma.staffLoan.findUnique({ where: { id: loanId } });
     if (!loan) throw new NotFoundException('Staff loan not found');
     if (loan.status !== 'PENDING') throw new BadRequestException('Only PENDING loans can be rejected');
 
-    return this.prisma.staffLoan.update({
+    const updated = await this.prisma.staffLoan.update({
       where: { id: loanId },
       data: { status: 'REJECTED', rejectionReason: reason || 'Rejected by admin' },
     });
+
+    await logAdminAction(this.prisma, {
+      adminId: admin?.adminUserId,
+      adminRole: admin?.adminRole,
+      action: 'STAFF_LOAN_REJECTED',
+      targetEntity: loanId,
+      category: 'FINANCE',
+      metadata: { staffName: loan.staffName, loanRef: loan.loanRef, reason },
+    });
+
+    return updated;
   }
 
   // Admin: record a loan repayment (monthly salary deduction)
-  async recordRepayment(loanId: string, amountKobo: bigint, note?: string, adminId?: string) {
+  async recordRepayment(loanId: string, amountKobo: bigint, note?: string, adminId?: string, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
     const loan = await this.prisma.staffLoan.findUnique({ where: { id: loanId } });
     if (!loan) throw new NotFoundException('Staff loan not found');
     if (loan.status !== 'ACTIVE') throw new BadRequestException('Can only record repayments on ACTIVE loans');
@@ -202,7 +225,7 @@ export class StaffLoansService {
 
     const now = new Date();
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       await tx.loanRepayment.create({
         data: { loanId, amountKobo: effectiveAmt, note: note || `Principal: ${principalPortion}, Interest: ${interestPortion}` },
       });
@@ -268,5 +291,16 @@ export class StaffLoansService {
 
       return updated;
     });
+
+    await logAdminAction(this.prisma, {
+      adminId: admin?.adminUserId,
+      adminRole: admin?.adminRole,
+      action: 'STAFF_LOAN_REPAYMENT_RECORDED',
+      targetEntity: loanId,
+      category: 'FINANCE',
+      metadata: { staffName: loan.staffName, loanRef: loan.loanRef, amountKobo: Number(effectiveAmt), isFullyRepaid },
+    });
+
+    return result;
   }
 }

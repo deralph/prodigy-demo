@@ -10,7 +10,7 @@ const HOLDER_COLORS = ['#3b82f6', '#22c55e', '#8b5cf6'];
  * ClientInfoPanel — read-only client info tab used in admin modals.
  * For joint accounts shows BOTH holders' name, email, phone, and KYC status.
  */
-export default function ClientInfoPanel({ client: c, onApproveKyc, onFlagSuspend }) {
+export default function ClientInfoPanel({ client: c, onApproveKyc, onFlagSuspend, onChangeMandate }) {
   const isJoint = c.type?.toLowerCase() === 'joint';
 
   // Build per-holder objects. Admin findOne returns the raw Client row, so we
@@ -32,7 +32,22 @@ export default function ClientInfoPanel({ client: c, onApproveKyc, onFlagSuspend
       <DetailRow label="Account Type"    value={c.type?.toUpperCase() || '—'} />
       <DetailRow label="Account Status"  value={c.status} />
       <DetailRow label="KYC Status"      value={c.kyc} />
-      {isJoint && <DetailRow label="Mandate Type"   value={c.mandateType || 'AND'} />}
+      {isJoint && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--gray-100)' }}>
+          <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>Mandate Type</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy)' }}>{c.mandateType || 'AND'}</span>
+            {onChangeMandate && (
+              <button
+                onClick={onChangeMandate}
+                style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', color: '#3b6ef8', background: 'rgba(59,110,248,0.08)', border: 'none', borderRadius: 5, padding: '4px 9px', cursor: 'pointer' }}
+              >
+                Change
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       <DetailRow label="Wallet Balance"  value={fmt(c.balance)} />
       <DetailRow label="Joined"          value={c.joined} />
 

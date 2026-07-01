@@ -2,16 +2,24 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { InvestmentsService } from './investments.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { createMockPrisma, IDS, MOCK } from '../../test/helpers/mock-prisma';
+import { createMockNotifications } from '../../test/helpers/mock-notifications';
 
 describe('InvestmentsService', () => {
   let service: InvestmentsService;
   let prisma: ReturnType<typeof createMockPrisma>;
+  let notifications: ReturnType<typeof createMockNotifications>;
 
   beforeEach(async () => {
     prisma = createMockPrisma();
+    notifications = createMockNotifications();
     const module: TestingModule = await Test.createTestingModule({
-      providers: [InvestmentsService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        InvestmentsService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: NotificationsService, useValue: notifications },
+      ],
     }).compile();
     service = module.get(InvestmentsService);
   });
@@ -56,6 +64,13 @@ describe('InvestmentsService', () => {
       expect(prisma.investment.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: 'PENDING_APPROVAL' }) }),
       );
+      // Notifies both the investing client and the ops/super-admin team
+      expect(notifications.sendInvestmentSubmittedEmail).toHaveBeenCalledWith(
+        MOCK.client.email, MOCK.client.name, MOCK.product.name, expect.any(Number),
+      );
+      expect(notifications.notifyAdminsByRole).toHaveBeenCalledWith(
+        ['SUPER_ADMIN', 'OPERATIONS'], expect.any(String), expect.any(String),
+      );
     });
 
     it('throws ForbiddenException when client status is PENDING_KYC', async () => {
@@ -85,6 +100,36 @@ describe('InvestmentsService', () => {
       prisma.product.findUnique.mockResolvedValueOnce(MOCK.product as any);
       const lowDto = { ...dto, principalKobo: BigInt(100) }; // way below minInvestKobo
       await expect(service.subscribe(IDS.CLIENT_DB, lowDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequestException when principal exceeds the product maximum', async () => {
+      prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
+      prisma.product.findUnique.mockResolvedValueOnce({ ...MOCK.product, maxInvestKobo: BigInt(300_000_00) } as any);
+      const highDto = { ...dto, principalKobo: BigInt(1_000_000_00) }; // above maxInvestKobo
+      await expect(service.subscribe(IDS.CLIENT_DB, highDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('allows a principal exactly at the product maximum', async () => {
+      const cappedProduct = { ...MOCK.product, maxInvestKobo: BigInt(200_000_00) };
+      prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
+      prisma.product.findUnique.mockResolvedValueOnce(cappedProduct as any);
+      prisma.investment.count.mockResolvedValueOnce(0);
+      prisma.investment.create.mockResolvedValueOnce({
+        ...MOCK.investment, status: 'PENDING_APPROVAL', product: cappedProduct,
+      } as any);
+
+      const result = await service.subscribe(IDS.CLIENT_DB, { ...dto, principalKobo: BigInt(200_000_00) });
+      expect(result.status).toBe('PENDING_APPROVAL');
+    });
+
+    it('has no maximum cap when maxInvestKobo is null (unlimited product)', async () => {
+      prisma.client.findUnique.mockResolvedValueOnce({ ...MOCK.client, walletBalance: BigInt(999_999_999_00) } as any);
+      prisma.product.findUnique.mockResolvedValueOnce({ ...MOCK.product, maxInvestKobo: null } as any);
+      prisma.investment.count.mockResolvedValueOnce(0);
+      prisma.investment.create.mockResolvedValueOnce({ ...MOCK.investment, status: 'PENDING_APPROVAL' } as any);
+
+      const result = await service.subscribe(IDS.CLIENT_DB, { ...dto, principalKobo: BigInt(50_000_000_00) });
+      expect(result.status).toBe('PENDING_APPROVAL');
     });
   });
 
@@ -141,6 +186,33 @@ describe('InvestmentsService', () => {
       prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
       prisma.product.findUnique.mockResolvedValueOnce(null);
       await expect(service.adminBook(dto, IDS.ADMIN_USER)).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws BadRequestException when admin tries to book below the product minimum', async () => {
+      prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
+      prisma.product.findUnique.mockResolvedValueOnce(MOCK.product as any);
+      await expect(service.adminBook({ ...dto, principalKobo: BigInt(100) }, IDS.ADMIN_USER)).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequestException when admin tries to book above the product maximum', async () => {
+      prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
+      prisma.product.findUnique.mockResolvedValueOnce({ ...MOCK.product, maxInvestKobo: BigInt(300_000_00) } as any);
+      await expect(service.adminBook({ ...dto, principalKobo: BigInt(1_000_000_00) }, IDS.ADMIN_USER)).rejects.toThrow(BadRequestException);
+    });
+
+    it('writes an audit log entry recording which admin booked the investment', async () => {
+      prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
+      prisma.product.findUnique.mockResolvedValueOnce(MOCK.product as any);
+      prisma.investment.count.mockResolvedValueOnce(5);
+      prisma.investment.create.mockResolvedValueOnce({
+        ...MOCK.investment, status: 'ACTIVE', product: MOCK.product, client: MOCK.client,
+      } as any);
+      prisma.adminUser.findUnique.mockResolvedValueOnce({ id: IDS.ADMIN_USER, name: 'Ops Officer' } as any);
+
+      await service.adminBook(dto, IDS.ADMIN_USER, { adminUserId: IDS.ADMIN_USER, adminRole: 'OPERATIONS' });
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ action: 'INVESTMENT_BOOKED_BY_ADMIN', category: 'INVESTMENT' }) }),
+      );
     });
   });
 

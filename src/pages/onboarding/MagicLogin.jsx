@@ -111,7 +111,7 @@ export default function MagicLogin() {
   }, [token]);
 
   const handlePasswordSet = useCallback((data) => {
-    setTokens(data.accessToken, data.refreshToken);
+    setTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken });
     login({ ...data.user, name: data.user.name || data.user.email, clientId: data.user.clientId, holderType: data.user.holderType });
     setStep('success');
     setTimeout(() => navigate(ROLE_DESTINATIONS[data.user.role] || '/joint/portfolio', { replace: true }), 1800);

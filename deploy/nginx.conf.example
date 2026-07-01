@@ -1,0 +1,58 @@
+# Nginx server block for hosting both the Prodigy Finance frontend and
+# backend on a single VPS (e.g. Hostinger), under one domain.
+#
+# How it works:
+#   - Everything under /api/  is proxied to the NestJS backend (PM2, port 3000).
+#   - Everything else is served from the frontend's static build output,
+#     falling back to index.html so React Router's client-side routes work.
+#
+# Install:
+#   sudo cp deploy/nginx.conf.example /etc/nginx/sites-available/prodigy
+#   sudo ln -s /etc/nginx/sites-available/prodigy /etc/nginx/sites-enabled/
+#   sudo nginx -t && sudo systemctl reload nginx
+#
+# Then run certbot (see DEPLOYMENT_HOSTINGER.md) to add the SSL block —
+# certbot edits this file in place to add the 443 server block and the
+# http->https redirect, so the plain-HTTP version below is the starting point.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name yourdomain.com www.yourdomain.com;
+
+    # ── Frontend (static build) ─────────────────────────────────────
+    root /var/www/prodigy/frontend/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Cache hashed static assets aggressively; index.html is never cached
+    # (it must always be re-fetched so deploys take effect immediately).
+    location ~* \.(?:js|css|woff2?|ttf|svg|png|jpg|jpeg|gif|ico)$ {
+        try_files $uri =404;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # ── Backend (proxied to the NestJS app under PM2) ───────────────
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # Webhook endpoints (Paystack) hit the same backend — no special
+    # handling needed since they're already under /api/, just called out
+    # here as a reminder to whitelist this URL in your Paystack dashboard:
+    #   https://yourdomain.com/api/v1/webhooks/paystack
+
+    client_max_body_size 10M;  # KYC document uploads
+}

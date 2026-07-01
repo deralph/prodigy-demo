@@ -346,32 +346,6 @@ describe('API Integration Tests', () => {
   });
 
   // ════════════════════════════════════════════════════════════════
-  // GOALS ENDPOINTS
-  // ════════════════════════════════════════════════════════════════
-  describe('GET /api/v1/goals/me', () => {
-    it('200 — returns client goals', async () => {
-      prisma.goal.findMany.mockResolvedValueOnce([MOCK.goal] as any);
-      await request(app.getHttpServer())
-        .get('/api/v1/goals/me')
-        .set('Authorization', `Bearer ${userToken}`)
-        .expect(200)
-        .expect(res => expect(Array.isArray(res.body)).toBe(true));
-    });
-  });
-
-  describe('POST /api/v1/goals', () => {
-    it('201 — creates a goal', async () => {
-      prisma.goal.create.mockResolvedValueOnce(MOCK.goal as any);
-      await request(app.getHttpServer())
-        .post('/api/v1/goals')
-        .set('Authorization', `Bearer ${userToken}`)
-        .send({ name: 'School Fees', targetAmountKobo: '50000000' })
-        .expect(201)
-        .expect(res => expect(res.body.name).toBe('School Fees'));
-    });
-  });
-
-  // ════════════════════════════════════════════════════════════════
   // PRODUCTS ENDPOINTS
   // ════════════════════════════════════════════════════════════════
   describe('GET /api/v1/products', () => {
@@ -619,7 +593,6 @@ describe('API Integration Tests', () => {
       { method: 'get', path: '/api/v1/kyc/me' },
       { method: 'get', path: '/api/v1/wallet/me' },
       { method: 'get', path: '/api/v1/investments/me' },
-      { method: 'get', path: '/api/v1/goals/me' },
     ];
 
     protectedRoutes.forEach(({ method, path }) => {
@@ -634,6 +607,7 @@ describe('API Integration Tests', () => {
       '/api/v1/admin/approvals',
       '/api/v1/admin/transactions',
       '/api/v1/kyc/compliance-board',
+      '/api/v1/admin/audit',
     ];
 
     adminOnlyRoutes.forEach(path => {
@@ -646,6 +620,62 @@ describe('API Integration Tests', () => {
           .set('Authorization', `Bearer ${userToken}`)
           .expect(403);
       });
+    });
+
+    it('403 GET /api/v1/admin/audit with a FINANCE admin (not permitted — audit trail is compliance/audit/super-admin only)', async () => {
+      const financeToken = makeAdminToken({ adminRole: 'FINANCE' });
+      await request(app.getHttpServer())
+        .get('/api/v1/admin/audit')
+        .set('Authorization', `Bearer ${financeToken}`)
+        .expect(403);
+    });
+
+    it('200 GET /api/v1/admin/audit with an AUDIT admin (permitted role)', async () => {
+      const auditToken = makeAdminToken({ adminRole: 'AUDIT' });
+      prisma.auditLog.findMany.mockResolvedValueOnce([]);
+      prisma.auditLog.count.mockResolvedValueOnce(0);
+      await request(app.getHttpServer())
+        .get('/api/v1/admin/audit')
+        .set('Authorization', `Bearer ${auditToken}`)
+        .expect(200);
+    });
+
+    it('403 POST /api/v1/admin-users with a regular (non-admin) client token — closes a privilege-escalation hole that previously let any logged-in user create a SUPER_ADMIN account', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/admin-users')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ name: 'Hacker', email: 'hacker@evil.com', role: 'super_admin', password: 'Valid1234' })
+        .expect(403);
+    });
+
+    it('403 POST /api/v1/admin-users with a non-super-admin (e.g. OPERATIONS) — admin user management is super-admin only', async () => {
+      const opsToken = makeAdminToken({ adminRole: 'OPERATIONS' });
+      await request(app.getHttpServer())
+        .post('/api/v1/admin-users')
+        .set('Authorization', `Bearer ${opsToken}`)
+        .send({ name: 'New Admin', email: 'new-admin@prodigy.ng', role: 'finance', password: 'Valid1234' })
+        .expect(403);
+    });
+
+    it('201 POST /api/v1/admin-users with a SUPER_ADMIN token succeeds', async () => {
+      prisma.authUser.findUnique.mockResolvedValueOnce(null);
+      prisma.$transaction.mockImplementationOnce(async (fn: any) => fn({
+        adminUser: { create: jest.fn().mockResolvedValue({ id: 'new-1', email: 'new-admin@prodigy.ng', name: 'New Admin', role: 'FINANCE' }) },
+        authUser: { create: jest.fn().mockResolvedValue({}) },
+      }));
+      await request(app.getHttpServer())
+        .post('/api/v1/admin-users')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ name: 'New Admin', email: 'new-admin@prodigy.ng', role: 'finance', password: 'Valid1234' })
+        .expect(201);
+    });
+
+    it('403 GET /api/v1/admin-users with a non-super-admin token', async () => {
+      const financeToken = makeAdminToken({ adminRole: 'FINANCE' });
+      await request(app.getHttpServer())
+        .get('/api/v1/admin-users')
+        .set('Authorization', `Bearer ${financeToken}`)
+        .expect(403);
     });
   });
 });

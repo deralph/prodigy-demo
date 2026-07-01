@@ -10,6 +10,7 @@ const TYPE_META = {
   subscription:   { label:'Subscription',      color:'var(--navy)',  bg:'rgba(13,27,53,0.08)',  icon:ArrowUpRight },
   redemption:     { label:'Redemption',         color:'var(--gold)',  bg:'rgba(232,184,75,0.12)',icon:ArrowDownLeft },
   wallet:         { label:'Wallet',             color:'var(--green)', bg:'rgba(34,197,94,0.1)',  icon:ArrowDownLeft },
+  account:        { label:'Account Activity',   color:'#8b5cf6',      bg:'rgba(139,92,246,0.1)', icon:Clock },
 };
 const STATUS_META = {
   successful: { color:'var(--green)', bg:'rgba(34,197,94,0.1)' },
@@ -18,13 +19,17 @@ const STATUS_META = {
 };
 
 export default function ActivityLog() {
-  const { user, transactions, allTransactions } = useAppStore();
+  const { user, transactions, allTransactions, serverActivity } = useAppStore();
   const [typeFilter, setTypeFilter] = useState('all');
 
   const myInvTxns = allTransactions.filter(t => t.client === user?.name);
   const combined  = [
     ...transactions.map(t => ({ id:t.id, type:'wallet_funding', amount:t.amount, date:t.date, status:t.status?.toLowerCase(), description:t.description, ref:t.ref, product:'Wallet' })),
     ...myInvTxns.map(t => ({ ...t, status:t.status?.toLowerCase(), description:`${t.type==='subscription'?'Subscribed to':'Redemption from'} ${t.product}`, ref:t.ref })),
+    // Server-recorded account activity (withdrawal requests, co-signs,
+    // password changes, etc.) — broader coverage than just wallet/investment
+    // transactions, sourced from the real ActivityLog table.
+    ...serverActivity.map(a => ({ id:a.id, type:'account', amount:a.amount||0, date:a.time, status:'successful', description:a.description||a.action, ref:null, product:null })),
   ].sort((a,b) => new Date(b.date) - new Date(a.date));
 
   const filtered = typeFilter === 'all' ? combined : combined.filter(t => t.type === typeFilter);
@@ -62,7 +67,7 @@ export default function ActivityLog() {
       {/* Filters + export */}
       <div style={{ display:'flex',gap:8,marginBottom:16,flexWrap:'wrap',alignItems:'center' }} className="animate-in delay-2">
         <div style={{ display:'flex',alignItems:'center',gap:5 }}><Filter size={12} color="var(--gray-400)"/></div>
-        {['all','wallet_funding','subscription','redemption'].map(f=>(
+        {['all','wallet_funding','subscription','redemption','account'].map(f=>(
           <button key={f} onClick={()=>setTypeFilter(f)} style={{ padding:'6px 12px',borderRadius:7,cursor:'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:10,letterSpacing:'0.06em',textTransform:'uppercase',background:typeFilter===f?'var(--navy)':'white',color:typeFilter===f?'white':'var(--gray-400)',border:`1px solid ${typeFilter===f?'var(--navy)':'var(--gray-200)'}`,transition:'all 0.2s' }}>
             {f==='all'?'All':TYPE_META[f]?.label||f}
           </button>

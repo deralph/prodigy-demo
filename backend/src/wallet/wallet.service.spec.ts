@@ -3,22 +3,27 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { WalletService } from './wallet.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { createMockPrisma, IDS, MOCK } from '../../test/helpers/mock-prisma';
+import { createMockNotifications } from '../../test/helpers/mock-notifications';
 
 describe('WalletService', () => {
   let service: WalletService;
   let prisma: ReturnType<typeof createMockPrisma>;
   let configGet: jest.Mock;
+  let notifications: ReturnType<typeof createMockNotifications>;
 
   beforeEach(async () => {
     prisma = createMockPrisma();
     configGet = jest.fn().mockReturnValue(undefined); // default: no PAYSTACK_SECRET_KEY
+    notifications = createMockNotifications();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WalletService,
         { provide: PrismaService, useValue: prisma },
         { provide: ConfigService, useValue: { get: configGet } },
+        { provide: NotificationsService, useValue: notifications },
       ],
     }).compile();
     service = module.get(WalletService);
@@ -349,9 +354,12 @@ describe('WalletService', () => {
     });
 
     it('creates a JOINT/AND-mandate withdrawal as requiresCoSign=true (real second signature, not a checkbox)', async () => {
-      const jointClient = { ...MOCK.client, type: 'JOINT', mandateType: 'AND' };
+      const jointClient = { ...MOCK.client, type: 'JOINT', mandateType: 'AND', secondaryName: 'Jane Doe' };
       prisma.client.findUnique.mockResolvedValueOnce(jointClient as any);
-      prisma.authUser.findFirst.mockResolvedValueOnce({ id: 'secondary-auth-1', holderType: 'SECONDARY' } as any);
+      prisma.authUser.findFirst
+        .mockResolvedValueOnce({ id: 'secondary-auth-1', holderType: 'SECONDARY' } as any) // secondary-setup guard
+        .mockResolvedValueOnce({ id: 'secondary-auth-1', holderType: 'SECONDARY', email: 'jane@example.com' } as any); // other-holder lookup for notification
+      prisma.authUser.findUnique.mockResolvedValueOnce({ id: IDS.AUTH_USER, holderType: 'PRIMARY', email: MOCK.client.email } as any);
       const createTxMock = jest.fn().mockResolvedValue({ ...MOCK.walletTx, type: 'WALLET_WITHDRAWAL', status: 'PENDING', requiresCoSign: true });
       prisma.$transaction.mockImplementationOnce(async (fn: any) => {
         const txMock = {
@@ -365,6 +373,13 @@ describe('WalletService', () => {
       expect(result.status).toBe('PENDING');
       expect(createTxMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ requiresCoSign: true, requestedByAuthUserId: IDS.AUTH_USER }) }),
+      );
+      // Both the requester and the other holder (who must co-sign) are notified
+      expect(notifications.sendWithdrawalRequestedEmail).toHaveBeenCalledWith(
+        MOCK.client.email, MOCK.client.name, expect.any(Number), true,
+      );
+      expect(notifications.sendWithdrawalCoSignNeededEmail).toHaveBeenCalledWith(
+        'jane@example.com', 'Jane Doe', MOCK.client.name, expect.any(Number),
       );
     });
 
@@ -425,11 +440,18 @@ describe('WalletService', () => {
     it('cosignWithdrawal succeeds when the OTHER holder signs', async () => {
       prisma.walletTransaction.findUnique.mockResolvedValueOnce(coSignTxn as any);
       prisma.walletTransaction.update.mockResolvedValueOnce({ ...coSignTxn, coSignedByAuthUserId: OTHER_HOLDER } as any);
+      prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
+      prisma.authUser.findUnique.mockResolvedValueOnce({ id: IDS.AUTH_USER, holderType: 'PRIMARY', email: MOCK.client.email } as any);
 
       const result = await service.cosignWithdrawal(coSignTxn.id, IDS.CLIENT_DB, OTHER_HOLDER);
       expect(result.coSignedByAuthUserId).toBe(OTHER_HOLDER);
       expect(prisma.activityLog.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ action: 'WALLET_WITHDRAWAL_COSIGNED' }) }),
+      );
+      // Requester is told it's co-signed; finance admins are told it's ready for review
+      expect(notifications.sendWithdrawalCoSignedEmail).toHaveBeenCalled();
+      expect(notifications.notifyAdminsByRole).toHaveBeenCalledWith(
+        ['SUPER_ADMIN', 'FINANCE'], expect.any(String), expect.any(String),
       );
     });
 

@@ -13,7 +13,6 @@ export const IDS = {
   PRODUCT:      'cuid-product-001',
   INVESTMENT:   'cuid-investment-001',
   APPROVAL:     'cuid-approval-001',
-  GOAL:         'cuid-goal-001',
   KYC_RECORD:   'cuid-kyc-001',
   WALLET_TX:    'cuid-wallet-tx-001',
   PRE_TERM:     'cuid-preterm-001',
@@ -101,7 +100,6 @@ export const MOCK = {
     tenorDays: 90,
     valueDate: new Date('2024-01-01'),
     maturityDate: new Date('2024-04-01'),
-    autoRollover: false,
   },
 
   approval: {
@@ -111,15 +109,6 @@ export const MOCK = {
     status: 'PENDING',
     investmentId: IDS.INVESTMENT,
     clientId: IDS.CLIENT_DB,
-  },
-
-  goal: {
-    id: IDS.GOAL,
-    clientId: IDS.CLIENT_DB,
-    name: 'School Fees',
-    targetAmountKobo: BigInt(500_000_00),
-    currentKobo: BigInt(0),
-    status: 'ON_TRACK',
   },
 
   walletTx: {
@@ -153,8 +142,6 @@ export function createMockPrisma() {
     walletTransaction: { findUnique: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
     approval:    { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
     preTermination: { findUnique: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
-    goal:        { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
-    notification: { findMany: jest.fn(), create: jest.fn() },
     activityLog:  { findMany: jest.fn(), create: jest.fn() },
     auditLog:     { findMany: jest.fn(), create: jest.fn(), count: jest.fn() },
     auditToken:   { create: jest.fn(), findUnique: jest.fn() },
@@ -166,7 +153,6 @@ export function createMockPrisma() {
     corporateEntity: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), count: jest.fn() },
     staffLoan:      { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
     loanRepayment:  { create: jest.fn() },
-    eodRun:         { findMany: jest.fn(), create: jest.fn() },
     $transaction: jest.fn(),
     $queryRaw: jest.fn().mockResolvedValue([]),
     $executeRaw: jest.fn().mockResolvedValue(1),

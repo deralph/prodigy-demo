@@ -36,7 +36,7 @@ export class ProductsController {
   @Roles('admin')
   @ApiOperation({ summary: 'Admin: create new product' })
   create(@Body() body: any, @Req() req: any) {
-    return this.productsService.create(body, req.user.sub);
+    return this.productsService.create(body, req.user.sub, { adminUserId: req.user.adminUserId, adminRole: req.user.adminRole });
   }
 
   @Patch(':id')
@@ -44,6 +44,6 @@ export class ProductsController {
   @Roles('admin')
   @ApiOperation({ summary: 'Admin: update product settings' })
   update(@Param('id') id: string, @Body() body: any, @Req() req: any) {
-    return this.productsService.update(id, body, req.user.sub);
+    return this.productsService.update(id, body, req.user.sub, { adminUserId: req.user.adminUserId, adminRole: req.user.adminRole });
   }
 }

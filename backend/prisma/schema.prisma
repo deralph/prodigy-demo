@@ -37,15 +37,12 @@ model Client {
   approvals          Approval[]
   authUser           AuthUser?
   beneficiaries      Beneficiary[]
-  goals              Goal[]
   investments        Investment[]
   identityVerifications IdentityVerification[]
   kycDocuments       KycDocument[]
   kycRecord          KycRecord?
-  legacyNote         LegacyNote?
   riskProfile        RiskProfile?
   staffLoans         StaffLoan[]
-  statements         Statement[]
   walletTransactions WalletTransaction[]
   orgLedgerEntries   OrgLedger[]
 
@@ -207,7 +204,6 @@ model Investment {
   tenorDays       Int
   valueDate       DateTime?
   maturityDate    DateTime?
-  autoRollover    Boolean           @default(false)
   bookedById      String?
   bookedAt        DateTime?
   approvedById    String?
@@ -221,7 +217,6 @@ model Investment {
   product         Product           @relation(fields: [productId], references: [id])
   history         InvestmentEvent[]
   preTermination  PreTermination?
-  statement       Statement?
 
   @@index([clientId])
   @@index([productId])
@@ -451,22 +446,6 @@ model DividendEntry {
   @@index([clientId])
 }
 
-model Goal {
-  id               String     @id @default(cuid())
-  clientId         String
-  name             String
-  targetAmountKobo BigInt
-  currentKobo      BigInt     @default(0)
-  targetDate       DateTime?
-  status           GoalStatus @default(ON_TRACK)
-  notes            String?
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-  client           Client     @relation(fields: [clientId], references: [id])
-
-  @@index([clientId])
-}
-
 model Beneficiary {
   id           String   @id @default(cuid())
   clientId     String
@@ -478,27 +457,6 @@ model Beneficiary {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   client       Client   @relation(fields: [clientId], references: [id])
-
-  @@index([clientId])
-}
-
-model LegacyNote {
-  id        String   @id @default(cuid())
-  clientId  String   @unique
-  content   String
-  updatedAt DateTime @updatedAt
-  client    Client   @relation(fields: [clientId], references: [id])
-}
-
-model Statement {
-  id           String     @id @default(cuid())
-  investmentId String     @unique
-  clientId     String
-  fileUrl      String?
-  generatedAt  DateTime   @default(now())
-  holder       String?
-  client       Client     @relation(fields: [clientId], references: [id])
-  investment   Investment @relation(fields: [investmentId], references: [id])
 
   @@index([clientId])
 }
@@ -559,33 +517,6 @@ model AuditToken {
   @@index([token])
   @@index([clientId])
   @@index([expiresAt])
-}
-
-model EodRun {
-  id            String       @id @default(cuid())
-  runDate       DateTime     @unique @db.Date
-  status        EodRunStatus @default(RUNNING)
-  triggeredById String
-  steps         Json
-  startedAt     DateTime     @default(now())
-  completedAt   DateTime?
-  errorMessage  String?
-
-  @@index([runDate])
-}
-
-model Notification {
-  id        String   @id @default(cuid())
-  userId    String
-  title     String
-  body      String
-  type      String
-  isRead    Boolean  @default(false)
-  metadata  Json?
-  createdAt DateTime @default(now())
-
-  @@index([userId])
-  @@index([isRead])
 }
 
 enum ClientType {
@@ -654,7 +585,6 @@ enum InvestmentStatus {
   ACTIVE
   MATURED
   PRE_TERMINATED
-  ROLLED_OVER
   REJECTED
 }
 
@@ -720,18 +650,6 @@ enum DividendStatus {
   PENDING_PAYMENT
   PAID
   CANCELLED
-}
-
-enum EodRunStatus {
-  RUNNING
-  COMPLETED
-  FAILED
-}
-
-enum GoalStatus {
-  ON_TRACK
-  AT_RISK
-  ACHIEVED
 }
 
 enum AuditCategory {

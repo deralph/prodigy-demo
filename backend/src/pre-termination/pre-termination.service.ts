@@ -1,11 +1,13 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { logAdminAction } from '../common/audit/log-admin-action';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const PENALTY_RATE = 0.1; // 10% early exit penalty
 
 @Injectable()
 export class PreTerminationService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private notifications: NotificationsService) {}
 
   async findAll(query: { status?: string }) {
     const records = await this.prisma.preTermination.findMany({
@@ -39,7 +41,7 @@ export class PreTerminationService {
   }
 
   // Ops approves → confirms pre-calculated penalty → routes to FinanceQueue
-  async approveOps(id: string, adminId: string) {
+  async approveOps(id: string, adminId: string, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
     const pt = await this.prisma.preTermination.findUnique({
       where: { id },
       include: { investment: { include: { product: true } } },
@@ -96,14 +98,23 @@ export class PreTerminationService {
       return preTerm;
     });
 
+    await logAdminAction(this.prisma, {
+      adminId: admin?.adminUserId,
+      adminRole: admin?.adminRole,
+      action: 'PRE_TERMINATION_OPS_APPROVED',
+      targetEntity: id,
+      category: 'OPERATIONS',
+      metadata: { investmentId: pt.investmentId, penaltyKobo: Number(penaltyKobo), netPayoutKobo: Number(netPayoutKobo) },
+    });
+
     return updated;
   }
 
-  async rejectOps(id: string, adminId: string, reason: string) {
+  async rejectOps(id: string, adminId: string, reason: string, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
     const pt = await this.prisma.preTermination.findUnique({ where: { id } });
     if (!pt) throw new NotFoundException('Pre-termination not found');
 
-    return this.prisma.preTermination.update({
+    const updated = await this.prisma.preTermination.update({
       where: { id },
       data: {
         status: 'REJECTED',
@@ -112,5 +123,24 @@ export class PreTerminationService {
         rejectionReason: reason,
       },
     });
+
+    await logAdminAction(this.prisma, {
+      adminId: admin?.adminUserId,
+      adminRole: admin?.adminRole,
+      action: 'PRE_TERMINATION_OPS_REJECTED',
+      targetEntity: id,
+      category: 'OPERATIONS',
+      metadata: { investmentId: pt.investmentId, reason },
+    });
+
+    const ptWithClient = await this.prisma.preTermination.findUnique({
+      where: { id }, include: { investment: { include: { client: true } } },
+    });
+    const client = ptWithClient?.investment?.client;
+    if (client) {
+      this.notifications.sendPreTerminationDecisionEmail(client.email, client.name, false, undefined, reason).catch(() => {});
+    }
+
+    return updated;
   }
 }

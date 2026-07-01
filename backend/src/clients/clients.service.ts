@@ -1,9 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { logAdminAction } from '../common/audit/log-admin-action';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ClientsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private notifications: NotificationsService) {}
 
   async findAll(query: { search?: string; type?: string; status?: string }) {
     return this.prisma.client.findMany({
@@ -37,13 +39,25 @@ export class ClientsService {
     return client;
   }
 
-  async updateStatus(clientId: string, status: string, adminId: string) {
+  async updateStatus(clientId: string, status: string, adminId: string, admin?: { adminRole?: string | null }) {
     const client = await this.prisma.client.findUnique({ where: { clientRef: clientId } });
     if (!client) throw new NotFoundException('Client not found');
-    return this.prisma.client.update({
+
+    const updated = await this.prisma.client.update({
       where: { id: client.id },
       data: { status: status as any },
     });
+
+    await logAdminAction(this.prisma, {
+      adminId,
+      adminRole: admin?.adminRole,
+      action: 'CLIENT_STATUS_CHANGED',
+      targetEntity: client.id,
+      category: 'OPERATIONS',
+      metadata: { clientRef: client.clientRef, previousStatus: client.status, newStatus: status },
+    });
+
+    return updated;
   }
 
   async updateMandateByClientRef(
@@ -65,20 +79,21 @@ export class ClientsService {
 
     // Mandate changes gate whether a withdrawal needs single- or
     // dual-holder authorization, so every change must leave an audit trail.
-    try {
-      await this.prisma.auditLog.create({
-        data: {
-          adminId: admin.adminId ?? null,
-          adminName: 'Admin',
-          adminRole: admin.adminRole ?? 'unknown',
-          action: 'MANDATE_TYPE_CHANGED',
-          targetEntity: client.id,
-          category: 'COMPLIANCE',
-          metadata: { previousMandate, newMandate: mandateType } as any,
-        },
-      });
-    } catch {
-      // Never block the update because the audit write failed.
+    await logAdminAction(this.prisma, {
+      adminId: admin.adminId,
+      adminRole: admin.adminRole,
+      action: 'MANDATE_TYPE_CHANGED',
+      targetEntity: client.id,
+      category: 'COMPLIANCE',
+      metadata: { previousMandate, newMandate: mandateType },
+    });
+
+    // Both holders are notified — this is security-relevant and neither
+    // holder should be surprised by a change to how withdrawals work.
+    const changedByLabel = admin.adminRole ? `the ${admin.adminRole.replace('_', ' ').toLowerCase()} team` : 'compliance';
+    this.notifications.sendMandateChangedEmail(client.email, client.name, mandateType, changedByLabel).catch(() => {});
+    if (client.secondaryEmail) {
+      this.notifications.sendMandateChangedEmail(client.secondaryEmail, client.secondaryName || 'Co-holder', mandateType, changedByLabel).catch(() => {});
     }
 
     return updated;

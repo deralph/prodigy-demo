@@ -7,7 +7,7 @@ import { create } from 'zustand';
 /* ── Admin role permissions ─────────────────────────────────── */
 export const ADMIN_PERMISSIONS = {
   super_admin:  ['all'],
-  operations:   ['clients','loans','kyc','risk','transactions','book_instrument','approval_hub','pretermination','product_setup','plans','accruals','eod','client_investments','analytics','reports'],
+  operations:   ['clients','loans','kyc','risk','transactions','book_instrument','approval_hub','pretermination','product_setup','plans','accruals','client_investments','analytics','reports'],
   compliance:   ['kyc','audit_trail','risk'],
   finance:      ['transactions','finance_queue','withdrawals','reports','analytics','client_investments'],
   audit:        ['audit_trail','reports','transactions'],
@@ -29,6 +29,7 @@ const INITIAL_STATE = {
   orgLedger: [],
   clientInvestments: [],
   auditLog: [],
+  serverActivity: [],
   adminUsers: [],
   walletBalance: 0,
   pendingBalance: 0,
@@ -88,6 +89,27 @@ const mapAdminUser = (u) => ({
   ...u,
   adminRole: u.role?.toLowerCase() || 'operations',
   status:    u.status?.toLowerCase() || 'active',
+});
+
+// Maps a backend AuditLog row -> the shape AuditItem.jsx already renders.
+const mapAuditEntry = (a) => ({
+  id: a.id || a.auditRef,
+  time: a.occurredAt ? new Date(a.occurredAt).toLocaleString('en-GB') : '—',
+  admin: a.adminName || 'Unknown Admin',
+  role: a.adminRole?.toLowerCase() || 'unknown',
+  action: a.action,
+  target: a.targetEntity || '—',
+  category: a.category?.toLowerCase() || 'system',
+  ip: a.ipAddress || null,
+});
+
+// Maps a backend ActivityLog row (client-facing) -> a simple display shape.
+const mapActivityEntry = (a) => ({
+  id: a.id,
+  time: a.occurredAt ? new Date(a.occurredAt).toLocaleString('en-GB') : '—',
+  action: a.action,
+  description: a.description || '',
+  amount: a.amountKobo != null ? Number(a.amountKobo) / 100 : null,
 });
 
 const mapClientProfile = (c) => ({
@@ -162,7 +184,6 @@ const mapInvestment = (inv) => {
     maturityDate: maturityDateObj ? maturityDateObj.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : '—',
     _valueDate:    valueDateObj,
     _maturityDate: maturityDateObj,
-    autoRollover: inv.autoRollover,
     notes:        inv.notes,
     createdAt:    inv.createdAt,
     _createdAt:   inv.createdAt ? new Date(inv.createdAt) : null,
@@ -323,9 +344,19 @@ const useAppStore = create((set, get) => ({
         tasks.push(api.clientApi.getMe().then(data => {
           if (data) set({ clientProfile: mapClientProfile(data) });
         }).catch(() => {}));
+        tasks.push(api.activityApi.getMine({ limit: 100 }).then(res => {
+          const rows = Array.isArray(res) ? res : (res?.data || []);
+          if (rows.length) set({ serverActivity: rows.map(mapActivityEntry) });
+        }).catch(() => {}));
       }
       // Admin-only: try to load admin data (silently fails for regular users)
       if (user?.role === 'admin') {
+        // Audit trail — only SUPER_ADMIN/COMPLIANCE/AUDIT can read this;
+        // the backend 403s for other roles and we just skip populating it.
+        tasks.push(api.adminAuditApi.findAll({ limit: 200 }).then(res => {
+          const rows = Array.isArray(res) ? res : (res?.data || []);
+          if (rows.length) set({ auditLog: rows.map(mapAuditEntry) });
+        }).catch(() => {}));
         tasks.push(api.adminClientApi.findAll().then(data => {
           if (data && Array.isArray(data)) {
             // Transform Prisma Client fields to frontend format
@@ -608,6 +639,13 @@ const useAppStore = create((set, get) => ({
   updateClient: (id, patch) => {
     set((s) => ({ clients: s.clients.map(c => c.id === id ? { ...c, ...patch } : c) }));
     import('../services/api').then(m => m.adminClientApi.updateStatus(id, patch.status)).catch(() => {});
+  },
+
+  // Reflect a mandate change locally after the API call has already
+  // succeeded (the caller is responsible for calling adminClientApi.updateMandate
+  // first) — deliberately does NOT call updateStatus like updateClient does.
+  setClientMandateLocal: (id, mandateType) => {
+    set((s) => ({ clients: s.clients.map(c => c.id === id ? { ...c, mandateType } : c) }));
   },
 
   // Admin: add instrument

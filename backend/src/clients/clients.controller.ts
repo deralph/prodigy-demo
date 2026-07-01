@@ -58,7 +58,7 @@ export class AdminClientsController {
     @Body('status') status: string,
     @Req() req: any,
   ) {
-    return this.clientsService.updateStatus(clientId, status, req.user.sub);
+    return this.clientsService.updateStatus(clientId, status, req.user.adminUserId, { adminRole: req.user.adminRole });
   }
 
   @Patch(':clientId/mandate')

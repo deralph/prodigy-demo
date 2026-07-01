@@ -183,6 +183,9 @@ export const adminInvestmentApi = {
   getStatement: (id) => request(`/admin/investments/${id}/statement`),
   getCertificate: (id) => request(`/admin/investments/${id}/certificate`),
   sell: (id, data) => request(`/admin/investments/${id}/sell`, { method: 'POST', body: JSON.stringify(data) }),
+  // Manual trigger for the daily maturity check (reminders + marking matured) —
+  // normally runs automatically once a day via cron.
+  runMaturityCheck: () => request('/admin/investments/maturity/run', { method: 'POST' }),
 };
 
 /* ── WALLET ──────────────────────────────────────────────── */
@@ -307,6 +310,23 @@ export const staffLoanApi = {
 export const auditPortalApi = {
   generate: (email) => request('/audit-portal/generate', { method: 'POST', body: JSON.stringify({ email }) }),
   verify: (token) => request(`/audit-portal/verify?token=${encodeURIComponent(token)}`),
+};
+
+// Admin: full platform audit trail (who did what) — restricted server-side
+// to SUPER_ADMIN/COMPLIANCE/AUDIT roles.
+export const adminAuditApi = {
+  findAll: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/admin/audit${qs ? '?' + qs : ''}`);
+  },
+};
+
+// Client: their own activity feed (server-recorded — investments, withdrawals, etc.)
+export const activityApi = {
+  getMine: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/activity${qs ? '?' + qs : ''}`);
+  },
 };
 
 export const adminStaffLoanApi = {

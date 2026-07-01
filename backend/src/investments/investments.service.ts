@@ -1,12 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { addDays } from 'date-fns';
+import { logAdminAction } from '../common/audit/log-admin-action';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const PENALTY_RATE = 0.1; // 10% default early exit penalty on principal
 
 @Injectable()
 export class InvestmentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private notifications: NotificationsService) {}
 
   // Client: get own investments
   async getMyInvestments(clientDbId: string) {
@@ -26,7 +28,6 @@ export class InvestmentsService {
     tenorDays?: number;
     tenor?: string;          // e.g. "3 months" from frontend
     valueDate?: Date | string;
-    autoRollover?: boolean;
     notes?: string;
   }) {
     // Normalise amount → kobo
@@ -46,6 +47,9 @@ export class InvestmentsService {
     if (product.status !== 'ACTIVE') throw new BadRequestException('Product is not currently available');
     if (principalKobo < product.minInvestKobo) {
       throw new BadRequestException(`Minimum investment is ₦${Number(product.minInvestKobo) / 100}`);
+    }
+    if (product.maxInvestKobo != null && principalKobo > product.maxInvestKobo) {
+      throw new BadRequestException(`Maximum investment for this product is ₦${Number(product.maxInvestKobo) / 100}`);
     }
 
     // ── Wallet balance check ────────────────────────────────────────────────
@@ -90,7 +94,6 @@ export class InvestmentsService {
           roiRate: product.roiMin,
           taxRate: (product as any).withholdingTaxRate ?? 10,
           tenorDays,
-          autoRollover: dto.autoRollover ?? false,
           notes: dto.notes,
           history: {
             create: { action: 'Subscription Submitted', note: 'Awaiting ops approval' },
@@ -118,6 +121,17 @@ export class InvestmentsService {
         },
       });
 
+      return investment;
+    }).then(async (investment) => {
+      // Notify client + ops admins — never blocks the response if email fails.
+      this.notifications.sendInvestmentSubmittedEmail(
+        client.email, client.name, product.name, Number(principalKobo) / 100,
+      ).catch(() => {});
+      this.notifications.notifyAdminsByRole(
+        ['SUPER_ADMIN', 'OPERATIONS'],
+        'New Investment Subscription Pending Approval',
+        `<p>${client.name} (${client.clientRef}) has subscribed to <strong>${product.name}</strong> for ₦${(Number(principalKobo) / 100).toLocaleString()}. It is awaiting approval in the Approval Hub.</p>`,
+      ).catch(() => {});
       return investment;
     });
   }
@@ -191,19 +205,25 @@ export class InvestmentsService {
     roiRate: number;
     tenorDays: number;
     valueDate: Date;
-    autoRollover?: boolean;
     notes?: string;
-  }, adminId: string) {
+  }, adminId: string, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
     const client = await this.prisma.client.findUnique({ where: { clientRef: dto.clientRef } });
     if (!client) throw new NotFoundException('Client not found');
 
     const product = await this.prisma.product.findUnique({ where: { id: dto.productId } });
     if (!product) throw new NotFoundException('Product not found');
 
+    if (dto.principalKobo < product.minInvestKobo) {
+      throw new BadRequestException(`Minimum investment for this product is ₦${Number(product.minInvestKobo) / 100}`);
+    }
+    if (product.maxInvestKobo != null && dto.principalKobo > product.maxInvestKobo) {
+      throw new BadRequestException(`Maximum investment for this product is ₦${Number(product.maxInvestKobo) / 100}`);
+    }
+
     const investRef = await this.generateInvestRef();
     const maturityDate = addDays(dto.valueDate, dto.tenorDays);
 
-    return this.prisma.investment.create({
+    const investment = await this.prisma.investment.create({
       data: {
         investRef,
         clientId: client.id,
@@ -214,7 +234,6 @@ export class InvestmentsService {
         tenorDays: dto.tenorDays,
         valueDate: dto.valueDate,
         maturityDate,
-        autoRollover: dto.autoRollover ?? false,
         notes: dto.notes,
         bookedById: adminId,
         bookedAt: new Date(),
@@ -226,6 +245,27 @@ export class InvestmentsService {
       },
       include: { product: true, client: true },
     });
+
+    await logAdminAction(this.prisma, {
+      adminId: admin?.adminUserId,
+      adminRole: admin?.adminRole,
+      action: 'INVESTMENT_BOOKED_BY_ADMIN',
+      targetEntity: investment.id,
+      category: 'INVESTMENT',
+      metadata: {
+        clientRef: dto.clientRef,
+        productName: product.name,
+        principalKobo: Number(dto.principalKobo),
+        roiRate: dto.roiRate,
+        tenorDays: dto.tenorDays,
+      },
+    });
+
+    this.notifications.sendInvestmentActivatedEmail(
+      client.email, client.name, product.name, Number(dto.principalKobo) / 100, maturityDate,
+    ).catch(() => {});
+
+    return investment;
   }
 
   // Admin: get all investments with filters

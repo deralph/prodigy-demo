@@ -21,7 +21,6 @@ src/
 ├── investments/investments.service.spec.ts
 ├── wallet/wallet.service.spec.ts
 ├── kyc/kyc.service.spec.ts
-├── goals/goals.service.spec.ts
 ├── approvals/approvals.service.spec.ts
 └── products/products.service.spec.ts
 ```
@@ -54,7 +53,7 @@ npm run test:cov
 |-------|---------------|
 | **Unit** | Each service in isolation with mocked Prisma. Tests business logic, error handling, authorization checks. |
 | **Integration** | Full NestJS app with mocked database. Tests HTTP status codes, request validation, guards (JWT + Roles), DTO transformation. |
-| **E2E/System** | Multi-step user journeys simulating real usage: registration → login → KYC → investment → admin approval → wallet → goals. |
+| **E2E/System** | Multi-step user journeys simulating real usage: registration → login → KYC → investment → admin approval → wallet. |
 
 ## 🔐 Test Authentication
 
@@ -101,10 +100,6 @@ prisma.client.findUnique.mockResolvedValue(MOCK.client);
 - ✅ View transaction history
 - ✅ Request withdrawal (validates sufficient balance)
 - ✅ Admin: view all transactions with filters
-
-### Goals
-- ✅ CRUD operations (create, read, update, delete)
-- ✅ Ownership enforcement (cannot modify other client’s goals)
 
 ### Products
 - ✅ Public listing (no auth required)

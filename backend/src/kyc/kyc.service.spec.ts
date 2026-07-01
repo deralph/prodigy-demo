@@ -2,7 +2,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { KycService } from './kyc.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { createMockPrisma, IDS, MOCK } from '../../test/helpers/mock-prisma';
+import { createMockNotifications } from '../../test/helpers/mock-notifications';
 
 const mockFile = (fieldname = 'valid_id'): Express.Multer.File => ({
   fieldname,
@@ -20,11 +22,17 @@ const mockFile = (fieldname = 'valid_id'): Express.Multer.File => ({
 describe('KycService', () => {
   let service: KycService;
   let prisma: ReturnType<typeof createMockPrisma>;
+  let notifications: ReturnType<typeof createMockNotifications>;
 
   beforeEach(async () => {
     prisma = createMockPrisma();
+    notifications = createMockNotifications();
     const module: TestingModule = await Test.createTestingModule({
-      providers: [KycService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        KycService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: NotificationsService, useValue: notifications },
+      ],
     }).compile();
     service = module.get(KycService);
   });

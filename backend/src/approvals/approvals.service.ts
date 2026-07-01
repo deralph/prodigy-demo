@@ -1,10 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { addDays } from 'date-fns';
+import { logAdminAction } from '../common/audit/log-admin-action';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ApprovalsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private notifications: NotificationsService) {}
 
   findAll(query: { status?: string; type?: string }) {
     return this.prisma.approval.findMany({
@@ -17,7 +19,7 @@ export class ApprovalsService {
     });
   }
 
-  async approve(id: string, adminId: string, notes?: string) {
+  async approve(id: string, adminId: string, notes?: string, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
     const approval = await this.prisma.approval.findUnique({ where: { id } });
     if (!approval) throw new NotFoundException('Approval not found');
 
@@ -56,13 +58,30 @@ export class ApprovalsService {
             data: { status: 'SUCCESSFUL', processedAt: new Date() },
           }),
         ]);
+
+        const client = await this.prisma.client.findUnique({ where: { id: inv.clientId } });
+        const productName = (approval.details as any)?.productName || 'your product';
+        if (client) {
+          this.notifications.sendInvestmentActivatedEmail(
+            client.email, client.name, productName, Number(inv.principalKobo) / 100, maturityDate,
+          ).catch(() => {});
+        }
       }
     }
+
+    await logAdminAction(this.prisma, {
+      adminId: admin?.adminUserId,
+      adminRole: admin?.adminRole,
+      action: `APPROVAL_${approval.type}_APPROVED`,
+      targetEntity: id,
+      category: approval.type === 'SUBSCRIPTION' ? 'INVESTMENT' : 'OPERATIONS',
+      metadata: { approvalType: approval.type, notes },
+    });
 
     return updated;
   }
 
-  async reject(id: string, adminId: string, reason: string) {
+  async reject(id: string, adminId: string, reason: string, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
     const approval = await this.prisma.approval.findUnique({ where: { id } });
     if (!approval) throw new NotFoundException('Approval not found');
 
@@ -94,8 +113,25 @@ export class ApprovalsService {
             data: { status: 'REVERSED', processedAt: new Date() },
           }),
         ]);
+
+        const client = await this.prisma.client.findUnique({ where: { id: inv.clientId } });
+        const productName = (approval.details as any)?.productName || 'your product';
+        if (client) {
+          this.notifications.sendInvestmentRejectedEmail(
+            client.email, client.name, productName, Number(inv.principalKobo) / 100, reason,
+          ).catch(() => {});
+        }
       }
     }
+
+    await logAdminAction(this.prisma, {
+      adminId: admin?.adminUserId,
+      adminRole: admin?.adminRole,
+      action: `APPROVAL_${approval.type}_REJECTED`,
+      targetEntity: id,
+      category: approval.type === 'SUBSCRIPTION' ? 'INVESTMENT' : 'OPERATIONS',
+      metadata: { approvalType: approval.type, reason },
+    });
 
     return updated;
   }

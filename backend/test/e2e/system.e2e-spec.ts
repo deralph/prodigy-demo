@@ -4,7 +4,6 @@
  *   - Client registers → logs in → checks KYC → subscribes to investment
  *   - Admin logs in → views clients → approves KYC → books investment → approves
  *   - Wallet funding → withdrawal → statement
- *   - Goals lifecycle
  *   - Corporate registration → profile management
  */
 import { Test, TestingModule } from '@nestjs/testing';
@@ -421,69 +420,7 @@ describe('System E2E Tests', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // JOURNEY 6: Goals Lifecycle
-  // ═══════════════════════════════════════════════════════════════
-  describe('Journey 6: Goals Lifecycle', () => {
-    beforeEach(() => setupUserAuth());
-
-    it('Step 1: creates a savings goal', async () => {
-      prisma.goal.create.mockResolvedValueOnce(MOCK.goal as any);
-      const res = await request(app.getHttpServer())
-        .post('/api/v1/goals')
-        .set('Authorization', `Bearer ${makeAccessToken()}`)
-        .send({ name: 'School Fees', targetAmountKobo: '50000000' });
-
-      expect(res.status).toBe(201);
-      expect(res.body.name).toBe('School Fees');
-    });
-
-    it('Step 2: views all goals', async () => {
-      prisma.goal.findMany.mockResolvedValueOnce([MOCK.goal] as any);
-      const res = await request(app.getHttpServer())
-        .get('/api/v1/goals/me')
-        .set('Authorization', `Bearer ${makeAccessToken()}`);
-
-      expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-    });
-
-    it('Step 3: updates goal name', async () => {
-      prisma.goal.findUnique.mockResolvedValueOnce(MOCK.goal as any);
-      prisma.goal.update.mockResolvedValueOnce({ ...MOCK.goal, name: 'University Fees' } as any);
-
-      const res = await request(app.getHttpServer())
-        .patch(`/api/v1/goals/${IDS.GOAL}`)
-        .set('Authorization', `Bearer ${makeAccessToken()}`)
-        .send({ name: 'University Fees' });
-
-      expect(res.status).toBe(200);
-      expect(res.body.name).toBe('University Fees');
-    });
-
-    it('Step 4: cannot update another client\'s goal', async () => {
-      prisma.goal.findUnique.mockResolvedValueOnce({ ...MOCK.goal, clientId: 'other-client-id' } as any);
-      const res = await request(app.getHttpServer())
-        .patch(`/api/v1/goals/${IDS.GOAL}`)
-        .set('Authorization', `Bearer ${makeAccessToken()}`)
-        .send({ name: 'Hack' });
-
-      expect(res.status).toBe(403);
-    });
-
-    it('Step 5: deletes a goal', async () => {
-      prisma.goal.findUnique.mockResolvedValueOnce(MOCK.goal as any);
-      prisma.goal.delete.mockResolvedValueOnce(MOCK.goal as any);
-
-      const res = await request(app.getHttpServer())
-        .delete(`/api/v1/goals/${IDS.GOAL}`)
-        .set('Authorization', `Bearer ${makeAccessToken()}`);
-
-      expect(res.status).toBe(200);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════
-  // JOURNEY 7: Investment Statement
+  // JOURNEY 6: Investment Statement
   // ═══════════════════════════════════════════════════════════════
   describe('Journey 7: Investment Statement', () => {
     beforeEach(() => setupUserAuth());
@@ -517,7 +454,7 @@ describe('System E2E Tests', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // JOURNEY 8: Pre-Termination (Early Redemption)
+  // JOURNEY 7: Pre-Termination (Early Redemption)
   // ═══════════════════════════════════════════════════════════════
   describe('Journey 8: Early Redemption Request', () => {
     beforeEach(() => setupUserAuth());

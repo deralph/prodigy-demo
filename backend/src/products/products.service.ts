@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { logAdminAction } from '../common/audit/log-admin-action';
 
 function parseLockIn(v: any): number | null {
   if (!v) return null;
@@ -45,7 +46,7 @@ export class ProductsService {
     return product;
   }
 
-  async create(data: any, adminId: string) {
+  async create(data: any, adminId: string, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
     const lockInStr: string | null = data.lockInStr || data.lockIn || null;
     const lockInDays: number | null = data.lockInDays != null
       ? Number(data.lockInDays)
@@ -59,7 +60,7 @@ export class ProductsService {
       .replace(/[^a-z0-9-]/g, '')
       .replace(/-+/g, '-')) + '-' + Date.now();
 
-    return this.prisma.product.create({
+    const product = await this.prisma.product.create({
       data: {
         code,
         name: data.name,
@@ -85,9 +86,20 @@ export class ProductsService {
         updatedById: adminId,
       },
     });
+
+    await logAdminAction(this.prisma, {
+      adminId: admin?.adminUserId,
+      adminRole: admin?.adminRole,
+      action: 'PRODUCT_CREATED',
+      targetEntity: product.id,
+      category: 'INVESTMENT',
+      metadata: { name: product.name, roiMin, roiMax, minInvestKobo: Number(product.minInvestKobo), maxInvestKobo: product.maxInvestKobo ? Number(product.maxInvestKobo) : null },
+    });
+
+    return product;
   }
 
-  async update(id: string, patch: any, adminId: string) {
+  async update(id: string, patch: any, adminId: string, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Product not found');
 
@@ -133,6 +145,22 @@ export class ProductsService {
       updateData.earlyExitPenalty = patch.earlyExitPenalty ? parseRate(patch.earlyExitPenalty) : null;
     }
 
-    return this.prisma.product.update({ where: { id }, data: updateData });
+    const updated = await this.prisma.product.update({ where: { id }, data: updateData });
+
+    await logAdminAction(this.prisma, {
+      adminId: admin?.adminUserId,
+      adminRole: admin?.adminRole,
+      action: 'PRODUCT_UPDATED',
+      targetEntity: id,
+      category: 'INVESTMENT',
+      metadata: {
+        name: updated.name,
+        changedFields: Object.keys(updateData).filter(k => k !== 'updatedById'),
+        before: { roiMin: product.roiMin, roiMax: product.roiMax, minInvestKobo: Number(product.minInvestKobo), maxInvestKobo: product.maxInvestKobo ? Number(product.maxInvestKobo) : null, status: product.status },
+        after:  { roiMin: updated.roiMin, roiMax: updated.roiMax, minInvestKobo: Number(updated.minInvestKobo), maxInvestKobo: updated.maxInvestKobo ? Number(updated.maxInvestKobo) : null, status: updated.status },
+      },
+    });
+
+    return updated;
   }
 }

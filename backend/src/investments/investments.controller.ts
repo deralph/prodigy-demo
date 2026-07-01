@@ -63,7 +63,7 @@ export class AdminInvestmentsController {
   @Post('book')
   @ApiOperation({ summary: 'Book an investment instrument for a client' })
   book(@Body() body: any, @Req() req: any) {
-    return this.investmentsService.adminBook(body, req.user.sub);
+    return this.investmentsService.adminBook(body, req.user.sub, { adminUserId: req.user.adminUserId, adminRole: req.user.adminRole });
   }
 
   @Get(':id/statement')

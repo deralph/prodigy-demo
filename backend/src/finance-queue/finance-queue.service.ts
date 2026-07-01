@@ -1,9 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { logAdminAction } from '../common/audit/log-admin-action';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class FinanceQueueService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private notifications: NotificationsService) {}
 
   findAll(query: { status?: string }) {
     return this.prisma.financeQueueItem.findMany({
@@ -22,7 +24,7 @@ export class FinanceQueueService {
     return item;
   }
 
-  async approve(id: string, adminId: string, notes?: string) {
+  async approve(id: string, adminId: string, notes?: string, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
     const item = await this.prisma.financeQueueItem.findUnique({
       where: { id },
       include: { preTermination: { include: { investment: true } } },
@@ -30,7 +32,7 @@ export class FinanceQueueService {
     if (!item) throw new NotFoundException('Finance queue item not found');
     if (item.status !== 'PENDING') throw new BadRequestException('Item is not in pending state');
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.financeQueueItem.update({
         where: { id },
         data: { status: 'APPROVED', approvedById: adminId, approvedAt: new Date(), notes },
@@ -94,6 +96,22 @@ export class FinanceQueueService {
 
       return updated;
     });
+
+    await logAdminAction(this.prisma, {
+      adminId: admin?.adminUserId,
+      adminRole: admin?.adminRole,
+      action: 'FINANCE_QUEUE_DISBURSEMENT_APPROVED',
+      targetEntity: id,
+      category: 'FINANCE',
+      metadata: { clientId: item.clientId, amountKobo: Number(item.amountKobo), penaltyKobo: Number(item.penaltyKobo ?? 0), notes },
+    });
+
+    const client = await this.prisma.client.findUnique({ where: { id: item.clientId } });
+    if (client) {
+      this.notifications.sendPreTerminationDisbursedEmail(client.email, client.name, Number(item.amountKobo) / 100).catch(() => {});
+    }
+
+    return result;
   }
 
   findAllOrgLedger(query: { type?: string } = {}) {
@@ -104,13 +122,29 @@ export class FinanceQueueService {
     });
   }
 
-  async reject(id: string, adminId: string, reason: string) {
+  async reject(id: string, adminId: string, reason: string, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
     const item = await this.prisma.financeQueueItem.findUnique({ where: { id } });
     if (!item) throw new NotFoundException('Finance queue item not found');
 
-    return this.prisma.financeQueueItem.update({
+    const updated = await this.prisma.financeQueueItem.update({
       where: { id },
       data: { status: 'REJECTED', rejectedById: adminId, rejectedAt: new Date(), rejectionReason: reason },
     });
+
+    await logAdminAction(this.prisma, {
+      adminId: admin?.adminUserId,
+      adminRole: admin?.adminRole,
+      action: 'FINANCE_QUEUE_DISBURSEMENT_REJECTED',
+      targetEntity: id,
+      category: 'FINANCE',
+      metadata: { clientId: item.clientId, amountKobo: Number(item.amountKobo), reason },
+    });
+
+    const client = await this.prisma.client.findUnique({ where: { id: item.clientId } });
+    if (client) {
+      this.notifications.sendPreTerminationDecisionEmail(client.email, client.name, false, undefined, reason).catch(() => {});
+    }
+
+    return updated;
   }
 }

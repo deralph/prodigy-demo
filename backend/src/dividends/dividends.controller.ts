@@ -22,6 +22,6 @@ export class DividendsController {
   @Post()
   @ApiOperation({ summary: 'Declare a new dividend for a product' })
   declare(@Body() body: any, @Req() req: any) {
-    return this.dividendsService.declare(body, req.user.sub);
+    return this.dividendsService.declare(body, req.user.sub, { adminUserId: req.user.adminUserId, adminRole: req.user.adminRole });
   }
 }

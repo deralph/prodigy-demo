@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizeBankName, lookupBankCodeFallback } from './bank-codes';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class WalletService {
@@ -9,6 +10,7 @@ export class WalletService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private notifications: NotificationsService,
   ) {}
 
   async getWallet(clientDbId: string) {
@@ -191,12 +193,13 @@ export class WalletService {
 
   // Called after Paystack webhook confirms payment — idempotent
   async creditWallet(clientDbId: string, amountKobo: bigint, paystackRef: string, description = 'Wallet Funding via Paystack') {
-    return this.prisma.$transaction(async (tx) => {
+    let isNewCredit = true;
+    const result = await this.prisma.$transaction(async (tx) => {
       // Idempotency guard
       const already = await tx.walletTransaction.findFirst({
         where: { paystackRef, status: 'SUCCESSFUL' },
       });
-      if (already) return already;
+      if (already) { isNewCredit = false; return already; }
 
       await tx.client.update({
         where: { id: clientDbId },
@@ -226,6 +229,15 @@ export class WalletService {
         },
       });
     });
+
+    if (isNewCredit) {
+      const client = await this.prisma.client.findUnique({ where: { id: clientDbId } });
+      if (client) {
+        this.notifications.sendWalletFundedEmail(client.email, client.name, Number(amountKobo) / 100).catch(() => {});
+      }
+    }
+
+    return result;
   }
 
   async requestWithdrawal(
@@ -325,6 +337,33 @@ export class WalletService {
       });
     } catch (err) {
       this.logger.warn(`ActivityLog write failed for withdrawal request: ${(err as Error).message}`);
+    }
+
+    // ── Notifications ────────────────────────────────────────────────────
+    const requesterAuthUser = await this.prisma.authUser.findUnique({ where: { id: requesterAuthUserId } });
+    const requesterIsPrimary = requesterAuthUser?.holderType !== 'SECONDARY';
+    const requesterEmail = requesterAuthUser?.email || client.email;
+    const requesterName = requesterIsPrimary ? client.name : (client.secondaryName || 'Co-holder');
+
+    if (isAndMandate) {
+      // Find the OTHER holder's AuthUser (not the requester) to notify them
+      // they need to co-sign.
+      const otherHolder = await this.prisma.authUser.findFirst({
+        where: { clientId: clientDbId, id: { not: requesterAuthUserId } },
+      });
+      const otherHolderName = requesterIsPrimary ? (client.secondaryName || 'Co-holder') : client.name;
+
+      this.notifications.sendWithdrawalRequestedEmail(requesterEmail, requesterName, Number(amountKobo) / 100, true).catch(() => {});
+      if (otherHolder?.email) {
+        this.notifications.sendWithdrawalCoSignNeededEmail(otherHolder.email, otherHolderName, requesterName, Number(amountKobo) / 100).catch(() => {});
+      }
+    } else {
+      this.notifications.sendWithdrawalRequestedEmail(requesterEmail, requesterName, Number(amountKobo) / 100, false).catch(() => {});
+      this.notifications.notifyAdminsByRole(
+        ['SUPER_ADMIN', 'FINANCE'],
+        'New Withdrawal Request Pending Approval',
+        `<p>${client.name} (${client.clientRef}) has requested a withdrawal of ₦${(Number(amountKobo) / 100).toLocaleString()} to ${dto.bankName} (${dto.bankAcctNo}). It is awaiting approval in the Withdrawals Queue.</p>`,
+      ).catch(() => {});
     }
 
     return result;
@@ -476,6 +515,15 @@ export class WalletService {
       });
 
       await this.logWithdrawalEvent(txn, { ...admin, adminName }, 'WALLET_WITHDRAWAL_APPROVED', 'SUCCESS', transferCode);
+
+      const client = await this.prisma.client.findUnique({ where: { id: txn.clientId } });
+      if (client) {
+        const recipient = await this.resolveWithdrawalRecipient(txn, client);
+        this.notifications.sendWithdrawalDisbursedEmail(
+          recipient.email, recipient.name, Number(txn.amountKobo) / 100, txn.bankName || '', txn.bankAcctNo || '',
+        ).catch(() => {});
+      }
+
       return updated;
     } catch (err: any) {
       // Disbursement failed — return funds to the client's available balance
@@ -502,6 +550,15 @@ export class WalletService {
       });
       await this.logWithdrawalEvent(txn, { ...admin, adminName }, 'WALLET_WITHDRAWAL_FAILED', 'FAILED', null, reason);
       this.logger.warn(`[WITHDRAWAL_APPROVE] Failed for txn=${txn.id}: ${reason}`);
+
+      const client = await this.prisma.client.findUnique({ where: { id: txn.clientId } });
+      if (client) {
+        const recipient = await this.resolveWithdrawalRecipient(txn, client);
+        this.notifications.sendWithdrawalRejectedEmail(
+          recipient.email, recipient.name, Number(txn.amountKobo) / 100, `Disbursement failed: ${reason}`,
+        ).catch(() => {});
+      }
+
       return failed;
     }
   }
@@ -536,6 +593,15 @@ export class WalletService {
     });
 
     await this.logWithdrawalEvent(txn, { ...admin, adminName }, 'WALLET_WITHDRAWAL_REJECTED', 'FAILED', null, reason);
+
+    const client = await this.prisma.client.findUnique({ where: { id: txn.clientId } });
+    if (client) {
+      const recipient = await this.resolveWithdrawalRecipient(txn, client);
+      this.notifications.sendWithdrawalRejectedEmail(
+        recipient.email, recipient.name, Number(txn.amountKobo) / 100, reason,
+      ).catch(() => {});
+    }
+
     return updated;
   }
 
@@ -593,6 +659,19 @@ export class WalletService {
       this.logger.warn(`ActivityLog write failed for co-sign: ${(err as Error).message}`);
     }
 
+    const client = await this.prisma.client.findUnique({ where: { id: clientDbId } });
+    if (client && txn.requestedByAuthUserId) {
+      const requester = await this.resolveWithdrawalRecipient(txn, client);
+      this.notifications.sendWithdrawalCoSignedEmail(requester.email, requester.name, Number(txn.amountKobo) / 100).catch(() => {});
+    }
+    if (client) {
+      this.notifications.notifyAdminsByRole(
+        ['SUPER_ADMIN', 'FINANCE'],
+        'Withdrawal Co-Signed — Ready for Review',
+        `<p>${client.name} (${client.clientRef})'s withdrawal of ₦${(Number(txn.amountKobo) / 100).toLocaleString()} has been co-signed by both holders and is now ready for review in the Withdrawals Queue.</p>`,
+      ).catch(() => {});
+    }
+
     return updated;
   }
 
@@ -640,7 +719,30 @@ export class WalletService {
       this.logger.warn(`ActivityLog write failed for co-sign decline: ${(err as Error).message}`);
     }
 
+    const client = await this.prisma.client.findUnique({ where: { id: clientDbId } });
+    if (client && txn.requestedByAuthUserId) {
+      const requester = await this.resolveWithdrawalRecipient(txn, client);
+      this.notifications.sendWithdrawalCoSignDeclinedEmail(requester.email, requester.name, Number(txn.amountKobo) / 100, reason).catch(() => {});
+    }
+
     return updated;
+  }
+
+  /** Resolve who should be emailed about a withdrawal's status — the original
+   * requester's own login if known (could be the secondary holder), else the
+   * primary holder's contact on the client record. */
+  private async resolveWithdrawalRecipient(
+    txn: { requestedByAuthUserId?: string | null },
+    client: { email: string; name: string; secondaryName?: string | null },
+  ): Promise<{ email: string; name: string }> {
+    if (txn.requestedByAuthUserId) {
+      const requester = await this.prisma.authUser.findUnique({ where: { id: txn.requestedByAuthUserId } });
+      if (requester?.email) {
+        const name = requester.holderType === 'SECONDARY' ? (client.secondaryName || 'Co-holder') : client.name;
+        return { email: requester.email, name };
+      }
+    }
+    return { email: client.email, name: client.name };
   }
 
   /** Look up an admin's display name for audit/ledger descriptions, with a safe fallback. */

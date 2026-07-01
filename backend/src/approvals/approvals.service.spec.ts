@@ -2,16 +2,24 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { ApprovalsService } from './approvals.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { createMockPrisma, IDS, MOCK } from '../../test/helpers/mock-prisma';
+import { createMockNotifications } from '../../test/helpers/mock-notifications';
 
 describe('ApprovalsService', () => {
   let service: ApprovalsService;
   let prisma: ReturnType<typeof createMockPrisma>;
+  let notifications: ReturnType<typeof createMockNotifications>;
 
   beforeEach(async () => {
     prisma = createMockPrisma();
+    notifications = createMockNotifications();
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ApprovalsService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        ApprovalsService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: NotificationsService, useValue: notifications },
+      ],
     }).compile();
     service = module.get(ApprovalsService);
   });
@@ -72,14 +80,18 @@ describe('ApprovalsService', () => {
     });
 
     it('also activates investment when type is SUBSCRIPTION', async () => {
-      prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, type: 'SUBSCRIPTION', investmentId: IDS.INVESTMENT } as any);
+      prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, type: 'SUBSCRIPTION', investmentId: IDS.INVESTMENT, details: { productName: 'Aura Fixed Income' } } as any);
       prisma.approval.update.mockResolvedValueOnce({ ...MOCK.approval, status: 'APPROVED' } as any);
       prisma.investment.findUnique.mockResolvedValueOnce(MOCK.investment as any);
       prisma.investment.update.mockResolvedValueOnce({ ...MOCK.investment, status: 'ACTIVE' } as any);
+      prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
 
       await service.approve(IDS.APPROVAL, IDS.ADMIN_USER);
       expect(prisma.investment.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: 'ACTIVE' }) }),
+      );
+      expect(notifications.sendInvestmentActivatedEmail).toHaveBeenCalledWith(
+        MOCK.client.email, MOCK.client.name, 'Aura Fixed Income', expect.any(Number), expect.any(Date),
       );
     });
 
@@ -105,14 +117,18 @@ describe('ApprovalsService', () => {
     });
 
     it('also rejects the investment when type is SUBSCRIPTION', async () => {
-      prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, type: 'SUBSCRIPTION', investmentId: IDS.INVESTMENT } as any);
+      prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, type: 'SUBSCRIPTION', investmentId: IDS.INVESTMENT, details: { productName: 'Aura Fixed Income' } } as any);
       prisma.approval.update.mockResolvedValueOnce({ ...MOCK.approval, status: 'REJECTED' } as any);
       prisma.investment.findUnique.mockResolvedValueOnce(MOCK.investment as any);
       prisma.investment.update.mockResolvedValueOnce({ ...MOCK.investment, status: 'REJECTED' } as any);
+      prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
 
       await service.reject(IDS.APPROVAL, IDS.ADMIN_USER, 'Reason');
       expect(prisma.investment.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: 'REJECTED' }) }),
+      );
+      expect(notifications.sendInvestmentRejectedEmail).toHaveBeenCalledWith(
+        MOCK.client.email, MOCK.client.name, 'Aura Fixed Income', expect.any(Number), 'Reason',
       );
     });
 

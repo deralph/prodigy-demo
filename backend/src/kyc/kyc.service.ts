@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { KYC_REQUIREMENTS } from './kyc.constants';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class KycService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private notifications: NotificationsService) {}
 
   async getMyKyc(clientId: string) {
     const client = await this.prisma.client.findUnique({
@@ -119,6 +120,14 @@ export class KycService {
     }
 
     await this.checkAndSubmitKyc(clientId, client.type.toLowerCase());
+
+    this.notifications.sendKycSubmittedEmail(client.email, client.name).catch(() => {});
+    this.notifications.notifyAdminsByRole(
+      ['SUPER_ADMIN', 'OPERATIONS', 'COMPLIANCE'],
+      'New KYC Submission Pending Review',
+      `<p>${client.name} (${client.clientRef}) has submitted all required KYC documents and is awaiting review.</p>`,
+    ).catch(() => {});
+
     return { message: 'All documents uploaded and KYC submitted for review.' };
   }
 
@@ -202,6 +211,12 @@ export class KycService {
       where: { clientId, status: 'UPLOADED' },
       data: { status: 'VERIFIED', verifiedById: adminId, verifiedAt: new Date() },
     });
+
+    const client = await this.prisma.client.findUnique({ where: { id: clientId } });
+    if (client) {
+      this.notifications.sendKycApprovalEmail(client.email, 'approved').catch(() => {});
+    }
+
     return { message: 'KYC approved' };
   }
 
@@ -215,6 +230,12 @@ export class KycService {
       where: { id: clientId },
       data: { status: 'PENDING_KYC' },
     });
+
+    const client = await this.prisma.client.findUnique({ where: { id: clientId } });
+    if (client) {
+      this.notifications.sendKycApprovalEmail(client.email, 'rejected', reason).catch(() => {});
+    }
+
     return { message: 'KYC rejected' };
   }
 

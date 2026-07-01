@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Eye, Edit, Ban, CheckCircle, Save, Users, Wallet, TrendingUp, FileText, User, Phone, MapPin } from 'lucide-react';
+import { Search, Eye, Edit, Ban, CheckCircle, Save, Users, Wallet, TrendingUp, FileText, User, Phone, MapPin, Shield, AlertTriangle } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 import { adminClientApi, kycApi } from '../../services/api';
 import EmptyState from '../../components/EmptyState';
@@ -175,6 +175,87 @@ function EditClientModal({ client, onClose, onSave }) {
   );
 }
 
+/* ── Mandate Change Modal (compliance / super_admin only) ── */
+function MandateChangeModal({ client, onClose, onSave }) {
+  const [mandateType, setMandateType] = useState(client.mandateType || 'AND');
+  const [confirmed,   setConfirmed]   = useState(false);
+  const [saving,       setSaving]      = useState(false);
+  const [error,        setError]       = useState('');
+
+  const changed = mandateType !== (client.mandateType || 'AND');
+
+  const handleSave = async () => {
+    if (!changed || !confirmed) return;
+    setSaving(true);
+    setError('');
+    try {
+      await adminClientApi.updateMandate(client.clientId, mandateType);
+      onSave(mandateType);
+      onClose();
+    } catch (e) {
+      setError(e?.message || 'Could not update mandate. Please try again.');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalOverlay onClose={onClose} maxWidth={440} headerContent={
+      <div>
+        <h3 style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 16, color: 'white' }}>Change Mandate Type</h3>
+        <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 2 }}>{client.id} · Joint Account · Compliance Action</p>
+      </div>
+    }>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.25)', borderRadius: 10, padding: '12px 14px', marginBottom: 18 }}>
+        <AlertTriangle size={14} color="#f97316" style={{ flexShrink: 0, marginTop: 1 }} />
+        <span style={{ fontSize: 11, color: 'var(--navy)', lineHeight: 1.6 }}>
+          This directly changes whether one holder or both holders must authorize withdrawals from this account. Only change this on explicit, verified instruction from all account holders.
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
+        {['AND', 'OR'].map(m => (
+          <button
+            key={m}
+            onClick={() => setMandateType(m)}
+            style={{
+              padding: '16px 10px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+              border: `2px solid ${mandateType === m ? 'var(--navy)' : 'var(--gray-200)'}`,
+              background: mandateType === m ? 'rgba(13,27,53,0.04)' : 'white',
+            }}
+          >
+            <div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 14, color: 'var(--navy)', marginBottom: 4 }}>{m}</div>
+            <div style={{ fontSize: 10, color: 'var(--gray-400)', lineHeight: 1.5 }}>
+              {m === 'AND' ? 'All holders must co-sign every withdrawal.' : 'Any one holder may authorize independently.'}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {changed && (
+        <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: 11, color: 'var(--navy)', marginBottom: 16, cursor: 'pointer', lineHeight: 1.5 }}>
+          <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} style={{ marginTop: 2 }} />
+          I confirm all account holders have verifiably requested this change to <strong>{mandateType}</strong>.
+        </label>
+      )}
+
+      {error && <div style={{ fontSize: 12, color: 'var(--red)', background: 'rgba(239,68,68,0.08)', padding: '10px 12px', borderRadius: 8, marginBottom: 14 }}>{error}</div>}
+
+      <button
+        onClick={handleSave}
+        disabled={!changed || !confirmed || saving}
+        style={{
+          width: '100%', padding: '13px', borderRadius: 9, border: 'none', cursor: (!changed || !confirmed || saving) ? 'not-allowed' : 'pointer',
+          background: (!changed || !confirmed) ? 'var(--gray-100)' : 'var(--navy)', color: (!changed || !confirmed) ? 'var(--gray-400)' : 'white',
+          fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+        }}
+      >
+        <Shield size={13} /> {saving ? 'UPDATING…' : 'CONFIRM MANDATE CHANGE'}
+      </button>
+      <p style={{ fontSize: 9, color: 'var(--gray-400)', textAlign: 'center', marginTop: 10 }}>This action is logged to the audit trail.</p>
+    </ModalOverlay>
+  );
+}
+
 /* ── Main Page ── */
 const DETAIL_TABS = [
   { key: 'info',        label: 'Account Info',          icon: User },
@@ -184,17 +265,23 @@ const DETAIL_TABS = [
 ];
 
 export default function ClientManagement() {
-  const { clients, updateClient, allTransactions, clientInvestments } = useAppStore();
+  const { clients, updateClient, setClientMandateLocal, allTransactions, clientInvestments, user } = useAppStore();
   const [search,       setSearch]       = useState('');
   const [typeFilter,   setTypeFilter]   = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selected,     setSelected]     = useState(null);
   const [detailTab,    setDetailTab]    = useState('info');
   const [editModal,    setEditModal]    = useState(null);
+  const [mandateModal, setMandateModal] = useState(false);
   const [kycDocs,      setKycDocs]      = useState(null);
   const [kycLoading,   setKycLoading]   = useState(false);
   const [actingDoc,    setActingDoc]    = useState(null);
   const [msg,          setMsg]          = useState('');
+
+  // Mirrors the backend's AdminRoles('SUPER_ADMIN', 'COMPLIANCE') gate on
+  // the mandate-update endpoint — changing AND/OR governs whether one or
+  // both holders must authorize withdrawals, so this stays compliance-only.
+  const canManageMandate = ['super_admin', 'compliance'].includes(user?.adminRole);
 
   const filtered = clients.filter(c => {
     const ms = c.name.toLowerCase().includes(search.toLowerCase()) || c.email.toLowerCase().includes(search.toLowerCase());
@@ -241,6 +328,12 @@ export default function ClientManagement() {
     } catch (e) {
       setMsg(e?.message || 'Action failed');
     }
+  };
+
+  const handleMandateSaved = (mandateType) => {
+    setClientMandateLocal(selected.id, mandateType);
+    setSelected(s => ({ ...s, mandateType }));
+    setMsg(`Mandate updated to ${mandateType}`);
   };
 
   const refreshKyc = async () => {
@@ -330,6 +423,7 @@ export default function ClientManagement() {
                 client={selected}
                 onApproveKyc={handleApproveKyc}
                 onFlagSuspend={handleFlagSuspend}
+                onChangeMandate={canManageMandate && selected.type === 'joint' ? () => setMandateModal(true) : undefined}
               />
             )}
             {detailTab === 'wallet' && <WalletTab client={selected} allTransactions={allTransactions} clients={clients} />}
@@ -357,6 +451,15 @@ export default function ClientManagement() {
           client={editModal}
           onClose={() => setEditModal(null)}
           onSave={handleSaveEdit}
+        />
+      )}
+
+      {/* Mandate Change Modal (compliance / super_admin only) */}
+      {mandateModal && selected && (
+        <MandateChangeModal
+          client={selected}
+          onClose={() => setMandateModal(false)}
+          onSave={handleMandateSaved}
         />
       )}
     </div>

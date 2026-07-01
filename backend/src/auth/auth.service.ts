@@ -373,6 +373,8 @@ export class AuthService {
       });
     } catch { /* never block the happy path */ }
 
+    this.notifications.sendPasswordChangedEmail(email).catch(() => {});
+
     return { message: 'Password updated successfully. You can now sign in.' };
   }
 
@@ -493,6 +495,10 @@ export class AuthService {
       authUser.id, authUser.email, authUser.role,
       client.id, null, null, 'SECONDARY',
     );
+
+    this.notifications.sendSecondaryHolderJoinedEmail(
+      client.email, client.name, client.secondaryName || 'Your co-holder',
+    ).catch(() => {});
 
     return {
       accessToken: tokens.accessToken,

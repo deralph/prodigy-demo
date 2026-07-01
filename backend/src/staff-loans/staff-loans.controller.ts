@@ -54,18 +54,18 @@ export class AdminStaffLoansController {
   @Post(':id/approve')
   @ApiOperation({ summary: 'Approve a pending staff loan and disburse to corporate wallet' })
   approveLoan(@Param('id') id: string, @Req() req: any) {
-    return this.staffLoansService.approveLoan(id, req.user?.id);
+    return this.staffLoansService.approveLoan(id, req.user.sub, { adminUserId: req.user.adminUserId, adminRole: req.user.adminRole });
   }
 
   @Post(':id/reject')
   @ApiOperation({ summary: 'Reject a pending staff loan' })
-  rejectLoan(@Param('id') id: string, @Body() body: { reason?: string }) {
-    return this.staffLoansService.rejectLoan(id, body?.reason || '');
+  rejectLoan(@Param('id') id: string, @Body() body: { reason?: string }, @Req() req: any) {
+    return this.staffLoansService.rejectLoan(id, body?.reason || '', { adminUserId: req.user.adminUserId, adminRole: req.user.adminRole });
   }
 
   @Post(':id/repayment')
   @ApiOperation({ summary: 'Record a monthly repayment for an active staff loan' })
   recordRepayment(@Param('id') id: string, @Body() body: { amountKobo: number; note?: string }, @Req() req: any) {
-    return this.staffLoansService.recordRepayment(id, BigInt(body.amountKobo), body.note, req.user?.id);
+    return this.staffLoansService.recordRepayment(id, BigInt(body.amountKobo), body.note, req.user.sub, { adminUserId: req.user.adminUserId, adminRole: req.user.adminRole });
   }
 }

@@ -41,7 +41,6 @@ export default function ProductDetail() {
   const [subModal, setSubModal]   = useState(false);
   const [tenor, setTenor]         = useState('');
   const [amount, setAmount]       = useState('');
-  const [rollover, setRollover]   = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [subError, setSubError]   = useState('');
@@ -76,7 +75,6 @@ export default function ProductDetail() {
         productId: plan.id,
         amount: investAmount,
         tenor: plan.hasTenor ? tenor : plan.lockInStr || plan.lockIn,
-        autoRollover: rollover,
       });
       setSubmitted(true);
       // Refresh wallet, transactions, and investments so user sees updated data
@@ -291,7 +289,7 @@ export default function ProductDetail() {
                 </label>
                 <div style={{ position: 'relative' }}>
                   <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', fontWeight: 700 }}>₦</span>
-                  <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder={`Min: ${fmt(plan.minInvest)}`}
+                  <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder={`Min: ${fmt(plan.minInvest)}${plan.maxInvest ? ` · Max: ${fmt(plan.maxInvest)}` : ''}`}
                     style={{ width: '100%', border: '1.5px solid var(--gray-200)', borderRadius: 9, padding: '11px 12px 11px 26px', fontFamily: 'DM Sans,sans-serif', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
                     onFocus={e => e.target.style.borderColor = plan.color}
                     onBlur={e => e.target.style.borderColor = 'var(--gray-200)'} />
@@ -300,6 +298,12 @@ export default function ProductDetail() {
                   <span>Wallet balance: <strong style={{ color: 'var(--navy)' }}>{fmt(walletBalance)}</strong></span>
                   {amount && parseFloat(amount) > walletBalance && (
                     <span style={{ color: '#ef4444', fontWeight: 700 }}>Exceeds balance</span>
+                  )}
+                  {amount && parseFloat(amount) <= walletBalance && parseFloat(amount) < (plan.minInvest || 0) && (
+                    <span style={{ color: '#ef4444', fontWeight: 700 }}>Below minimum</span>
+                  )}
+                  {amount && plan.maxInvest > 0 && parseFloat(amount) > plan.maxInvest && (
+                    <span style={{ color: '#ef4444', fontWeight: 700 }}>Exceeds maximum</span>
                   )}
                 </div>
               </div>
@@ -321,18 +325,6 @@ export default function ProductDetail() {
                 </div>
               )}
 
-              {/* Auto-rollover */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, padding: '10px 14px', background: 'var(--gray-50)', borderRadius: 9 }}>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy)' }}>Auto-Rollover</div>
-                  <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>Automatically reinvest at maturity</div>
-                </div>
-                <button onClick={() => setRollover(r => !r)}
-                  style={{ width: 42, height: 22, borderRadius: 11, background: rollover ? plan.color : 'var(--gray-200)', border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s' }}>
-                  <span style={{ position: 'absolute', top: 2, left: rollover ? 22 : 2, width: 18, height: 18, borderRadius: '50%', background: 'white', transition: 'left 0.2s', display: 'block' }} />
-                </button>
-              </div>
-
               {/* Fee note */}
               <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 20, padding: '10px 14px', background: '#eff6ff', borderRadius: 9 }}>
                 <Info size={14} color="#3b82f6" style={{ flexShrink: 0, marginTop: 1 }} />
@@ -348,8 +340,8 @@ export default function ProductDetail() {
               )}
 
               <button onClick={handleSubscribe}
-                disabled={submitting || !amount || parseFloat(amount) < (plan.minInvest || 0) || parseFloat(amount) > walletBalance}
-                style={{ width: '100%', background: plan.color, color: 'white', border: 'none', borderRadius: 9, padding: '14px', cursor: 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 13, letterSpacing: '0.07em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: (submitting || !amount || parseFloat(amount) < (plan.minInvest || 0) || parseFloat(amount) > walletBalance) ? 0.55 : 1, transition: 'opacity 0.2s' }}>
+                disabled={submitting || !amount || parseFloat(amount) < (plan.minInvest || 0) || parseFloat(amount) > walletBalance || (plan.maxInvest > 0 && parseFloat(amount) > plan.maxInvest)}
+                style={{ width: '100%', background: plan.color, color: 'white', border: 'none', borderRadius: 9, padding: '14px', cursor: 'pointer', fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 13, letterSpacing: '0.07em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: (submitting || !amount || parseFloat(amount) < (plan.minInvest || 0) || parseFloat(amount) > walletBalance || (plan.maxInvest > 0 && parseFloat(amount) > plan.maxInvest)) ? 0.55 : 1, transition: 'opacity 0.2s' }}>
                 <ArrowUpRight size={15} />
                 {submitting ? 'SUBMITTING…' : 'CONFIRM INVESTMENT'}
               </button>
