@@ -31,11 +31,12 @@ model Client {
   pendingBalance     BigInt              @default(0)
   virtualAccountNo   String?
   virtualAccountBank String?
+  entityId           String?             // Business entity for regulatory separation (PFL, PP Advisers, etc.)
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   activityLog        ActivityLog[]
   approvals          Approval[]
-  authUser           AuthUser?
+  authUsers          AuthUser[]
   beneficiaries      Beneficiary[]
   investments        Investment[]
   identityVerifications IdentityVerification[]
@@ -45,35 +46,43 @@ model Client {
   staffLoans         StaffLoan[]
   walletTransactions WalletTransaction[]
   orgLedgerEntries   OrgLedger[]
+  withholdingTax     WithholdingTax[]
+  entity             Entity?             @relation(fields: [entityId], references: [id])
 
   @@index([type])
   @@index([status])
   @@index([email])
+  @@index([entityId])
 }
 
 model AuthUser {
-  id                  String     @id @default(cuid())
-  email               String     @unique
-  passwordHash        String
-  role                String
-  isActive            Boolean    @default(true)
-  lastLoginAt         DateTime?
-  refreshToken        String?
-  passwordResetToken  String?
-  passwordResetExpiry DateTime?
-  otpCode             String?
-  otpExpiry           DateTime?
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
-  clientId            String?
-  adminUserId         String?    @unique
-  holderType          HolderType @default(PRIMARY)
-  adminUser           AdminUser? @relation(fields: [adminUserId], references: [id])
-  client              Client?    @relation(fields: [clientId], references: [id])
-  sessions            Session[]
+  id                   String     @id @default(cuid())
+  email                String     @unique
+  passwordHash         String
+  role                 String
+  isActive             Boolean    @default(true)
+  lastLoginAt          DateTime?
+  refreshToken         String?
+  passwordResetToken   String?
+  passwordResetExpiry  DateTime?
+  passwordResetTokenPrefix String? // First 8 chars of raw token for indexed lookup
+  otpCode              String?
+  otpExpiry            DateTime?
+  passwordChangedAt    DateTime?  // Track when password was last changed
+  passwordExpired      Boolean    @default(false)  // Flag for expired passwords
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  clientId             String?
+  adminUserId          String?    @unique
+  holderType           HolderType @default(PRIMARY)
+  adminUser            AdminUser? @relation(fields: [adminUserId], references: [id])
+  client               Client?    @relation(fields: [clientId], references: [id])
+  sessions             Session[]
 
   @@index([email])
   @@index([clientId])
+  @@index([passwordResetToken])
+  @@index([passwordResetTokenPrefix])
 }
 
 model Session {
@@ -209,6 +218,11 @@ model Investment {
   approvedById    String?
   approvedAt      DateTime?
   notes           String?
+  isInternal      Boolean           @default(false)
+  interestRedeemedKobo BigInt        @default(0)
+  withholdingTaxKobo   BigInt        @default(0)
+  netInterestPaidKobo  BigInt        @default(0)
+  entityId        String?           // Business entity for regulatory separation
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   approval        Approval?
@@ -217,11 +231,20 @@ model Investment {
   product         Product           @relation(fields: [productId], references: [id])
   history         InvestmentEvent[]
   preTermination  PreTermination?
+  walletTransactions WalletTransaction[]
+  withholdingTax   WithholdingTax[]
+  entity          Entity?           @relation(fields: [entityId], references: [id])
 
   @@index([clientId])
   @@index([productId])
   @@index([status])
   @@index([maturityDate])
+  @@index([isInternal])
+  @@index([entityId])
+  @@index([clientId, status])
+  @@index([clientId, isInternal, status])
+  @@index([status, maturityDate])
+  @@index([clientId, createdAt])
 }
 
 model InvestmentEvent {
@@ -260,33 +283,53 @@ model Approval {
 }
 
 model WalletTransaction {
-  id            String            @id @default(cuid())
-  txnRef        String            @unique
-  clientId      String
-  type          TransactionType
-  status        TransactionStatus @default(PENDING)
-  amountKobo    BigInt
-  description   String?
-  paystackRef   String?
-  paystackTransferCode String?
-  failureReason String?
-  bankName      String?
-  bankAcctNo    String?
-  bankAcctName  String?
-  initiatedById String?
-  requestedByAuthUserId String?
-  requiresCoSign        Boolean   @default(false)
-  coSignedByAuthUserId  String?
-  coSignedAt            DateTime?
-  processedAt   DateTime?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-  client        Client            @relation(fields: [clientId], references: [id])
+  id                    String            @id @default(cuid())
+  txnRef                String            @unique
+  clientId              String
+  type                  TransactionType
+  status                TransactionStatus @default(PENDING)
+  amountKobo            BigInt
+  approvedAmountKobo    BigInt?
+  disbursedAmountKobo   BigInt?
+  description           String?
+  paystackRef           String?
+  paystackTransferCode  String?
+  failureReason         String?
+  bankName              String?
+  bankAcctNo            String?
+  bankAcctName          String?
+  initiatedById            String?
+  requestedByAuthUserId    String?
+  approvedById             String?
+  requiresCoSign           Boolean           @default(false)
+  coSignedByAuthUserId     String?
+  coSignedAt               DateTime?
+  processedAt              DateTime?
+  approvedAt               DateTime?
+  entityId                 String?           // Business entity for regulatory separation
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+  client                   Client            @relation(fields: [clientId], references: [id])
+  investment               Investment?       @relation(fields: [investmentId], references: [id])
+  relatedTransaction       WalletTransaction? @relation("TransactionReversal", fields: [relatedTransactionId], references: [id])
+  relatedTransactions      WalletTransaction[] @relation("TransactionReversal")
+  investmentId             String?
+  relatedTransactionId     String?
+  supportingDocuments      Json?
+  metadata                 Json?
+  entity                   Entity?           @relation(fields: [entityId], references: [id])
 
   @@index([clientId])
   @@index([type])
   @@index([status])
   @@index([createdAt])
+  @@index([investmentId])
+  @@index([initiatedById])
+  @@index([approvedById])
+  @@index([relatedTransactionId])
+  @@index([entityId])
+  @@index([clientId, status, createdAt])
+  @@index([clientId, type, status, createdAt])
 }
 
 model PreTermination {
@@ -308,11 +351,14 @@ model PreTermination {
   rejectedById        String?
   rejectedAt          DateTime?
   rejectionReason     String?
+  entityId            String?           // Business entity for regulatory separation
   financeQueueItem    FinanceQueueItem?
   investment          Investment        @relation(fields: [investmentId], references: [id])
+  entity              Entity?           @relation(fields: [entityId], references: [id])
 
   @@index([clientId])
   @@index([status])
+  @@index([entityId])
 }
 
 model OrgLedger {
@@ -325,12 +371,47 @@ model OrgLedger {
   preTermId    String?
   fqItemId     String?
   recordedById String?
+  entityId     String?   // Business entity for regulatory separation
   createdAt    DateTime @default(now())
 
-  client       Client?  @relation(fields: [clientId], references: [id])
+  client       Client?   @relation(fields: [clientId], references: [id])
+  entity       Entity?   @relation(fields: [entityId], references: [id])
 
   @@index([type])
   @@index([createdAt])
+  @@index([entityId])
+}
+
+model WithholdingTax {
+  id                 String      @id @default(cuid())
+  wtRef              String      @unique
+  investmentId       String
+  clientId           String
+  grossInterestKobo  BigInt
+  taxKobo            BigInt
+  netInterestKobo    BigInt
+  taxRate            Decimal     @db.Decimal(5, 2)
+  status             WithholdingTaxStatus @default(PENDING)
+  collectedAt        DateTime?
+  collectedById      String?
+  entityId           String?      // Business entity for regulatory separation
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  investment         Investment  @relation(fields: [investmentId], references: [id])
+  client             Client      @relation(fields: [clientId], references: [id])
+  entity             Entity?     @relation(fields: [entityId], references: [id])
+
+  @@index([clientId])
+  @@index([investmentId])
+  @@index([status])
+  @@index([collectedAt])
+  @@index([entityId])
+}
+
+enum WithholdingTaxStatus {
+  PENDING
+  COLLECTED
+  REFUNDED
 }
 
 model FinanceQueueItem {
@@ -349,12 +430,44 @@ model FinanceQueueItem {
   rejectedById    String?
   rejectedAt      DateTime?
   rejectionReason String?
+  entityId        String?            // Business entity for regulatory separation
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
   preTermination  PreTermination?    @relation(fields: [preTermId], references: [id])
+  entity          Entity?            @relation(fields: [entityId], references: [id])
 
   @@index([clientId])
   @@index([status])
+  @@index([entityId])
+}
+
+// Business Entity — for regulatory entity separation (e.g., PFL, PP Advisers Ltd)
+// Legal mapping of clients/investments to entities must be provided by compliance team.
+// This model provides the technical structure; actual assignments require legal review.
+model Entity {
+  id                String   @id @default(cuid())
+  entityRef         String   @unique
+  name              String
+  code              String   @unique // e.g., "PFL", "PPA"
+  description       String?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  clients           Client[]
+  investments       Investment[]
+  transactions      WalletTransaction[]
+  preTerminations   PreTermination[]
+  orgLedgerEntries  OrgLedger[]
+  withholdingTax    WithholdingTax[]
+  financeQueueItems FinanceQueueItem[]
+  corporateEntities CorporateEntity[]
+  staffLoans        StaffLoan[]
+  dividends         Dividend[]
+  activityLogs      ActivityLog[]
+  auditLogs         AuditLog[]
+
+  @@index([code])
+  @@index([isActive])
 }
 
 model CorporateEntity {
@@ -364,11 +477,14 @@ model CorporateEntity {
   sector     String?
   staffCount Int         @default(0)
   clientId   String?
+  entityId   String?     // Link to business Entity for regulatory separation
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
   staffLoans StaffLoan[]
+  entity     Entity?     @relation(fields: [entityId], references: [id])
 
   @@index([name])
+  @@index([entityId])
 }
 
 model StaffLoan {
@@ -390,14 +506,17 @@ model StaffLoan {
   status             LoanStatus      @default(PENDING)
   outstandingKobo    BigInt          @default(0)
   interestEarnedKobo BigInt          @default(0)
+  entityId           String?         // Business entity for regulatory separation
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
   repayments         LoanRepayment[]
   client             Client?         @relation(fields: [clientId], references: [id])
   corporate          CorporateEntity @relation(fields: [corporateId], references: [id])
+  entity             Entity?         @relation(fields: [entityId], references: [id])
 
   @@index([corporateId])
   @@index([status])
+  @@index([entityId])
 }
 
 model LoanRepayment {
@@ -423,13 +542,16 @@ model Dividend {
   notes           String?
   status          DividendStatus  @default(DECLARED)
   declaredById    String
+  entityId        String?         // Business entity for regulatory separation
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   product         Product         @relation(fields: [productId], references: [id])
   entries         DividendEntry[]
+  entity          Entity?         @relation(fields: [entityId], references: [id])
 
   @@index([productId])
   @@index([status])
+  @@index([entityId])
 }
 
 model DividendEntry {
@@ -479,11 +601,14 @@ model ActivityLog {
   description String?
   amountKobo  BigInt?
   metadata    Json?
+  entityId    String?   // Business entity for regulatory separation
   occurredAt  DateTime @default(now())
   client      Client   @relation(fields: [clientId], references: [id])
+  entity      Entity?   @relation(fields: [entityId], references: [id])
 
   @@index([clientId])
   @@index([occurredAt])
+  @@index([entityId])
 }
 
 model AuditLog {
@@ -498,11 +623,14 @@ model AuditLog {
   ipAddress    String?
   userAgent    String?
   metadata     Json?
+  entityId     String?       // Business entity for regulatory separation
   occurredAt   DateTime      @default(now())
   admin        AdminUser?    @relation(fields: [adminId], references: [id])
+  entity       Entity?       @relation(fields: [entityId], references: [id])
 
   @@index([adminId])
   @@index([category])
+  @@index([entityId])
 }
 
 model AuditToken {
@@ -586,6 +714,8 @@ enum InvestmentStatus {
   MATURED
   PRE_TERMINATED
   REJECTED
+  CLOSED
+  PAID_OUT
 }
 
 enum ApprovalType {
@@ -613,6 +743,7 @@ enum TransactionType {
   LOAN_DISBURSEMENT
   LOAN_REPAYMENT
   FEE
+  INTEREST
 }
 
 enum TransactionStatus {
@@ -643,6 +774,8 @@ enum LoanStatus {
   REJECTED
   REPAID
   DEFAULTED
+  OVERDUE
+  RESTRUCTURED
 }
 
 enum DividendStatus {
