@@ -4,10 +4,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { logAdminAction } from '../common/audit/log-admin-action';
 
-// How many days before maturity to send the "maturing soon" reminder.
-// Single fixed trigger point (not a range) so the daily cron sends it
-// exactly once per investment, without needing an extra "reminderSentAt"
-// column on the Investment model.
 const MATURITY_REMINDER_DAYS = 3;
 
 function startOfDay(d: Date): Date {
@@ -16,6 +12,28 @@ function startOfDay(d: Date): Date {
   return copy;
 }
 
+/**
+ * Investment Maturity Service
+ * 
+ * Handles the automated processing of investment maturities.
+ * Runs daily at 1:00 AM via cron job.
+ * 
+ * BUSINESS RULES:
+ * 1. Only processes NON-INTERNAL investments (isInternal = false).
+ *    Internal investments are company/treasury investments and should not
+ *    trigger maturity payouts to client wallets.
+ * 2. Sends maturity reminders exactly 3 days before maturity date.
+ *    Uses a single fixed trigger point to avoid duplicate reminders.
+ * 3. Processes maturities idempotently using atomic claim pattern:
+ *    - updateMany with status=ACTIVE guard ensures only one process
+ *      can claim and mature a given investment.
+ * 4. Maturity payout calculation uses product-snapshotted values:
+ *    - roiRate, taxRate, tenorDays are snapshotted at investment creation
+ *    - Changes to product rates after investment creation don't affect
+ *      existing investments.
+ * 5. On maturity: credits wallet with principal + net interest,
+ *    creates REDEMPTION wallet transaction, marks investment MATURED.
+ */
 @Injectable()
 export class InvestmentMaturityService {
   private readonly logger = new Logger(InvestmentMaturityService.name);

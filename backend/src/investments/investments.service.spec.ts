@@ -55,9 +55,13 @@ describe('InvestmentsService', () => {
       prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
       prisma.product.findUnique.mockResolvedValueOnce(MOCK.product as any);
       prisma.investment.count.mockResolvedValueOnce(0);
+      prisma.client.updateMany.mockResolvedValueOnce({ count: 1 } as any); // atomic debit
+      prisma.walletTransaction.create.mockResolvedValueOnce({ txnRef: 'WAL-SUB-123' } as any);
       prisma.investment.create.mockResolvedValueOnce({
         ...MOCK.investment, status: 'PENDING_APPROVAL', product: MOCK.product,
       } as any);
+      prisma.approval.create.mockResolvedValueOnce({} as any);
+      prisma.activityLog.create.mockResolvedValueOnce({} as any);
 
       const result = await service.subscribe(IDS.CLIENT_DB, dto);
       expect(result.status).toBe('PENDING_APPROVAL');
@@ -114,9 +118,13 @@ describe('InvestmentsService', () => {
       prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
       prisma.product.findUnique.mockResolvedValueOnce(cappedProduct as any);
       prisma.investment.count.mockResolvedValueOnce(0);
+      prisma.client.updateMany.mockResolvedValueOnce({ count: 1 } as any); // atomic debit
+      prisma.walletTransaction.create.mockResolvedValueOnce({ txnRef: 'WAL-SUB-123' } as any);
       prisma.investment.create.mockResolvedValueOnce({
         ...MOCK.investment, status: 'PENDING_APPROVAL', product: cappedProduct,
       } as any);
+      prisma.approval.create.mockResolvedValueOnce({} as any);
+      prisma.activityLog.create.mockResolvedValueOnce({} as any);
 
       const result = await service.subscribe(IDS.CLIENT_DB, { ...dto, principalKobo: BigInt(200_000_00) });
       expect(result.status).toBe('PENDING_APPROVAL');
@@ -126,7 +134,11 @@ describe('InvestmentsService', () => {
       prisma.client.findUnique.mockResolvedValueOnce({ ...MOCK.client, walletBalance: BigInt(999_999_999_00) } as any);
       prisma.product.findUnique.mockResolvedValueOnce({ ...MOCK.product, maxInvestKobo: null } as any);
       prisma.investment.count.mockResolvedValueOnce(0);
+      prisma.client.updateMany.mockResolvedValueOnce({ count: 1 } as any); // atomic debit
+      prisma.walletTransaction.create.mockResolvedValueOnce({ txnRef: 'WAL-SUB-123' } as any);
       prisma.investment.create.mockResolvedValueOnce({ ...MOCK.investment, status: 'PENDING_APPROVAL' } as any);
+      prisma.approval.create.mockResolvedValueOnce({} as any);
+      prisma.activityLog.create.mockResolvedValueOnce({} as any);
 
       const result = await service.subscribe(IDS.CLIENT_DB, { ...dto, principalKobo: BigInt(50_000_000_00) });
       expect(result.status).toBe('PENDING_APPROVAL');
@@ -138,6 +150,8 @@ describe('InvestmentsService', () => {
     it('creates a pre-termination record for an active investment', async () => {
       prisma.investment.findFirst.mockResolvedValueOnce(MOCK.investment as any);
       prisma.preTermination.create.mockResolvedValueOnce({ id: IDS.PRE_TERM } as any);
+      prisma.investmentEvent.create.mockResolvedValueOnce({} as any);
+      prisma.activityLog.create.mockResolvedValueOnce({} as any);
 
       const result = await service.requestRedemption(IDS.CLIENT_DB, IDS.INVESTMENT, 'Need funds');
       expect(prisma.preTermination.create).toHaveBeenCalledWith(
@@ -169,6 +183,8 @@ describe('InvestmentsService', () => {
       prisma.investment.create.mockResolvedValueOnce({
         ...MOCK.investment, status: 'ACTIVE', product: MOCK.product, client: MOCK.client,
       } as any);
+      prisma.investmentEvent.create.mockResolvedValueOnce({} as any);
+      prisma.activityLog.create.mockResolvedValueOnce({} as any);
 
       const result = await service.adminBook(dto, IDS.ADMIN_USER);
       expect(result.status).toBe('ACTIVE');
