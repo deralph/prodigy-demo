@@ -14,6 +14,7 @@ import InvestmentCard from '../../components/ui/InvestmentCard';
 import DetailRow from '../../components/ui/DetailRow';
 import TabBar from '../../components/ui/TabBar';
 import SectionCard from '../../components/ui/SectionCard';
+import { csvRow } from '../../utils/csv';
 
 const fmt  = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 const fmtSmart = v => {
@@ -134,9 +135,9 @@ function InvestmentDrawer({ inv, plans, user, onClose }) {
 
   const exportStatement = () => {
     const date = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
-    const rows = (inv.history || []).map(h => `"${h.date}","${h.action}","${fmt(inv.amount)}","${inv.status}"`).join('\n');
+    const rows = (inv.history || []).map(h => csvRow(h.date, h.action, fmt(inv.amount), inv.status)).join('\n');
     const header = `PRODIGY FINANCE — ${inv.plan.toUpperCase()} PRODUCT STATEMENT\nGenerated: ${date}\nClient: ${user?.name || '—'} · ID: ${user?.clientId || '—'}\n\n`;
-    const body = `Date,Action,Amount,Status\n${rows}`;
+    const body = `${csvRow('Date','Action','Amount','Status')}\n${rows}`;
     const blob = new Blob([header + body], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

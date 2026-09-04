@@ -6,6 +6,7 @@ import WalletHero from '../../components/ui/WalletHero';
 import TransactionList from '../../components/ui/TransactionList';
 import FundWalletModal from '../../components/wallet/FundWalletModal';
 import WithdrawModal from '../../components/wallet/WithdrawModal';
+import { csvRow } from '../../utils/csv';
 import PendingCosignBanner from '../../components/wallet/PendingCosignBanner';
 import Toast from '../../components/ui/Toast';
 
@@ -55,8 +56,8 @@ export default function JointCash() {
   }, []);
 
   const downloadCSV = () => {
-    const rows = allTxns.map(t => `"${t.date||''}","${t.ref||t.id||''}","${t.description||''}",${t.amount||0},"${t.status||''}"`);
-    const blob = new Blob([`JOINT CASH LEDGER\nAccount: ${user?.name} & ${client?.secondaryName||'Joint Holder'}\n\nDate,Reference,Description,Amount,Status\n${rows.join('\n')}`], { type:'text/csv' });
+    const rows = allTxns.map(t => csvRow(t.date||'', t.ref||t.id||'', t.description||'', t.amount||0, t.status||''));
+    const blob = new Blob([`JOINT CASH LEDGER\nAccount: ${user?.name} & ${client?.secondaryName||'Joint Holder'}\n\n${csvRow('Date','Reference','Description','Amount','Status')}\n${rows.join('\n')}`], { type:'text/csv' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url; a.download = `joint-cash-ledger-${new Date().toISOString().slice(0,10)}.csv`; a.click();

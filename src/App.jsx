@@ -1,59 +1,60 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import useAppStore from './store/useAppStore';
 import { getTokens, authApi, clearTokens } from './services/api';
 import LoadingOverlay from './components/ui/LoadingOverlay';
 
-import OnboardingLogin from './pages/onboarding/OnboardingLogin';
-import MagicLogin      from './pages/onboarding/MagicLogin';
-import Landing  from './pages/Landing';
-import AuditPortal from './pages/AuditPortal';
+/* ── Lazy-loaded page components ───────────────────────────── */
+const OnboardingLogin = lazy(() => import('./pages/onboarding/OnboardingLogin'));
+const MagicLogin = lazy(() => import('./pages/onboarding/MagicLogin'));
+const Landing = lazy(() => import('./pages/Landing'));
+const AuditPortal = lazy(() => import('./pages/AuditPortal'));
 
-import CorporateLayout from './components/corporate/CorporateLayout';
-import Treasury    from './pages/corporate/Treasury';
-import Wallet      from './pages/corporate/Wallet';
-import StaffLoans  from './pages/corporate/StaffLoans';
-import Audit       from './pages/corporate/Audit';
-import KYC         from './pages/corporate/KYC';
-import Reports     from './pages/corporate/Reports';
-import RiskStrategy from './pages/corporate/RiskStrategy';
+const CorporateLayout = lazy(() => import('./components/corporate/CorporateLayout'));
+const Treasury = lazy(() => import('./pages/corporate/Treasury'));
+const Wallet = lazy(() => import('./pages/corporate/Wallet'));
+const StaffLoans = lazy(() => import('./pages/corporate/StaffLoans'));
+const Audit = lazy(() => import('./pages/corporate/Audit'));
+const KYC = lazy(() => import('./pages/corporate/KYC'));
+const Reports = lazy(() => import('./pages/corporate/Reports'));
+const RiskStrategy = lazy(() => import('./pages/corporate/RiskStrategy'));
 
-import IndividualLayout  from './components/individual/IndividualLayout';
-import AssetPortfolio    from './pages/individual/AssetPortfolio';
-import CashAccount       from './pages/individual/CashAccount';
-import SecurityVault     from './pages/individual/SecurityVault';
-import ActivityLog       from './pages/individual/ActivityLog';
+const IndividualLayout = lazy(() => import('./components/individual/IndividualLayout'));
+const AssetPortfolio = lazy(() => import('./pages/individual/AssetPortfolio'));
+const CashAccount = lazy(() => import('./pages/individual/CashAccount'));
+const SecurityVault = lazy(() => import('./pages/individual/SecurityVault'));
+const ActivityLog = lazy(() => import('./pages/individual/ActivityLog'));
 
-import JointLayout     from './components/joint/JointLayout';
-import JointPortfolio  from './pages/joint/JointPortfolio';
-import JointCash       from './pages/joint/JointCash';
-import AccessControl   from './pages/joint/AccessControl';
-import JointStatements from './pages/joint/JointStatements';
-import SharedLegacy    from './pages/joint/SharedLegacy';
+const JointLayout = lazy(() => import('./components/joint/JointLayout'));
+const JointPortfolio = lazy(() => import('./pages/joint/JointPortfolio'));
+const JointCash = lazy(() => import('./pages/joint/JointCash'));
+const AccessControl = lazy(() => import('./pages/joint/AccessControl'));
+const JointStatements = lazy(() => import('./pages/joint/JointStatements'));
+const SharedLegacy = lazy(() => import('./pages/joint/SharedLegacy'));
 
-import AdminLayout           from './components/admin/AdminLayout';
-import AdminOverview         from './pages/admin/AdminOverview';
-import ClientManagement      from './pages/admin/ClientManagement';
-import ApprovalHub           from './pages/admin/ApprovalHub';
-import InvestmentPlans       from './pages/admin/InvestmentPlans';
-import TransactionLedger     from './pages/admin/TransactionLedger';
-import WithdrawalsQueue      from './pages/admin/WithdrawalsQueue';
-import StaffLoansAdmin       from './pages/admin/StaffLoansAdmin';
-import RiskCompliance        from './pages/admin/RiskCompliance';
-import AuditTrail            from './pages/admin/AuditTrail';
-import AdminReports          from './pages/admin/AdminReports';
-import UserManagement        from './pages/admin/UserManagement';
-import PreTermination        from './pages/admin/PreTermination';
-import ProductSetup          from './pages/admin/ProductSetup';
-import InterestAccruals      from './pages/admin/InterestAccruals';
-import FinanceQueue          from './pages/admin/FinanceQueue';
-import Analytics             from './pages/admin/Analytics';
-import ClientInvestments     from './pages/admin/ClientInvestments';
+const AdminLayout = lazy(() => import('./components/admin/AdminLayout'));
+const AdminOverview = lazy(() => import('./pages/admin/AdminOverview'));
+const ClientManagement = lazy(() => import('./pages/admin/ClientManagement'));
+const ApprovalHub = lazy(() => import('./pages/admin/ApprovalHub'));
+const InvestmentPlans = lazy(() => import('./pages/admin/InvestmentPlans'));
+const TransactionLedger = lazy(() => import('./pages/admin/TransactionLedger'));
+const WithdrawalsQueue = lazy(() => import('./pages/admin/WithdrawalsQueue'));
+const StaffLoansAdmin = lazy(() => import('./pages/admin/StaffLoansAdmin'));
+const RiskCompliance = lazy(() => import('./pages/admin/RiskCompliance'));
+const AuditTrail = lazy(() => import('./pages/admin/AuditTrail'));
+const AdminReports = lazy(() => import('./pages/admin/AdminReports'));
+const UserManagement = lazy(() => import('./pages/admin/UserManagement'));
+const PreTermination = lazy(() => import('./pages/admin/PreTermination'));
+const ProductSetup = lazy(() => import('./pages/admin/ProductSetup'));
+const InterestAccruals = lazy(() => import('./pages/admin/InterestAccruals'));
+const FinanceQueue = lazy(() => import('./pages/admin/FinanceQueue'));
+const Analytics = lazy(() => import('./pages/admin/Analytics'));
+const ClientInvestments = lazy(() => import('./pages/admin/ClientInvestments'));
 
-import Products       from './pages/shared/Products';
-import ProductDetail  from './pages/shared/ProductDetail';
-import Ledger         from './pages/shared/Ledger';
-import ProfilePage    from './pages/shared/ProfilePage';
+const Products = lazy(() => import('./pages/shared/Products'));
+const ProductDetail = lazy(() => import('./pages/shared/ProductDetail'));
+const Ledger = lazy(() => import('./pages/shared/Ledger'));
+const ProfilePage = lazy(() => import('./pages/shared/ProfilePage'));
 
 /* ── Role-based protected route ─────────────────────────── */
 function ProtectedRoute({ children, allowedRoles }) {
@@ -116,83 +117,80 @@ function DataFetcher() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <LoadingOverlay />
-      <SessionRestore />
-      <DataFetcher />
-      <Routes>
-        {/* Public */}
-        <Route path="/"            element={<Landing />} />
-        <Route path="/login"       element={<OnboardingLogin />} />
-        <Route path="/magic-login" element={<MagicLogin />} />
-        <Route path="/audit-portal" element={<AuditPortal />} />
+    <Suspense fallback={<LoadingOverlay />}>
+        <Routes>
+          {/* Public */}
+          <Route path="/"            element={<Landing />} />
+          <Route path="/login"       element={<OnboardingLogin />} />
+          <Route path="/magic-login" element={<MagicLogin />} />
+          <Route path="/audit-portal" element={<AuditPortal />} />
 
-        {/* Corporate */}
-        <Route path="/corporate" element={<ProtectedRoute allowedRoles={['corporate']}><CorporateLayout /></ProtectedRoute>}>
-          <Route index element={<Navigate to="treasury" replace />} />
-          <Route path="treasury"    element={<Treasury />} />
-          <Route path="wallet"      element={<Wallet />} />
-          <Route path="staff-loans" element={<StaffLoans />} />
-          <Route path="audit"       element={<Audit />} />
-          <Route path="kyc"         element={<KYC />} />
-          <Route path="reports"     element={<Reports />} />
-          <Route path="risk"        element={<RiskStrategy />} />
-          <Route path="ledger"         element={<Ledger />} />
-          <Route path="products"         element={<Products />} />
-          <Route path="products/:id"     element={<ProductDetail />} />
-          <Route path="profile"          element={<ProfilePage />} />
-        </Route>
+          {/* Corporate */}
+          <Route path="/corporate" element={<ProtectedRoute allowedRoles={['corporate']}><CorporateLayout /></ProtectedRoute>}>
+            <Route index element={<Navigate to="treasury" replace />} />
+            <Route path="treasury"    element={<Treasury />} />
+            <Route path="wallet"      element={<Wallet />} />
+            <Route path="staff-loans" element={<StaffLoans />} />
+            <Route path="audit"       element={<Audit />} />
+            <Route path="kyc"         element={<KYC />} />
+            <Route path="reports"     element={<Reports />} />
+            <Route path="risk"        element={<RiskStrategy />} />
+            <Route path="ledger"         element={<Ledger />} />
+            <Route path="products"         element={<Products />} />
+            <Route path="products/:id"     element={<ProductDetail />} />
+            <Route path="profile"          element={<ProfilePage />} />
+          </Route>
 
-        {/* Individual */}
-        <Route path="/individual" element={<ProtectedRoute allowedRoles={['individual']}><IndividualLayout /></ProtectedRoute>}>
-          <Route index element={<Navigate to="portfolio" replace />} />
-          <Route path="portfolio" element={<AssetPortfolio />} />
-          <Route path="cash"      element={<CashAccount />} />
-          <Route path="vault"     element={<SecurityVault />} />
-          <Route path="activity"  element={<ActivityLog />} />
-          <Route path="ledger"        element={<Ledger />} />
-          <Route path="products"        element={<Products />} />
-          <Route path="products/:id"    element={<ProductDetail />} />
-          <Route path="profile"         element={<ProfilePage />} />
-        </Route>
+          {/* Individual */}
+          <Route path="/individual" element={<ProtectedRoute allowedRoles={['individual']}><IndividualLayout /></ProtectedRoute>}>
+            <Route index element={<Navigate to="portfolio" replace />} />
+            <Route path="portfolio" element={<AssetPortfolio />} />
+            <Route path="cash"      element={<CashAccount />} />
+            <Route path="vault"     element={<SecurityVault />} />
+            <Route path="activity"  element={<ActivityLog />} />
+            <Route path="ledger"        element={<Ledger />} />
+            <Route path="products"        element={<Products />} />
+            <Route path="products/:id"    element={<ProductDetail />} />
+            <Route path="profile"         element={<ProfilePage />} />
+          </Route>
 
-        {/* Joint */}
-        <Route path="/joint" element={<ProtectedRoute allowedRoles={['joint']}><JointLayout /></ProtectedRoute>}>
-          <Route index element={<Navigate to="portfolio" replace />} />
-          <Route path="portfolio"   element={<JointPortfolio />} />
-          <Route path="cash"        element={<JointCash />} />
-          <Route path="access"      element={<AccessControl />} />
-          <Route path="statements"  element={<JointStatements />} />
-          <Route path="overview"    element={<SharedLegacy />} />
-          <Route path="ledger"        element={<Ledger />} />
-          <Route path="products"        element={<Products />} />
-          <Route path="products/:id"    element={<ProductDetail />} />
-          <Route path="profile"         element={<ProfilePage />} />
-        </Route>
+          {/* Joint */}
+          <Route path="/joint" element={<ProtectedRoute allowedRoles={['joint']}><JointLayout /></ProtectedRoute>}>
+            <Route index element={<Navigate to="portfolio" replace />} />
+            <Route path="portfolio"   element={<JointPortfolio />} />
+            <Route path="cash"        element={<JointCash />} />
+            <Route path="access"      element={<AccessControl />} />
+            <Route path="statements"  element={<JointStatements />} />
+            <Route path="overview"    element={<SharedLegacy />} />
+            <Route path="ledger"        element={<Ledger />} />
+            <Route path="products"        element={<Products />} />
+            <Route path="products/:id"    element={<ProductDetail />} />
+            <Route path="profile"         element={<ProfilePage />} />
+          </Route>
 
-        {/* Admin */}
-        <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminLayout /></ProtectedRoute>}>
-          <Route index                     element={<AdminOverview />} />
-          <Route path="clients"            element={<ClientManagement />} />
-          <Route path="approvals"          element={<ApprovalHub />} />
-          <Route path="plans"              element={<InvestmentPlans />} />
-          <Route path="transactions"       element={<TransactionLedger />} />
-          <Route path="withdrawals"        element={<WithdrawalsQueue />} />
-          <Route path="loans"              element={<StaffLoansAdmin />} />
-          <Route path="risk"               element={<RiskCompliance />} />
-          <Route path="audit"              element={<AuditTrail />} />
-          <Route path="reports"            element={<AdminReports />} />
-          <Route path="users"              element={<UserManagement />} />
-          <Route path="pretermination"     element={<PreTermination />} />
-          <Route path="products"           element={<ProductSetup />} />
-          <Route path="accruals"           element={<InterestAccruals />} />
-          <Route path="finance-queue"      element={<FinanceQueue />} />
-          <Route path="analytics"          element={<Analytics />} />
-          <Route path="client-investments" element={<ClientInvestments />} />
-        </Route>
+          {/* Admin */}
+          <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminLayout /></ProtectedRoute>}>
+            <Route index                     element={<AdminOverview />} />
+            <Route path="clients"            element={<ClientManagement />} />
+            <Route path="approvals"          element={<ApprovalHub />} />
+            <Route path="plans"              element={<InvestmentPlans />} />
+            <Route path="transactions"       element={<TransactionLedger />} />
+            <Route path="withdrawals"        element={<WithdrawalsQueue />} />
+            <Route path="loans"              element={<StaffLoansAdmin />} />
+            <Route path="risk"               element={<RiskCompliance />} />
+            <Route path="audit"              element={<AuditTrail />} />
+            <Route path="reports"            element={<AdminReports />} />
+            <Route path="users"              element={<UserManagement />} />
+            <Route path="pretermination"     element={<PreTermination />} />
+            <Route path="products"           element={<ProductSetup />} />
+            <Route path="accruals"           element={<InterestAccruals />} />
+            <Route path="finance-queue"      element={<FinanceQueue />} />
+            <Route path="analytics"          element={<Analytics />} />
+            <Route path="client-investments" element={<ClientInvestments />} />
+          </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
   );
 }

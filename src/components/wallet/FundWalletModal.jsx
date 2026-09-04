@@ -10,7 +10,7 @@ const genRef = () => 'PSK-' + Date.now().toString(36).toUpperCase() + '-' + Math
 const today  = () => new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
 const PRESETS      = [100000, 250000, 500000, 1000000, 2500000, 5000000];
-const PAYSTACK_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_test_62ba3fa4e30ace38c25feca74eae65646f1cf095';
+const PAYSTACK_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
 
 /** Isolated so usePaystackPayment always gets a stable config */
 function PaystackButton({ amountNaira, email, reference, publicKey, paying, onPaying, onSuccess, onClose }) {
@@ -27,20 +27,23 @@ function PaystackButton({ amountNaira, email, reference, publicKey, paying, onPa
 
   const handleClick = () => {
     if (paying) return;
+    if (!publicKey) { onClose(); return; }
     onPaying();
     // react-paystack v6 expects a single object with onSuccess/onClose callbacks
     initPay({ onSuccess: r => successRef.current(r), onClose: () => closeRef.current() });
   };
 
+  const payDisabled = !publicKey;
+
   return (
     <button
       onClick={handleClick}
-      disabled={paying}
-      style={{ width: '100%', background: paying ? 'var(--gray-300)' : 'var(--gold)', color: 'var(--navy)', fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 14, letterSpacing: '0.06em', border: 'none', borderRadius: 10, padding: '15px', cursor: paying ? 'not-allowed' : 'pointer', transition: 'filter 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-      onMouseEnter={e => { if (!paying) e.currentTarget.style.filter = 'brightness(1.08)'; }}
+      disabled={paying || payDisabled}
+      style={{ width: '100%', background: (paying || payDisabled) ? 'var(--gray-300)' : 'var(--gold)', color: (paying || payDisabled) ? 'var(--gray-500)' : 'var(--navy)', fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 14, letterSpacing: '0.06em', border: 'none', borderRadius: 10, padding: '15px', cursor: (paying || payDisabled) ? 'not-allowed' : 'pointer', transition: 'filter 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+      onMouseEnter={e => { if (!paying && !payDisabled) e.currentTarget.style.filter = 'brightness(1.08)'; }}
       onMouseLeave={e => e.currentTarget.style.filter = 'none'}
     >
-      <Lock size={15} /> {paying ? 'PROCESSING…' : `PAY ${fmt(amountNaira)} VIA PAYSTACK`}
+      <Lock size={15} /> {paying ? 'PROCESSING…' : payDisabled ? 'PAYMENT UNAVAILABLE' : `PAY ${fmt(amountNaira)} VIA PAYSTACK`}
     </button>
   );
 }

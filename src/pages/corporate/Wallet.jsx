@@ -6,6 +6,7 @@ import WalletBalanceCard from '../../components/wallet/WalletBalanceCard';
 import FundWalletModal from '../../components/wallet/FundWalletModal';
 import WithdrawModal from '../../components/wallet/WithdrawModal';
 import Toast from '../../components/ui/Toast';
+import { csvRow } from '../../utils/csv';
 import DataTable from '../../components/ui/DataTable';
 import StatusBadge from '../../components/shared/StatusBadge';
 
@@ -36,7 +37,7 @@ export default function CorporateWallet() {
   }, []);
 
   const exportCSV = () => {
-    const rows = transactions.map(t => `"${t.date}","${t.id}","${t.description}","${t.amount}","${t.ref}","${t.status}"`).join('\n');
+    const rows = transactions.map(t => csvRow(t.date, t.id, t.description, t.amount, t.ref, t.status)).join('\n');
     const blob = new Blob(['Date,ID,Description,Amount,Reference,Status\n' + rows], { type: 'text/csv' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');

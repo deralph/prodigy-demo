@@ -9,12 +9,13 @@ import TransactionList from '../../components/ui/TransactionList';
 import ModalOverlay from '../../components/ui/ModalOverlay';
 import WithdrawModal from '../../components/wallet/WithdrawModal';
 import Toast from '../../components/ui/Toast';
+import { csvRow } from '../../utils/csv';
 
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 const INFLOW_TYPES = new Set(['wallet_funding','redemption','pre_termination_payout','dividend_payout']);
 
 const QUICK_AMTS = [100000, 500000, 1000000, 5000000];
-const PAYSTACK_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_test_62ba3fa4e30ace38c25feca74eae65646f1cf095';
+const PAYSTACK_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
 
 const genRef = () => 'WAL-PS-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
 
@@ -53,6 +54,7 @@ function FundModal({ onClose, user, onSuccess }) {
 
   const handlePayWithCard = () => {
     if (!amount || Number(amount) <= 0) return;
+    if (!pubKey) { setLoading(false); return; }
     setLoading(true);
     // Open Paystack popup directly — no pre-initiate call, so cancelled payments
     // never create phantom PENDING records in the database.
@@ -106,7 +108,7 @@ function FundModal({ onClose, user, onSuccess }) {
           <p style={{ fontSize:11,color:'var(--gray-400)',marginBottom:14,lineHeight:1.5 }}>
             You'll be redirected to Paystack to complete payment via card, bank transfer, USSD, or QR.
           </p>
-          <button onClick={handlePayWithCard} disabled={loading || !amount || Number(amount) < 1000}
+          <button onClick={handlePayWithCard} disabled={loading || !amount || Number(amount) < 1000 || !pubKey}
             style={{ width:'100%',padding:'13px',background:'var(--navy)',color:'white',border:'none',borderRadius:8,cursor:loading?'not-allowed':'pointer',fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:12,display:'flex',alignItems:'center',justifyContent:'center',gap:7,opacity:(loading||!amount||Number(amount)<1000)?0.5:1 }}>
             <CreditCard size={14}/> {loading?'LOADING…':`PAY ${amount?fmt(Number(amount)):''} SECURELY`}
           </button>
@@ -159,12 +161,11 @@ export default function CashAccount() {
   });
 
   const downloadCSV = () => {
-    const headers = ['Date','Reference','Description','Type','Amount','Status'];
     const rows = transactions.map(t => {
       const dir = INFLOW_TYPES.has(t.type) ? 'INFLOW' : 'OUTFLOW';
-      return [t.date||'',t.ref||'',t.description||dir,dir,t.amount,t.status||''].join(',');
+      return csvRow(t.date||'', t.ref||'', t.description||dir, dir, t.amount, t.status||'');
     });
-    const blob = new Blob([[headers.join(','),...rows].join('\n')], { type:'text/csv' });
+    const blob = new Blob([[csvRow('Date','Reference','Description','Type','Amount','Status'),...rows].join('\n')], { type:'text/csv' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url; a.download = `cash-ledger-${(user?.name||'account').replace(/\s/g,'-')}.csv`;

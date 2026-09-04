@@ -6,6 +6,7 @@ import StatCard from '../../components/ui/StatCard';
 import InvestmentCard from '../../components/ui/InvestmentCard';
 import SectionCard from '../../components/ui/SectionCard';
 import DetailRow from '../../components/ui/DetailRow';
+import { csvRow } from '../../utils/csv';
 import SlideDrawer from '../../components/ui/SlideDrawer';
 import TabBar from '../../components/ui/TabBar';
 import PortfolioHero from '../../components/portfolio/PortfolioHero';
@@ -126,8 +127,8 @@ function JointInvestmentDrawer({ inv, plans, user, client, onClose }) {
 
   const exportStatement = () => {
     const date = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
-    const rows = (inv.history || []).map(h => `"${h.date}","${h.action}","${fmt(inv.amount)}","${inv.status}"`);
-    const blob = new Blob([`JOINT ACCOUNT STATEMENT — ${inv.plan}\nGenerated: ${date}\nHolders: ${holders.map(h => h.name).join(' & ')}\n\nDate,Action,Amount,Status\n${rows.join('\n')}`], { type: 'text/csv' });
+    const rows = (inv.history || []).map(h => csvRow(h.date, h.action, fmt(inv.amount), inv.status));
+    const blob = new Blob([`JOINT ACCOUNT STATEMENT — ${inv.plan}\nGenerated: ${date}\nHolders: ${holders.map(h => h.name).join(' & ')}\n\n${csvRow('Date','Action','Amount','Status')}\n${rows.join('\n')}`], { type: 'text/csv' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url; a.download = `joint-${inv.plan.replace(/\s/g, '_')}-${inv.id}.csv`; a.click();

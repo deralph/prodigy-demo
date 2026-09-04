@@ -6,6 +6,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import AuditItem from '../../components/ui/AuditItem';
 import SearchFilterBar from '../../components/ui/SearchFilterBar';
 import TabBar from '../../components/ui/TabBar';
+import { csvRow } from '../../utils/csv';
 
 const CAT_COLORS = { kyc:'#8b5cf6', compliance:'#ef4444', finance:'#22c55e', investment:'#e8b84b', operations:'#3b82f6', audit:'#f97316', system:'#0d1b35' };
 const CATEGORIES = ['all','kyc','compliance','finance','investment','operations','audit','system'];
@@ -22,8 +23,8 @@ export default function AuditTrail() {
   });
 
   const exportCSV = () => {
-    const rows = filtered.map(a => `"${a.time}","${a.id}","${a.admin}","${a.role}","${a.action}","${a.target}","${a.category}","${a.ip}"`).join('\n');
-    const blob = new Blob(['Time,ID,Admin Name,Role,Action,Target,Category,IP\n' + rows], { type: 'text/csv' });
+    const rows = filtered.map(a => csvRow(a.time, a.id, a.admin, a.role, a.action, a.target, a.category, a.ip)).join('\n');
+    const blob = new Blob([csvRow('Time','ID','Admin Name','Role','Action','Target','Category','IP') + '\n' + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'audit_log.csv'; a.click();
     URL.revokeObjectURL(url);

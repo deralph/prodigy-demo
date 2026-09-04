@@ -4,6 +4,7 @@ import useAppStore, { getJointMandate } from '../../store/useAppStore';
 import PageHeader from '../../components/ui/PageHeader';
 import HolderBanner from '../../components/ui/HolderBanner';
 import StatCard from '../../components/ui/StatCard';
+import { csvRow } from '../../utils/csv';
 
 const fmt  = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 
@@ -126,10 +127,10 @@ export default function JointStatements() {
     const gross = (inv.amount*inv.roi)/100;
     const net   = gross-(gross*inv.tax)/100;
     const rows  = [
-      `"Product","${inv.plan}"`,`"Primary Holder","${user?.name}"`,`"Secondary Holder","${client?.secondaryName||'—'}"`,
-      `"Principal","${fmt(inv.amount)}"`,`"Net Return","${fmt(net)}"`,`"Tenor","${inv.tenor}"`,`"Value Date","${inv.valueDate}"`,`"Maturity","${inv.maturityDate}"`,
-      '','"Date","Action"',...(inv.history||[]).map(h=>`"${h.date}","${h.action}"`),
-      '','"Date","Type","Amount","Status","Reference"',...txns.map(t=>`"${t.date}","${t.type}","${fmt(t.amount)}","${t.status}","${t.ref||''}"`),
+      csvRow('Product', inv.plan), csvRow('Primary Holder', user?.name), csvRow('Secondary Holder', client?.secondaryName || '—'),
+      csvRow('Principal', fmt(inv.amount)), csvRow('Net Return', fmt(net)), csvRow('Tenor', inv.tenor), csvRow('Value Date', inv.valueDate), csvRow('Maturity', inv.maturityDate),
+      '', csvRow('Date', 'Action'), ...(inv.history||[]).map(h=>csvRow(h.date, h.action)),
+      '', csvRow('Date', 'Type', 'Amount', 'Status', 'Reference'), ...txns.map(t=>csvRow(t.date, t.type, fmt(t.amount), t.status, t.ref||'')),
     ];
     const blob = new Blob([rows.join('\n')],{type:'text/csv'});
     const url  = URL.createObjectURL(blob);
@@ -138,8 +139,8 @@ export default function JointStatements() {
   };
 
   const exportAll = () => {
-    const rows = ['Product,Principal,ROI%,Tax%,Gross Return,Net Return,Tenor,Value Date,Maturity,Status',
-      ...myInvs.map(inv=>{const g=(inv.amount*inv.roi)/100;const n=g-(g*inv.tax)/100;return`"${inv.plan}","${fmt(inv.amount)}","${inv.roi}%","${inv.tax}%","${fmt(g)}","${fmt(n)}","${inv.tenor}","${inv.valueDate}","${inv.maturityDate}","${inv.status}"`;})
+    const rows = [csvRow('Product','Principal','ROI%','Tax%','Gross Return','Net Return','Tenor','Value Date','Maturity','Status'),
+      ...myInvs.map(inv=>{const g=(inv.amount*inv.roi)/100;const n=g-(g*inv.tax)/100;return csvRow(inv.plan, fmt(inv.amount), `${inv.roi}%`, `${inv.tax}%`, fmt(g), fmt(n), inv.tenor, inv.valueDate, inv.maturityDate, inv.status);})
     ];
     const blob=new Blob([rows.join('\n')],{type:'text/csv'});
     const url=URL.createObjectURL(blob);

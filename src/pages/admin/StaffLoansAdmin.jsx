@@ -6,6 +6,7 @@ import EmptyState from '../../components/EmptyState';
 import StatusBadge from '../../components/shared/StatusBadge';
 import PageHeader from '../../components/ui/PageHeader';
 import ModalOverlay from '../../components/ui/ModalOverlay';
+import { csvRow } from '../../utils/csv';
 import DetailRow from '../../components/ui/DetailRow';
 import ProgressBar from '../../components/ui/ProgressBar';
 
@@ -218,8 +219,8 @@ export default function StaffLoansAdmin() {
   const allStaffCount  = entities.reduce((s, e) => s + (e.staff?.length || 0), 0);
 
   const exportCSV = (rows, filename) => {
-    const header = 'Employee,Staff ID,Dept,Amount,Repaid,Outstanding,Tenor,Date,Status';
-    const body   = rows.map(l => `"${l.employee}","${l.staffId}","${l.dept}",${l.amount},${l.repaid},${l.outstanding},"${l.tenor}","${l.date}","${l.status}"`).join('\n');
+    const header = csvRow('Employee','Staff ID','Dept','Amount','Repaid','Outstanding','Tenor','Date','Status');
+    const body   = rows.map(l => csvRow(l.employee, l.staffId, l.dept, l.amount, l.repaid, l.outstanding, l.tenor, l.date, l.status)).join('\n');
     const blob   = new Blob([header + '\n' + body], { type: 'text/csv' });
     const url    = URL.createObjectURL(blob);
     const a      = document.createElement('a'); a.href = url; a.download = filename; a.click();

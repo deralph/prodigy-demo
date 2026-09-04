@@ -190,6 +190,7 @@ const mapInvestment = (inv) => {
     history:      (inv.history || []).map(h => ({ ...h, date: (h.occurredAt || h.createdAt) ? new Date(h.occurredAt || h.createdAt).toLocaleDateString('en-GB') : '—' })),
     preTermination: inv.preTermination || null,
     preTermStatus: inv.preTermination?.status?.toLowerCase() || null,
+    isInternal:   inv.isInternal ?? false,
   };
 };
 

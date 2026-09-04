@@ -7,6 +7,7 @@ import LedgerRow, { TYPE_META, STATUS_META } from '../../components/ui/LedgerRow
 import LedgerFilterBar from '../../components/ui/LedgerFilterBar';
 import ChartCard from '../../components/charts/ChartCard';
 import SectionCard from '../../components/ui/SectionCard';
+import { csvRow } from '../../utils/csv';
 
 const fmt  = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 const fmtK = n => { const v = Number(n || 0); if (v >= 1e9) return '₦' + (v / 1e9).toFixed(2) + 'B'; if (v >= 1e6) return '₦' + (v / 1e6).toFixed(2) + 'M'; if (v >= 1e3) return '₦' + (v / 1e3).toFixed(1) + 'K'; return fmt(v); };
@@ -104,7 +105,7 @@ export default function Ledger() {
   const downloadCSV = () => {
     const rows = withBalance.map(t => {
       const meta = TYPE_META[t.type] || TYPE_META.wallet_funding;
-      return [t.date || '', t.ref || t.id || '', meta.label, meta.dir.toUpperCase(), t.product || t.planId || '', t.amount || 0, t.status || '', t._runBalance || 0].join(',');
+      return csvRow(t.date || '', t.ref || t.id || '', meta.label, meta.dir.toUpperCase(), t.product || t.planId || '', t.amount || 0, t.status || '', t._runBalance || 0);
     });
     const csv  = ['Date,Reference,Type,Direction,Product,Amount,Status,Running Balance', ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });

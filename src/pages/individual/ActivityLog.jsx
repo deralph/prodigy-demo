@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import PageHeader from '../../components/ui/PageHeader';
 import { Clock, Download, Filter, ArrowDownLeft, ArrowUpRight, RefreshCw } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
+import { csvRow } from '../../utils/csv';
 
 const fmt = n => '₦' + Number(n).toLocaleString('en-NG');
 
@@ -35,8 +36,8 @@ export default function ActivityLog() {
   const filtered = typeFilter === 'all' ? combined : combined.filter(t => t.type === typeFilter);
 
   const exportCSV = () => {
-    const rows = filtered.map(t => `"${t.date}","${t.type}","${t.description||''}","${fmt(t.amount)}","${t.status}","${t.ref||''}"`);
-    const blob = new Blob([`Date,Type,Description,Amount,Status,Reference\n${rows.join('\n')}`], { type:'text/csv' });
+    const rows = filtered.map(t => csvRow(t.date, t.type, t.description||'', fmt(t.amount), t.status, t.ref||''));
+    const blob = new Blob([`${csvRow('Date','Type','Description','Amount','Status','Reference')}\n${rows.join('\n')}`], { type:'text/csv' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a'); a.href=url; a.download='activity_log.csv'; a.click();
     URL.revokeObjectURL(url);

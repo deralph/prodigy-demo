@@ -6,6 +6,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import SearchFilterBar from '../../components/ui/SearchFilterBar';
 import DataTable from '../../components/ui/DataTable';
 import StatusBadge from '../../components/shared/StatusBadge';
+import { csvRow } from '../../utils/csv';
 
 const fmt = n => '₦' + Number(n).toLocaleString('en-NG');
 
@@ -68,8 +69,8 @@ export default function ClientInvestments() {
   const invs    = clientInvestments.filter(i => i.clientId === selected);
 
   const exportCSV = () => {
-    const rows = invs.map(i => `"${i.client}","${i.plan}",${i.amount},"${i.tenor}","${i.valueDate}","${i.maturityDate}","${i.roi}%","${i.status}"`).join('\n');
-    const blob = new Blob(['Client,Product,Amount,Tenor,Value Date,Maturity,ROI,Status\n'+rows],{type:'text/csv'});
+    const rows = invs.map(i => csvRow(i.client, i.plan, i.amount, i.tenor, i.valueDate, i.maturityDate, `${i.roi}%`, i.status)).join('\n');
+    const blob = new Blob([csvRow('Client','Product','Amount','Tenor','Value Date','Maturity','ROI','Status')+'\n'+rows],{type:'text/csv'});
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href=url; a.download=`${(client?.name||client?.companyName||'client').replace(/\s/g,'_')}_investments.csv`; a.click();

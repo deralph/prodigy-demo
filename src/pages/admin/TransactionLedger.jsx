@@ -5,6 +5,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import LedgerRow, { TYPE_META, STATUS_META } from '../../components/ui/LedgerRow';
 import LedgerFilterBar from '../../components/ui/LedgerFilterBar';
 import SearchFilterBar from '../../components/ui/SearchFilterBar';
+import { csvRow } from '../../utils/csv';
 
 const fmt  = n => '₦' + Number(n || 0).toLocaleString('en-NG');
 const fmtK = n => { const v = Number(n || 0); if (v >= 1e9) return '₦' + (v / 1e9).toFixed(2) + 'B'; if (v >= 1e6) return '₦' + (v / 1e6).toFixed(2) + 'M'; return fmt(v); };
@@ -85,7 +86,7 @@ export default function TransactionLedger() {
   const downloadCSV = () => {
     const rows = filtered.map(t => {
       const meta = TYPE_META[t.type] || TYPE_META.wallet_funding;
-      return [t.date || '', t.ref || t.id || '', t.client || '', meta.label, meta.dir.toUpperCase(), t.planId || '', t.amount || 0, t.status || ''].join(',');
+      return csvRow(t.date || '', t.ref || t.id || '', t.client || '', meta.label, meta.dir.toUpperCase(), t.planId || '', t.amount || 0, t.status || '');
     });
     const csv  = ['Date,Reference,Client,Type,Direction,Product ID,Amount,Status', ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });

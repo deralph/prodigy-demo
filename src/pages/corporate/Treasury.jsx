@@ -6,6 +6,7 @@ import EmptyState from '../../components/EmptyState';
 import PageHeader from '../../components/ui/PageHeader';
 import DetailRow from '../../components/ui/DetailRow';
 import SlideDrawer from '../../components/ui/SlideDrawer';
+import { csvRow } from '../../utils/csv';
 import TabBar from '../../components/ui/TabBar';
 import ModalOverlay from '../../components/ui/ModalOverlay';
 import PortfolioHero from '../../components/portfolio/PortfolioHero';
@@ -106,8 +107,8 @@ function CorpProductDrawer({ product, investments, onClose }) {
   };
 
   const exportStatement = () => {
-    const headers = 'Month,Projected Value,Principal,Cumul. Returns';
-    const rows    = chartData.map(r => `${r.month},${r.value},${r.principal},${r.returns}`);
+    const headers = csvRow('Month', 'Projected Value', 'Principal', 'Cumul. Returns');
+    const rows    = chartData.map(r => csvRow(r.month, r.value, r.principal, r.returns));
     const blob    = new Blob([`CORPORATE PRODUCT STATEMENT\nProduct: ${product.name}\n\n${headers}\n${rows.join('\n')}`], { type: 'text/csv' });
     const url     = URL.createObjectURL(blob);
     const a       = document.createElement('a');

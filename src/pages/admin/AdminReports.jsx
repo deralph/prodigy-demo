@@ -1,22 +1,31 @@
-import React, { useState, useMemo } from 'react';
-import { Download, FileBarChart, FileText, FileCheck, CreditCard, Eye, X, Filter, Search } from 'lucide-react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { Download, FileBarChart, FileText, FileCheck, CreditCard, Eye, X, Filter, Search, Calendar, FileType } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import useAppStore from '../../store/useAppStore';
 import PageHeader from '../../components/ui/PageHeader';
 import TabBar from '../../components/ui/TabBar';
 import ChartCard from '../../components/charts/ChartCard';
 import ModalOverlay from '../../components/ui/ModalOverlay';
+import { csvRow } from '../../utils/csv';
 import StatusBadge from '../../components/shared/StatusBadge';
 
 const fmt = n => '₦' + Number(n).toLocaleString('en-NG');
 
 const STANDARD_REPORTS = [
-  { icon:FileBarChart, title:'Consolidated Portfolio', desc:'Full capital deployment records',    color:'#3b82f6' },
-  { icon:FileText,     title:'Subscriptions Ledger',   desc:'All initial investments',            color:'#22c55e' },
-  { icon:FileCheck,    title:'Redemption Analytics',   desc:'Full exit cycle documentation',      color:'#f97316' },
-  { icon:CreditCard,   title:'Tax Compliance Ledger',  desc:'Tax documentation per client',       color:'#8b5cf6' },
-  { icon:FileText,     title:'Client Onboarding',      desc:'All clients & KYC status',           color:'#ec4899' },
-  { icon:FileBarChart, title:'Risk Assessment',         desc:'Portfolio risk categorization',      color:'#e8b84b' },
+  { key: 'investment_summary', icon: FileBarChart, title: 'Investment Summary', desc: 'Summary of all investments with principal, interest, and maturity details', color: '#3b82f6' },
+  { key: 'transaction_ledger', icon: FileText, title: 'Transaction Ledger', desc: 'Complete transaction history with filters', color: '#22c55e' },
+  { key: 'client_portfolio', icon: FileBarChart, title: 'Client Portfolio', desc: 'Client investment portfolio with current valuations', color: '#f97316' },
+  { key: 'dividend_report', icon: FileCheck, title: 'Dividend Report', desc: 'Dividend declarations and payouts', color: '#8b5cf6' },
+  { key: 'maturity_schedule', icon: FileBarChart, title: 'Maturity Schedule', desc: 'Upcoming and past investment maturities', color: '#ec4899' },
+  { key: 'withholding_tax', icon: CreditCard, title: 'Withholding Tax Report', desc: 'Withholding tax collected on investment income', color: '#e8b84b' },
+  { key: 'loan_portfolio', icon: FileBarChart, title: 'Loan Portfolio', desc: 'Staff loan portfolio with repayment schedules', color: '#3b82f6' },
+  { key: 'audit_trail', icon: FileText, title: 'Audit Trail', desc: 'Administrative audit log with filters', color: '#22c55e' },
+  { key: 'outstanding_loans', icon: FileCheck, title: 'Outstanding Loans', desc: 'Loans with outstanding balances', color: '#f97316' },
+  { key: 'repayments', icon: FileBarChart, title: 'Repayments Report', desc: 'Loan repayment history with filters', color: '#8b5cf6' },
+  { key: 'pending_approvals', icon: FileText, title: 'Pending Approvals', desc: 'Items awaiting approval across all types', color: '#ec4899' },
+  { key: 'financial_exceptions', icon: FileBarChart, title: 'Financial Exceptions', desc: 'Transactions and investments with anomalies', color: '#e8b84b' },
+  { key: 'reversals', icon: FileCheck, title: 'Reversals Report', desc: 'Reversed transactions with reasons', color: '#3b82f6' },
+  { key: 'adjustments', icon: FileBarChart, title: 'Adjustments Report', desc: 'Adjusted transactions with corrections', color: '#22c55e' },
 ];
 
 /* ── Small pie + legend ── */
@@ -140,11 +149,50 @@ const TABS = [
 ];
 
 export default function AdminReports() {
-  const { plans, clientInvestments, allTransactions, clients } = useAppStore();
+  const { plans, clientInvestments, allTransactions, clients, api } = useAppStore();
   const [viewProduct, setViewProduct] = useState(null);
   const [tab,         setTab]         = useState('products');
   const [txFilter,    setTxFilter]    = useState('all');
   const [txSearch,    setTxSearch]    = useState('');
+  const [dateFrom,    setDateFrom]    = useState('');
+  const [dateTo,      setDateTo]      = useState('');
+  const [reportData,  setReportData]  = useState(null);
+  const [reportType,  setReportType]  = useState('');
+  const [loading,     setLoading]     = useState(false);
+
+  const fetchReport = useCallback(async (type, format = 'json') => {
+    if (!type) return;
+    setLoading(true);
+    setReportType(type);
+    try {
+      const params = new URLSearchParams({ type });
+      if (dateFrom) params.append('startDate', dateFrom);
+      if (dateTo) params.append('endDate', dateTo);
+      const endpoint = format === 'pdf' ? `admin/reports/generate/pdf?${params}` : `admin/reports/generate?${params}`;
+      const res = await api.get(endpoint);
+      if (format === 'pdf') {
+        const blob = new Blob([res.data], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${type}_report_${new Date().toISOString().split('T')[0]}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        setReportData(res.data);
+      }
+    } catch (err) {
+      console.error('Report generation failed:', err);
+      alert('Failed to generate report');
+    } finally {
+      setLoading(false);
+    }
+  }, [api, dateFrom, dateTo]);
+
+  const handlePreview = (type) => fetchReport(type, 'json');
+  const handlePdfDownload = (type) => fetchReport(type, 'pdf');
+
+  const clearReport = () => { setReportData(null); setReportType(''); };
 
   const allTx = useMemo(() => {
     const getClientName = (clientId) => {
@@ -186,15 +234,15 @@ export default function AdminReports() {
       const isPending = i.status === 'pending_approval';
       const valueDate = isPending ? '— (pending approval)' : fmtDate(i.valueDate);
       const maturityDate = isPending ? '— (not yet active)' : fmtDate(i.maturityDate);
-      return `"${i.client}","${i.plan}",${i.amount},"${i.tenor}","${valueDate}","${maturityDate}","${i.roi}%","${i.tax}%","${i.status}"`;
+      return csvRow(i.client, i.plan, i.amount, i.tenor, valueDate, maturityDate, `${i.roi}%`, `${i.tax}%`, i.status);
     }).join('\n');
-    const blob = new Blob(['Client,Product,Amount,Tenor,Value Date,Maturity Date,ROI,Tax,Status\n'+rows],{type:'text/csv'});
+    const blob = new Blob([csvRow('Client','Product','Amount','Tenor','Value Date','Maturity Date','ROI','Tax','Status')+'\n'+rows],{type:'text/csv'});
     const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`${p.name.replace(/\s/g,'_')}_report.csv`; a.click(); URL.revokeObjectURL(url);
   };
 
   const downloadAllTx = () => {
-    const rows=filteredTx.map(t=>[t.date||'',t.ref||t.id,`"${t.client||''}"`,`"${t.description||''}"`,`"${t.type||''}"`,`"${t.product||''}"`,t.amount,t.status||''].join(',')).join('\n');
-    const blob=new Blob(['Date,Ref,Client,Description,Type,Product,Amount,Status\n'+rows],{type:'text/csv'});
+    const rows=filteredTx.map(t=>csvRow(t.date||'',t.ref||t.id,t.client||'',t.description||'',t.type||'',t.product||'',t.amount,t.status||'')).join('\n');
+    const blob=new Blob([csvRow('Date','Ref','Client','Description','Type','Product','Amount','Status')+'\n'+rows],{type:'text/csv'});
     const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='all-transactions.csv'; a.click(); URL.revokeObjectURL(url);
   };
 
@@ -220,6 +268,16 @@ export default function AdminReports() {
           )}
           <div style={{ background:'white',borderRadius:12,border:'1px solid var(--gray-200)',padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap' }}>
             <Filter size={13} color="var(--gray-400)"/>
+            <div style={{ display:'flex',alignItems:'center',gap:8 }}>
+              <label style={{ fontSize:10,color:'var(--gray-500)',fontWeight:600 }}>From</label>
+              <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
+                style={{ border:'1px solid var(--gray-200)',borderRadius:7,padding:'7px 10px',fontFamily:'DM Sans,sans-serif',fontSize:12,outline:'none',color:'var(--navy)' }}/>
+            </div>
+            <div style={{ display:'flex',alignItems:'center',gap:8 }}>
+              <label style={{ fontSize:10,color:'var(--gray-500)',fontWeight:600 }}>To</label>
+              <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}
+                style={{ border:'1px solid var(--gray-200)',borderRadius:7,padding:'7px 10px',fontFamily:'DM Sans,sans-serif',fontSize:12,outline:'none',color:'var(--navy)' }}/>
+            </div>
             <div style={{ position:'relative',flex:'1 1 180px' }}>
               <Search size={12} color="var(--gray-400)" style={{ position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',pointerEvents:'none' }}/>
               <input placeholder="Search client or product…" value={txSearch} onChange={e=>setTxSearch(e.target.value)}
@@ -299,15 +357,51 @@ export default function AdminReports() {
       {/* STANDARD REPORTS */}
       {tab === 'standard' && (
         <div style={{ background:'white',borderRadius:14,padding:'20px 22px',border:'1px solid var(--gray-200)' }} className="animate-in">
-          <h3 style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:13,color:'var(--navy)',letterSpacing:'0.06em',textTransform:'uppercase',marginBottom:16 }}>Standard Reports</h3>
-          <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:12 }}>
+          <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16 }}>
+            <h3 style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:13,color:'var(--navy)',letterSpacing:'0.06em',textTransform:'uppercase' }}>Standard Reports</h3>
+            <div style={{ display:'flex',gap:8 }}>
+              <button onClick={clearReport} disabled={!reportData} style={{ display:'flex',alignItems:'center',gap:5,padding:'7px 14px',background:'var(--gray-100)',color:'var(--gray-600)',border:'1px solid var(--gray-200)',borderRadius:7,cursor: reportData ? 'pointer' : 'not-allowed',fontSize:11,fontWeight:700,opacity: reportData ? 1 : 0.5 }}>
+                <X size={12}/> Clear Preview
+              </button>
+            </div>
+          </div>
+          {reportData && (
+            <div style={{ background:'var(--gray-50)',borderRadius:10,padding:'16px',marginBottom:20,border:'1px solid var(--gray-200)' }}>
+              <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12 }}>
+                <div>
+                  <div style={{ fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:14,color:'var(--navy)' }}>{reportData.title}</div>
+                  <div style={{ fontSize:10,color:'var(--gray-400)',marginTop:2 }}>{reportData.description}</div>
+                </div>
+                <div style={{ display:'flex',gap:8 }}>
+                  <button onClick={() => handlePdfDownload(reportType)} disabled={loading} style={{ display:'flex',alignItems:'center',gap:5,padding:'9px 14px',background:'var(--navy)',color:'white',border:'none',borderRadius:8,cursor: loading ? 'not-allowed' : 'pointer',fontSize:11,fontWeight:700,opacity: loading ? 0.7 : 1 }}>
+                    <FileType size={12}/> {loading ? 'Generating…' : 'Download PDF'}
+                  </button>
+                </div>
+              </div>
+              <div style={{ background:'white',borderRadius:8,border:'1px solid var(--gray-200)',overflow:'hidden',maxHeight:400,overflowY:'auto' }}>
+                <pre style={{ padding:'16px',fontSize:10,fontFamily:'monospace',color:'var(--navy)',overflowX:'auto',whiteSpace:'pre-wrap' }}>
+                  {JSON.stringify(reportData.data, null, 2)}
+                </pre>
+              </div>
+            </div>
+          )}
+          <h3 style={{ fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:13,color:'var(--navy)',letterSpacing:'0.06em',textTransform:'uppercase',marginBottom:16 }}>Available Reports</h3>
+          <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:12 }}>
             {STANDARD_REPORTS.map(r => (
-              <div key={r.title} onClick={downloadAllTx} style={{ border:'1px solid var(--gray-200)',borderRadius:10,padding:'14px',cursor:'pointer',transition:'all 0.2s' }}
+              <div key={r.key} style={{ border:'1px solid var(--gray-200)',borderRadius:10,padding:'14px',cursor:'pointer',transition:'all 0.2s',display:'flex',flexDirection:'column',gap:8 }}
                 onMouseEnter={e=>{e.currentTarget.style.borderColor=r.color;e.currentTarget.style.background=`${r.color}06`;}}
                 onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--gray-200)';e.currentTarget.style.background='transparent';}}
               >
-                <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:9 }}>
-                  <r.icon size={16} color={r.color}/><Download size={12} color="var(--gray-400)"/>
+                <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between' }}>
+                  <r.icon size={16} color={r.color}/>
+                  <div style={{ display:'flex',gap:6 }}>
+                    <button onClick={() => handlePreview(r.key)} disabled={loading} style={{ display:'flex',alignItems:'center',gap:4,padding:'6px 10px',background:`${r.color}12`,color:r.color,border:`1px solid ${r.color}30`,borderRadius:6,cursor: loading ? 'not-allowed' : 'pointer',fontSize:10,fontWeight:700,opacity: loading ? 0.7 : 1 }}>
+                      <Eye size={11}/> Preview
+                    </button>
+                    <button onClick={() => handlePdfDownload(r.key)} disabled={loading} style={{ display:'flex',alignItems:'center',gap:4,padding:'6px 10px',background:`${r.color}12`,color:r.color,border:`1px solid ${r.color}30`,borderRadius:6,cursor: loading ? 'not-allowed' : 'pointer',fontSize:10,fontWeight:700,opacity: loading ? 0.7 : 1 }}>
+                      <FileType size={11}/> PDF
+                    </button>
+                  </div>
                 </div>
                 <div style={{ fontSize:12,fontWeight:700,color:'var(--navy)',marginBottom:3,lineHeight:1.4 }}>{r.title}</div>
                 <div style={{ fontSize:10,color:'var(--gray-400)',lineHeight:1.5 }}>{r.desc}</div>

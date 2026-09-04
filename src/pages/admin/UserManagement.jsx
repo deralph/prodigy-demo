@@ -125,7 +125,7 @@ export default function UserManagement() {
                   <div style={{ marginTop: 12, padding: '10px', background: 'var(--gray-50)', borderRadius: 8 }}>
                     <div style={{ fontSize: 9, color: 'var(--gray-400)', marginBottom: 4, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Login Credentials</div>
                     <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--navy)' }}>{u.email}</div>
-                    <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--gray-400)' }}>{u.password}</div>
+                    <div style={{ fontSize: 10, color: 'var(--gray-400)' }}>{u.isActive ? '● Active' : '○ Locked'}</div>
                   </div>
                 </div>
               </div>
