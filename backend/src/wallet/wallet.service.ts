@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizeBankName, lookupBankCodeFallback } from './bank-codes';
@@ -22,15 +22,86 @@ export class WalletService {
     return client;
   }
 
-  async getTransactions(clientDbId: string, query?: { type?: string; status?: string }) {
-    return this.prisma.walletTransaction.findMany({
-      where: {
-        clientId: clientDbId,
-        ...(query?.type && { type: query.type as any }),
-        ...(query?.status && { status: query.status as any }),
+  async getTransactions(
+    clientDbId: string,
+    query?: {
+      type?: string;
+      status?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      page?: number;
+      limit?: number;
+    },
+  ) {
+    const page = Math.max(1, query?.page ?? 1);
+    const limit = Math.min(200, Math.max(1, query?.limit ?? 50));
+    const skip = (page - 1) * limit;
+
+    const where: any = {
+      clientId: clientDbId,
+      ...(query?.type && { type: query.type as any }),
+      ...(query?.status && { status: query.status as any }),
+    };
+
+    if (query?.dateFrom || query?.dateTo) {
+      where.createdAt = {};
+      if (query.dateFrom) {
+        const from = new Date(query.dateFrom);
+        if (isNaN(from.getTime())) throw new BadRequestException('Invalid dateFrom');
+        where.createdAt.gte = from;
+      }
+      if (query.dateTo) {
+        const to = new Date(query.dateTo);
+        if (isNaN(to.getTime())) throw new BadRequestException('Invalid dateTo');
+        to.setHours(23, 59, 59, 999);
+        where.createdAt.lte = to;
+      }
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.walletTransaction.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          investment: { select: { id: true, investRef: true, product: { select: { name: true } } } },
+          relatedTransaction: { select: { id: true, txnRef: true, type: true, status: true } },
+        },
+      }),
+      this.prisma.walletTransaction.count({ where }),
+    ]);
+
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  async getTransactionDetail(clientDbId: string, transactionId: string) {
+    const where: any = { id: transactionId };
+    if (clientDbId) where.clientId = clientDbId;
+
+    const txn = await this.prisma.walletTransaction.findFirst({
+      where,
+      include: {
+        client: { select: { id: true, clientRef: true, name: true, email: true } },
+        investment: { include: { product: true } },
+        relatedTransaction: true,
       },
-      orderBy: { createdAt: 'desc' },
     });
+    if (!txn) throw new NotFoundException('Transaction not found');
+
+    const activityLog = await this.prisma.activityLog.findMany({
+      where: { clientId: txn.clientId, metadata: { path: ['txnRef'], equals: txn.txnRef } },
+      orderBy: { occurredAt: 'desc' },
+      take: 20,
+    });
+
+    const auditLog = await this.prisma.auditLog.findMany({
+      where: { targetEntity: transactionId },
+      orderBy: { occurredAt: 'desc' },
+      take: 20,
+    });
+
+    return { transaction: txn, activityLog, auditLog };
   }
 
   /**
@@ -148,6 +219,16 @@ export class WalletService {
     }
     const secretKey = this.config.get<string>('PAYSTACK_SECRET_KEY');
     const isTestMode = !secretKey || secretKey.startsWith('sk_test');
+    const isLiveEnv = process.env.NODE_ENV === 'production';
+
+    // Fail closed in production: without a live Paystack secret key the verify
+    // endpoint can never confirm a real charge, so the "demo fallback" paths
+    // below would credit wallet balance without payment. We refuse instead.
+    if (isLiveEnv && isTestMode) {
+      throw new ServiceUnavailableException(
+        'Payment verification is unavailable: a live Paystack secret key is not configured in this environment.',
+      );
+    }
 
     if (secretKey) {
       const result = await this.queryPaystackVerify(reference, secretKey);
@@ -213,21 +294,43 @@ export class WalletService {
       if (pending) {
         return tx.walletTransaction.update({
           where: { id: pending.id },
-          data: { status: 'SUCCESSFUL', amountKobo, description, processedAt: new Date() },
+          data: { status: 'SUCCESSFUL', amountKobo, approvedAmountKobo: amountKobo, disbursedAmountKobo: amountKobo, description, processedAt: new Date(), approvedAt: new Date() },
         });
       }
+
+      // Deterministic reference — the unique index on txnRef makes the create
+      // atomic under concurrency. If the webhook and the client verify request
+      // race for the same Paystack reference, one wins the INSERT and the other
+      // hits P2002 and (below, outside this transaction) resolves to the
+      // committed record. The loser's whole transaction — including the wallet
+      // increment — is rolled back, so the wallet is credited exactly once.
       return tx.walletTransaction.create({
         data: {
-          txnRef: `WAL-FT-${Date.now()}`,
+          txnRef: `WAL-FT-${paystackRef}`,
           clientId: clientDbId,
           type: 'WALLET_FUNDING',
           status: 'SUCCESSFUL',
           amountKobo,
+          approvedAmountKobo: amountKobo,
+          disbursedAmountKobo: amountKobo,
           description,
           paystackRef,
           processedAt: new Date(),
+          approvedAt: new Date(),
         },
       });
+    }).catch(async (err: any) => {
+      if (err?.code === 'P2002') {
+        // Lost the race — a concurrent caller already created this funding txn.
+        const existing = await this.prisma.walletTransaction.findFirst({
+          where: { paystackRef, status: 'SUCCESSFUL' },
+        });
+        if (existing) {
+          isNewCredit = false;
+          return existing;
+        }
+      }
+      throw err;
     });
 
     if (isNewCredit) {
@@ -298,14 +401,101 @@ export class WalletService {
         : 'Joint OR mandate — single-holder authorization'
       : 'Single-signatory authorization';
 
+    const isSingleSignatory = client.type === 'INDIVIDUAL' || client.type === 'CORPORATE';
+
+    if (isSingleSignatory) {
+      // One-way execution for single-signatory accounts (INDIVIDUAL, CORPORATE):
+      // Client request → validation → immediate execution (auto-disbursement)
+      return this.executeWithdrawal(clientDbId, requesterAuthUserId, {
+        amountKobo,
+        bankName: dto.bankName,
+        bankAcctNo: dto.bankAcctNo,
+        bankAcctName: dto.bankAcctName,
+        mandateNote,
+        mandate,
+        clientType: client.type,
+      });
+    }
+
+    // JOINT OR mandate: goes to admin queue, no co-sign required
+    const isOrMandate = client.type === 'JOINT' && mandate === 'OR';
+
+    if (isOrMandate) {
+      // JOINT OR mandate: goes to admin queue, no co-sign required
+      const result = await this.prisma.$transaction(async (tx) => {
+        const debited = await tx.client.updateMany({
+          where: { id: clientDbId, walletBalance: { gte: amountKobo } },
+          data: {
+            walletBalance: { decrement: amountKobo },
+            pendingBalance: { increment: amountKobo },
+          },
+        });
+        if (debited.count === 0) {
+          throw new BadRequestException('Insufficient wallet balance');
+        }
+        return tx.walletTransaction.create({
+          data: {
+            txnRef: `WAL-WD-${Date.now()}`,
+            clientId: clientDbId,
+            type: 'WALLET_WITHDRAWAL',
+            status: 'PENDING',
+            amountKobo,
+            description: `Withdrawal to bank account (${mandateNote})`,
+            bankName: dto.bankName,
+            bankAcctNo: dto.bankAcctNo,
+            bankAcctName: dto.bankAcctName,
+            requestedByAuthUserId: requesterAuthUserId,
+            requiresCoSign: false,
+          },
+        });
+      });
+
+      try {
+        await this.prisma.activityLog.create({
+          data: {
+            clientId: clientDbId,
+            action: 'WALLET_WITHDRAWAL_REQUESTED',
+            description: `Withdrawal of ₦${(Number(amountKobo) / 100).toLocaleString()} requested to ${dto.bankName} (${dto.bankAcctNo}) — ${mandateNote}`,
+            amountKobo,
+            metadata: { mandate, clientType: client.type, requiresCoSign: false } as any,
+          },
+        });
+      } catch (err) {
+        this.logger.warn(`ActivityLog write failed for withdrawal request: ${(err as Error).message}`);
+      }
+
+      // Notifications for JOINT OR mandate
+      const requesterAuthUser = await this.prisma.authUser.findUnique({ where: { id: requesterAuthUserId } });
+      const requesterIsPrimary = requesterAuthUser?.holderType !== 'SECONDARY';
+      const requesterEmail = requesterAuthUser?.email || client.email;
+      const requesterName = requesterIsPrimary ? client.name : (client.secondaryName || 'Co-holder');
+
+      this.notifications.sendWithdrawalRequestedEmail(requesterEmail, requesterName, Number(amountKobo) / 100, false).catch(() => {});
+      this.notifications.notifyAdminsByRole(
+        ['SUPER_ADMIN', 'FINANCE'],
+        'New Withdrawal Request Pending Approval (Joint OR)',
+        `<p>${client.name} (${client.clientRef}) has requested a withdrawal of ₦${(Number(amountKobo) / 100).toLocaleString()} to ${dto.bankName} (${dto.bankAcctNo}). It is awaiting approval in the Withdrawals Queue.</p>`,
+      ).catch(() => {});
+
+      return result;
+    }
+
+    // JOINT AND mandate: requires co-signature from other holder before admin can approve
     const result = await this.prisma.$transaction(async (tx) => {
-      await tx.client.update({
-        where: { id: clientDbId },
+      // Atomic debit — the WHERE walletBalance >= amount guard makes concurrent
+      // withdrawals safe: two racing requests can never both pass the balance
+      // check and overdraw the wallet. Whichever loses the conditional update
+      // gets a 0-count and fails closed.
+      const debited = await tx.client.updateMany({
+        where: { id: clientDbId, walletBalance: { gte: amountKobo } },
         data: {
           walletBalance: { decrement: amountKobo },
           pendingBalance: { increment: amountKobo },
         },
       });
+      if (debited.count === 0) {
+        throw new BadRequestException('Insufficient wallet balance');
+      }
       return tx.walletTransaction.create({
         data: {
           txnRef: `WAL-WD-${Date.now()}`,
@@ -318,7 +508,7 @@ export class WalletService {
           bankAcctNo: dto.bankAcctNo,
           bankAcctName: dto.bankAcctName,
           requestedByAuthUserId: requesterAuthUserId,
-          requiresCoSign: isAndMandate,
+          requiresCoSign: true,
         },
       });
     });
@@ -332,7 +522,7 @@ export class WalletService {
           action: 'WALLET_WITHDRAWAL_REQUESTED',
           description: `Withdrawal of ₦${(Number(amountKobo) / 100).toLocaleString()} requested to ${dto.bankName} (${dto.bankAcctNo}) — ${mandateNote}`,
           amountKobo,
-          metadata: { mandate, clientType: client.type, requiresCoSign: isAndMandate } as any,
+          metadata: { mandate, clientType: client.type, requiresCoSign: true } as any,
         },
       });
     } catch (err) {
@@ -358,20 +548,150 @@ export class WalletService {
         this.notifications.sendWithdrawalCoSignNeededEmail(otherHolder.email, otherHolderName, requesterName, Number(amountKobo) / 100).catch(() => {});
       }
     } else {
+      // Normal withdrawal executed immediately — notify client it's processing
       this.notifications.sendWithdrawalRequestedEmail(requesterEmail, requesterName, Number(amountKobo) / 100, false).catch(() => {});
+      // Notify admins for visibility (not for approval)
       this.notifications.notifyAdminsByRole(
         ['SUPER_ADMIN', 'FINANCE'],
-        'New Withdrawal Request Pending Approval',
-        `<p>${client.name} (${client.clientRef}) has requested a withdrawal of ₦${(Number(amountKobo) / 100).toLocaleString()} to ${dto.bankName} (${dto.bankAcctNo}). It is awaiting approval in the Withdrawals Queue.</p>`,
+        'Withdrawal Executed (Normal Account)',
+        `<p>${client.name} (${client.clientRef}) has withdrawn ₦${(Number(amountKobo) / 100).toLocaleString()} to ${dto.bankName} (${dto.bankAcctNo}). The withdrawal was auto-executed per normal account rules.</p>`,
       ).catch(() => {});
     }
 
     return result;
   }
 
-  // ════════════════════════════════════════════════════════════════════
-  // ADMIN WITHDRAWAL APPROVAL → AUTOMATIC PAYSTACK DISBURSEMENT
-  // ════════════════════════════════════════════════════════════════════
+  /**
+   * Execute a normal withdrawal immediately (one-way execution for single-signatory
+   * and JOINT OR mandate accounts). Performs validation, disbursement via Paystack,
+   * and updates balances atomically.
+   */
+  private async executeWithdrawal(
+    clientDbId: string,
+    requesterAuthUserId: string,
+    dto: {
+      amountKobo: bigint;
+      bankName: string;
+      bankAcctNo: string;
+      bankAcctName: string;
+      mandateNote: string;
+      mandate: string;
+      clientType: string;
+    },
+  ) {
+    const client = await this.prisma.client.findUnique({ where: { id: clientDbId } });
+    if (!client) throw new NotFoundException('Client not found');
+    if (client.walletBalance < dto.amountKobo) throw new BadRequestException('Insufficient wallet balance');
+
+    const requesterAuthUser = await this.prisma.authUser.findUnique({ where: { id: requesterAuthUserId } });
+    const requesterIsPrimary = requesterAuthUser?.holderType !== 'SECONDARY';
+    const requesterEmail = requesterAuthUser?.email || client.email;
+    const requesterName = requesterIsPrimary ? client.name : (client.secondaryName || 'Co-holder');
+
+    const adminName = 'System (Auto-Execution)';
+    const secretKey = this.config.get<string>('PAYSTACK_SECRET_KEY');
+    const isDemoMode = !secretKey || secretKey.startsWith('sk_test') || process.env.NODE_ENV === 'test';
+    const isLiveEnv = process.env.NODE_ENV === 'production';
+
+    if (isLiveEnv && (!secretKey || secretKey.startsWith('sk_test'))) {
+      throw new ServiceUnavailableException(
+        'Withdrawal disbursement is unavailable: a live Paystack secret key is not configured in this environment.',
+      );
+    }
+
+    const transferRef = `WAL-WD-AUTO-${Date.now()}`;
+
+    try {
+      let transferCode: string | null = null;
+
+      if (isDemoMode) {
+        this.logger.log(`[WITHDRAWAL_AUTO] Demo mode — simulating disbursement for client=${clientDbId}`);
+        transferCode = `DEMO-${transferRef}`;
+      } else {
+        const bankCode = await this.resolveBankCode(dto.bankName || '', secretKey);
+        if (!bankCode) {
+          throw new BadRequestException(
+            `Could not resolve a bank code for "${dto.bankName}". Please verify the bank name with the client and try again.`,
+          );
+        }
+        const recipient = await this.createTransferRecipient(dto.bankAcctName || '', dto.bankAcctNo || '', bankCode, secretKey);
+        const transfer = await this.initiateTransfer(recipient.recipient_code, dto.amountKobo, `Prodigy Finance withdrawal`, transferRef, secretKey);
+        transferCode = transfer.transfer_code || transferRef;
+      }
+
+      const updated = await this.prisma.$transaction(async (tx) => {
+        // Atomic debit from wallet balance directly (no pending balance for auto-execution)
+        const debited = await tx.client.updateMany({
+          where: { id: clientDbId, walletBalance: { gte: dto.amountKobo } },
+          data: { walletBalance: { decrement: dto.amountKobo } },
+        });
+        if (debited.count === 0) {
+          throw new BadRequestException('Insufficient wallet balance');
+        }
+        return tx.walletTransaction.create({
+          data: {
+            txnRef: `WAL-WD-AUTO-${Date.now()}`,
+            clientId: clientDbId,
+            type: 'WALLET_WITHDRAWAL',
+            status: 'SUCCESSFUL',
+            amountKobo: dto.amountKobo,
+            approvedAmountKobo: dto.amountKobo,
+            disbursedAmountKobo: dto.amountKobo,
+            description: `Withdrawal to bank account (${dto.mandateNote}) — auto-executed`,
+            bankName: dto.bankName,
+            bankAcctNo: dto.bankAcctNo,
+            bankAcctName: dto.bankAcctName,
+            processedAt: new Date(),
+            initiatedById: 'system',
+            approvedById: 'system',
+            approvedAt: new Date(),
+            paystackTransferCode: transferCode,
+          },
+        });
+      });
+
+      await this.logWithdrawalEvent(
+        { id: '', clientId: clientDbId, amountKobo: dto.amountKobo, txnRef: `WAL-WD-AUTO-${Date.now()}` },
+        { adminId: 'system', adminName: 'System (Auto-Execution)', adminRole: 'system' },
+        'WALLET_WITHDRAWAL_AUTO_EXECUTED',
+        'SUCCESS',
+        transferCode,
+      );
+
+      // Notify client
+      this.notifications.sendWithdrawalDisbursedEmail(
+        requesterEmail, requesterName, Number(dto.amountKobo) / 100, dto.bankName || '', dto.bankAcctNo || '',
+      ).catch(() => {});
+
+      // Notify admins for visibility
+      this.notifications.notifyAdminsByRole(
+        ['SUPER_ADMIN', 'FINANCE'],
+        'Withdrawal Auto-Executed (Normal Account)',
+        `<p>${client.name} (${client.clientRef}) withdrew ₦${(Number(dto.amountKobo) / 100).toLocaleString()} to ${dto.bankName} (${dto.bankAcctNo}). Auto-executed per normal account rules.</p>`,
+      ).catch(() => {});
+
+      return { status: 'SUCCESSFUL', amountKobo: dto.amountKobo, transferCode };
+    } catch (err: any) {
+      // Disbursement failed — funds remain in wallet (no pending balance to return)
+      const reason = err?.message || 'Disbursement failed';
+      this.logger.warn(`[WITHDRAWAL_AUTO] Failed for client=${clientDbId}: ${reason}`);
+
+      await this.logWithdrawalEvent(
+        { id: '', clientId: clientDbId, amountKobo: dto.amountKobo, txnRef: `WAL-WD-AUTO-${Date.now()}` },
+        { adminId: 'system', adminName: 'System (Auto-Execution)', adminRole: 'system' },
+        'WALLET_WITHDRAWAL_AUTO_FAILED',
+        'FAILED',
+        null,
+        reason,
+      );
+
+      this.notifications.sendWithdrawalRejectedEmail(
+        requesterEmail, requesterName, Number(dto.amountKobo) / 100, `Auto-disbursement failed: ${reason}`,
+      ).catch(() => {});
+
+      throw new BadRequestException(`Withdrawal failed: ${reason}`);
+    }
+  }
 
   /**
    * Resolve a free-typed bank name to a Paystack bank code.
@@ -475,6 +795,32 @@ export class WalletService {
     const adminName = await this.resolveAdminName(admin.adminId);
     const secretKey = this.config.get<string>('PAYSTACK_SECRET_KEY');
     const isDemoMode = !secretKey || secretKey.startsWith('sk_test') || process.env.NODE_ENV === 'test';
+    const isLiveEnv = process.env.NODE_ENV === 'production';
+
+    // Fail closed in production: without a live Paystack secret key we can
+    // never actually disburse, and the demo-mode path below would mark a
+    // withdrawal SUCCESSFUL and clear the client's pending balance for money
+    // that was never paid out. We refuse instead.
+    if (isLiveEnv && (!secretKey || secretKey.startsWith('sk_test'))) {
+      throw new ServiceUnavailableException(
+        'Withdrawal disbursement is unavailable: a live Paystack secret key is not configured in this environment.',
+      );
+    }
+
+    // Atomic claim — grab the transaction BEFORE any external call. Two admins
+    // (or a double-click) can never both reach the disbursement call: only the
+    // first conditional update wins, and the loser fails with a clean error
+    // instead of racing to mark the same withdrawal SUCCESSFUL or FAILED.
+    const claimed = await this.prisma.walletTransaction.updateMany({
+      where: { id: txn.id, status: 'PENDING', initiatedById: null },
+      data: { initiatedById: admin.adminId },
+    });
+    if (claimed.count === 0) {
+      const current = await this.prisma.walletTransaction.findUnique({ where: { id: txn.id } });
+      if (!current) throw new NotFoundException('Transaction not found');
+      throw new BadRequestException(`This withdrawal is already ${current.status.toLowerCase()} and cannot be processed again.`);
+    }
+
     const transferRef = `WAL-WD-PAYOUT-${txn.id.slice(-8)}-${Date.now()}`;
 
     try {
@@ -498,16 +844,25 @@ export class WalletService {
       }
 
       const updated = await this.prisma.$transaction(async (tx) => {
-        await tx.client.update({
-          where: { id: txn.clientId },
+        // Guarded decrement — pendingBalance can never go negative even if the
+        // same withdrawal were somehow attempted twice.
+        const cleared = await tx.client.updateMany({
+          where: { id: txn.clientId, pendingBalance: { gte: txn.amountKobo } },
           data: { pendingBalance: { decrement: txn.amountKobo } },
         });
+        if (cleared.count === 0) {
+          throw new BadRequestException('Client pending balance is insufficient to complete this withdrawal.');
+        }
         return tx.walletTransaction.update({
           where: { id: txn.id },
           data: {
             status: 'SUCCESSFUL',
             paystackTransferCode: transferCode,
             initiatedById: admin.adminId,
+            approvedById: admin.adminId,
+            approvedAt: new Date(),
+            approvedAmountKobo: txn.amountKobo,
+            disbursedAmountKobo: txn.amountKobo,
             processedAt: new Date(),
             description: `${txn.description || 'Withdrawal'} — approved & disbursed by ${adminName}`,
           },
@@ -530,19 +885,24 @@ export class WalletService {
       // rather than leaving them stranded in pendingBalance indefinitely.
       const reason = err?.message || 'Disbursement failed';
       const failed = await this.prisma.$transaction(async (tx) => {
-        await tx.client.update({
-          where: { id: txn.clientId },
+        const returned = await tx.client.updateMany({
+          where: { id: txn.clientId, pendingBalance: { gte: txn.amountKobo } },
           data: {
             pendingBalance: { decrement: txn.amountKobo },
             walletBalance: { increment: txn.amountKobo },
           },
         });
+        if (returned.count === 0) {
+          throw new BadRequestException('Client pending balance is insufficient to return these funds.');
+        }
         return tx.walletTransaction.update({
           where: { id: txn.id },
           data: {
             status: 'FAILED',
             failureReason: reason,
             initiatedById: admin.adminId,
+            approvedById: admin.adminId,
+            approvedAt: new Date(),
             processedAt: new Date(),
             description: `${txn.description || 'Withdrawal'} — disbursement failed, funds returned to wallet`,
           },
@@ -572,20 +932,39 @@ export class WalletService {
 
     const adminName = await this.resolveAdminName(admin.adminId);
 
+    // Atomic claim — a concurrent double-reject must never reverse the same
+    // withdrawal twice (that would refund the pendingBalance into the wallet
+    // twice and mint balance).
+    const claimed = await this.prisma.walletTransaction.updateMany({
+      where: { id: txn.id, status: 'PENDING', initiatedById: null },
+      data: { initiatedById: admin.adminId },
+    });
+    if (claimed.count === 0) {
+      const current = await this.prisma.walletTransaction.findUnique({ where: { id: txn.id } });
+      if (!current) throw new NotFoundException('Transaction not found');
+      throw new BadRequestException(`This withdrawal is already ${current.status.toLowerCase()} and cannot be rejected again.`);
+    }
+
     const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.client.update({
-        where: { id: txn.clientId },
+      // Guarded reversal — pendingBalance can never go negative.
+      const returned = await tx.client.updateMany({
+        where: { id: txn.clientId, pendingBalance: { gte: txn.amountKobo } },
         data: {
           pendingBalance: { decrement: txn.amountKobo },
           walletBalance: { increment: txn.amountKobo },
         },
       });
+      if (returned.count === 0) {
+        throw new BadRequestException('Client pending balance is insufficient to reverse this withdrawal.');
+      }
       return tx.walletTransaction.update({
         where: { id: txn.id },
         data: {
           status: 'REVERSED',
           failureReason: reason || 'Rejected by admin',
           initiatedById: admin.adminId,
+          approvedById: admin.adminId,
+          approvedAt: new Date(),
           processedAt: new Date(),
           description: `${txn.description || 'Withdrawal'} — rejected by ${adminName}: ${reason || 'No reason given'}`,
         },
@@ -796,22 +1175,65 @@ export class WalletService {
     }
   }
 
-  // Admin: get all transactions with filters
-  async adminGetAll(query?: { search?: string; type?: string; status?: string; productId?: string }) {
-    return this.prisma.walletTransaction.findMany({
-      where: {
-        ...(query?.type && { type: query.type as any }),
-        ...(query?.status && { status: query.status as any }),
-        ...(query?.search && {
-          OR: [
-            { txnRef: { contains: query.search, mode: 'insensitive' } },
-            { client: { name: { contains: query.search, mode: 'insensitive' } } },
-          ],
-        }),
-      },
-      include: { client: true },
-      orderBy: { createdAt: 'desc' },
-    });
+  // Admin: get all transactions with filters + date range + pagination
+  async adminGetAll(query?: {
+    search?: string;
+    type?: string;
+    status?: string;
+    productId?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    page?: number;
+    limit?: number;
+    clientId?: string;
+  }) {
+    const page = Math.max(1, query?.page ?? 1);
+    const limit = Math.min(200, Math.max(1, query?.limit ?? 50));
+    const skip = (page - 1) * limit;
+
+    const where: any = {
+      ...(query?.type && { type: query.type as any }),
+      ...(query?.status && { status: query.status as any }),
+      ...(query?.clientId && { clientId: query.clientId }),
+      ...(query?.search && {
+        OR: [
+          { txnRef: { contains: query.search, mode: 'insensitive' } },
+          { client: { name: { contains: query.search, mode: 'insensitive' } } },
+        ],
+      }),
+    };
+
+    if (query?.dateFrom || query?.dateTo) {
+      where.createdAt = {};
+      if (query.dateFrom) {
+        const from = new Date(query.dateFrom);
+        if (isNaN(from.getTime())) throw new BadRequestException('Invalid dateFrom');
+        where.createdAt.gte = from;
+      }
+      if (query.dateTo) {
+        const to = new Date(query.dateTo);
+        if (isNaN(to.getTime())) throw new BadRequestException('Invalid dateTo');
+        to.setHours(23, 59, 59, 999);
+        where.createdAt.lte = to;
+      }
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.walletTransaction.findMany({
+        where,
+        include: {
+          client: { select: { id: true, clientRef: true, name: true, email: true, type: true } },
+          investment: { select: { id: true, investRef: true, product: { select: { name: true } } } },
+          relatedTransaction: { select: { id: true, txnRef: true, type: true, status: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.walletTransaction.count({ where }),
+    ]);
+
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   /**
@@ -860,5 +1282,306 @@ export class WalletService {
     } catch (err) {
       this.logger.warn(`AuditLog write failed: ${(err as Error).message}`);
     }
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // TRANSACTION REVERSAL / ADJUSTMENT
+  // ════════════════════════════════════════════════════════════════════
+
+  /**
+   * Reverse a completed transaction (e.g., withdrawal, funding, subscription).
+   * Creates a reversal transaction linked to the original via relatedTransactionId.
+   * Atomically adjusts wallet/pending balances.
+   */
+  async reverseTransaction(
+    transactionId: string,
+    admin: { adminId: string; adminRole: string },
+    reason: string,
+  ) {
+    const originalTxn = await this.prisma.walletTransaction.findUnique({
+      where: { id: transactionId },
+    });
+    if (!originalTxn) throw new NotFoundException('Transaction not found');
+
+    // Only certain transaction types can be reversed
+    const reversibleTypes = ['WALLET_WITHDRAWAL', 'WALLET_FUNDING', 'SUBSCRIPTION', 'REDEMPTION', 'PRE_TERMINATION_PAYOUT', 'DIVIDEND_PAYOUT'];
+    if (!reversibleTypes.includes(originalTxn.type)) {
+      throw new BadRequestException(`Transaction type ${originalTxn.type} cannot be reversed.`);
+    }
+
+    // Check if already reversed
+    if (originalTxn.status === 'REVERSED') {
+      throw new BadRequestException('This transaction has already been reversed.');
+    }
+
+    // Check if there's already a reversal for this transaction
+    const existingReversal = await this.prisma.walletTransaction.findFirst({
+      where: { relatedTransactionId: originalTxn.id },
+    });
+    if (existingReversal) {
+      throw new BadRequestException('A reversal for this transaction already exists.');
+    }
+
+    // Cannot reverse a failed or pending transaction
+    if (originalTxn.status !== 'SUCCESSFUL') {
+      throw new BadRequestException(`Only SUCCESSFUL transactions can be reversed. Current status: ${originalTxn.status}`);
+    }
+
+    const adminName = await this.resolveAdminName(admin.adminId);
+    const reversalRef = `WAL-REV-${originalTxn.txnRef}-${Date.now()}`;
+
+    // Determine balance adjustments based on original transaction type
+    const isCredit = ['WALLET_FUNDING', 'REDEMPTION', 'PRE_TERMINATION_PAYOUT', 'DIVIDEND_PAYOUT'].includes(originalTxn.type);
+    const isDebit = ['WALLET_WITHDRAWAL', 'SUBSCRIPTION'].includes(originalTxn.type);
+
+    const reversal = await this.prisma.$transaction(async (tx) => {
+      // Adjust balances atomically
+      if (isCredit) {
+        // Original was a credit → debit wallet balance
+        const debited = await tx.client.updateMany({
+          where: { id: originalTxn.clientId, walletBalance: { gte: originalTxn.amountKobo } },
+          data: { walletBalance: { decrement: originalTxn.amountKobo } },
+        });
+        if (debited.count === 0) {
+          throw new BadRequestException('Insufficient wallet balance to reverse this credit transaction.');
+        }
+      } else if (isDebit) {
+        // Original was a debit → credit wallet balance
+        await tx.client.update({
+          where: { id: originalTxn.clientId },
+          data: { walletBalance: { increment: originalTxn.amountKobo } },
+        });
+      }
+
+      // Create the reversal transaction
+      const reversalTxn = await tx.walletTransaction.create({
+        data: {
+          txnRef: reversalRef,
+          clientId: originalTxn.clientId,
+          type: originalTxn.type,
+          status: 'REVERSED',
+          amountKobo: originalTxn.amountKobo,
+          description: `Reversal of ${originalTxn.txnRef}: ${reason}`,
+          relatedTransactionId: originalTxn.id,
+          initiatedById: admin.adminId,
+          approvedById: admin.adminId,
+          approvedAt: new Date(),
+          processedAt: new Date(),
+          metadata: { originalTxnRef: originalTxn.txnRef, reversalReason: reason } as any,
+        },
+      });
+
+      // Update original transaction status
+      await tx.walletTransaction.update({
+        where: { id: originalTxn.id },
+        data: {
+          status: 'REVERSED',
+          failureReason: reason,
+          description: `${originalTxn.description || originalTxn.type} — reversed by ${adminName}: ${reason}`,
+        },
+      });
+
+      return reversalTxn;
+    });
+
+    // Audit trail
+    try {
+      await this.prisma.activityLog.create({
+        data: {
+          clientId: originalTxn.clientId,
+          action: 'TRANSACTION_REVERSED',
+          description: `Transaction ${originalTxn.txnRef} reversed by admin: ${reason}`,
+          amountKobo: originalTxn.amountKobo,
+          metadata: { originalTxnRef: originalTxn.txnRef, reversalRef, reversalReason: reason } as any,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(`ActivityLog write failed for reversal: ${(err as Error).message}`);
+    }
+
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          adminId: admin.adminId,
+          adminName,
+          adminRole: admin.adminRole,
+          action: 'TRANSACTION_REVERSED',
+          targetEntity: originalTxn.id,
+          category: 'FINANCE',
+          metadata: { clientId: originalTxn.clientId, originalTxnRef: originalTxn.txnRef, reversalRef, amountKobo: Number(originalTxn.amountKobo), reason } as any,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(`AuditLog write failed for reversal: ${(err as Error).message}`);
+    }
+
+    return reversal;
+  }
+
+  /**
+   * Adjust a transaction by creating a corrected version.
+   * The original transaction remains, an adjustment reversal is created,
+   * and a new corrected transaction is created.
+   */
+  async adjustTransaction(
+    transactionId: string,
+    admin: { adminId: string; adminRole: string },
+    dto: { correctedAmountKobo: bigint; correctedDescription?: string; reason: string },
+  ) {
+    const originalTxn = await this.prisma.walletTransaction.findUnique({
+      where: { id: transactionId },
+    });
+    if (!originalTxn) throw new NotFoundException('Transaction not found');
+
+    // Only certain transaction types can be adjusted
+    const adjustableTypes = ['WALLET_WITHDRAWAL', 'WALLET_FUNDING', 'SUBSCRIPTION', 'REDEMPTION', 'PRE_TERMINATION_PAYOUT', 'DIVIDEND_PAYOUT'];
+    if (!adjustableTypes.includes(originalTxn.type)) {
+      throw new BadRequestException(`Transaction type ${originalTxn.type} cannot be adjusted.`);
+    }
+
+    // Cannot adjust a failed, pending, or already reversed transaction
+    if (originalTxn.status !== 'SUCCESSFUL') {
+      throw new BadRequestException(`Only SUCCESSFUL transactions can be adjusted. Current status: ${originalTxn.status}`);
+    }
+
+    // Check if already adjusted
+    const existingAdjustment = await this.prisma.walletTransaction.findFirst({
+      where: { relatedTransactionId: originalTxn.id, metadata: { path: ['adjustment'], equals: true } },
+    });
+    if (existingAdjustment) {
+      throw new BadRequestException('This transaction has already been adjusted.');
+    }
+
+    if (dto.correctedAmountKobo <= BigInt(0)) {
+      throw new BadRequestException('Corrected amount must be greater than zero.');
+    }
+
+    const adminName = await this.resolveAdminName(admin.adminId);
+    const adjustmentRef = `WAL-ADJ-${originalTxn.txnRef}-${Date.now()}`;
+    const correctedRef = `WAL-COR-${originalTxn.txnRef}-${Date.now()}`;
+
+    // Determine balance adjustments
+    const isCredit = ['WALLET_FUNDING', 'REDEMPTION', 'PRE_TERMINATION_PAYOUT', 'DIVIDEND_PAYOUT'].includes(originalTxn.type);
+    const isDebit = ['WALLET_WITHDRAWAL', 'SUBSCRIPTION'].includes(originalTxn.type);
+    const amountDelta = dto.correctedAmountKobo - originalTxn.amountKobo; // positive = need more credit, negative = need debit
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Create reversal of original
+      const reversalTxn = await tx.walletTransaction.create({
+        data: {
+          txnRef: adjustmentRef,
+          clientId: originalTxn.clientId,
+          type: originalTxn.type,
+          status: 'REVERSED',
+          amountKobo: originalTxn.amountKobo,
+          description: `Adjustment reversal of ${originalTxn.txnRef}: ${dto.reason}`,
+          relatedTransactionId: originalTxn.id,
+          initiatedById: admin.adminId,
+          approvedById: admin.adminId,
+          approvedAt: new Date(),
+          processedAt: new Date(),
+          metadata: { originalTxnRef: originalTxn.txnRef, adjustmentReason: dto.reason, adjustment: true } as any,
+        },
+      });
+
+      // 2. Apply balance adjustment for the reversal
+      if (isCredit) {
+        // Original was credit → debit original amount
+        const debited = await tx.client.updateMany({
+          where: { id: originalTxn.clientId, walletBalance: { gte: originalTxn.amountKobo } },
+          data: { walletBalance: { decrement: originalTxn.amountKobo } },
+        });
+        if (debited.count === 0) {
+          throw new BadRequestException('Insufficient wallet balance to reverse original transaction for adjustment.');
+        }
+      } else if (isDebit) {
+        // Original was debit → credit original amount
+        await tx.client.update({
+          where: { id: originalTxn.clientId },
+          data: { walletBalance: { increment: originalTxn.amountKobo } },
+        });
+      }
+
+      // 3. Create corrected transaction
+      const correctedTxn = await tx.walletTransaction.create({
+        data: {
+          txnRef: correctedRef,
+          clientId: originalTxn.clientId,
+          type: originalTxn.type,
+          status: 'SUCCESSFUL',
+          amountKobo: dto.correctedAmountKobo,
+          approvedAmountKobo: dto.correctedAmountKobo,
+          disbursedAmountKobo: dto.correctedAmountKobo,
+          description: dto.correctedDescription || `Corrected version of ${originalTxn.txnRef}: ${dto.reason}`,
+          relatedTransactionId: originalTxn.id,
+          initiatedById: admin.adminId,
+          approvedById: admin.adminId,
+          approvedAt: new Date(),
+          processedAt: new Date(),
+          metadata: { originalTxnRef: originalTxn.txnRef, adjustmentReason: dto.reason, correction: true, correctedFrom: originalTxn.id } as any,
+        },
+      });
+
+      // 4. Apply balance for corrected transaction
+      if (isCredit) {
+        await tx.client.update({
+          where: { id: originalTxn.clientId },
+          data: { walletBalance: { increment: dto.correctedAmountKobo } },
+        });
+      } else if (isDebit) {
+        const debited = await tx.client.updateMany({
+          where: { id: originalTxn.clientId, walletBalance: { gte: dto.correctedAmountKobo } },
+          data: { walletBalance: { decrement: dto.correctedAmountKobo } },
+        });
+        if (debited.count === 0) {
+          throw new BadRequestException('Insufficient wallet balance for corrected transaction amount.');
+        }
+      }
+
+      // 5. Update original transaction
+      await tx.walletTransaction.update({
+        where: { id: originalTxn.id },
+        data: {
+          status: 'REVERSED',
+          failureReason: `Adjusted: ${dto.reason}`,
+          description: `${originalTxn.description || originalTxn.type} — adjusted by ${adminName}: ${dto.reason}`,
+        },
+      });
+
+      return { reversal: reversalTxn, corrected: correctedTxn };
+    });
+
+    // Audit trail
+    try {
+      await this.prisma.activityLog.create({
+        data: {
+          clientId: originalTxn.clientId,
+          action: 'TRANSACTION_ADJUSTED',
+          description: `Transaction ${originalTxn.txnRef} adjusted: ₦${Number(originalTxn.amountKobo) / 100} → ₦${Number(dto.correctedAmountKobo) / 100} (${dto.reason})`,
+          amountKobo: dto.correctedAmountKobo,
+          metadata: { originalTxnRef: originalTxn.txnRef, adjustmentRef, correctedRef, originalAmount: Number(originalTxn.amountKobo), correctedAmount: Number(dto.correctedAmountKobo), reason: dto.reason } as any,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(`ActivityLog write failed for adjustment: ${(err as Error).message}`);
+    }
+
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          adminId: admin.adminId,
+          adminName,
+          adminRole: admin.adminRole,
+          action: 'TRANSACTION_ADJUSTED',
+          targetEntity: originalTxn.id,
+          category: 'FINANCE',
+          metadata: { clientId: originalTxn.clientId, originalTxnRef: originalTxn.txnRef, adjustmentRef, correctedRef, originalAmount: Number(originalTxn.amountKobo), correctedAmount: Number(dto.correctedAmountKobo), reason: dto.reason } as any,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(`AuditLog write failed for adjustment: ${(err as Error).message}`);
+    }
+
+    return result;
   }
 }

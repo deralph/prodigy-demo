@@ -30,12 +30,21 @@ export class WalletController {
   }
 
   @Get('me/transactions')
-  @ApiOperation({ summary: 'Get wallet transaction history' })
+  @ApiOperation({ summary: 'Get wallet transaction history with date filtering and pagination' })
   getTransactions(@Req() req: any, @Query() query: any) {
     if (!req.user.clientDbId) {
       throw new BadRequestException('Admin users do not have wallet transactions. Please use a client account.');
     }
     return this.walletService.getTransactions(req.user.clientDbId, query);
+  }
+
+  @Get('me/transactions/:id')
+  @ApiOperation({ summary: 'Get detailed transaction view with audit history' })
+  getTransactionDetail(@Req() req: any, @Param('id') id: string) {
+    if (!req.user.clientDbId) {
+      throw new BadRequestException('Admin users do not have wallet transactions. Please use a client account.');
+    }
+    return this.walletService.getTransactionDetail(req.user.clientDbId, id);
   }
 
   @Post('fund/initiate')
@@ -112,9 +121,19 @@ export class AdminTransactionsController {
   constructor(private walletService: WalletService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Get all transactions with filters' })
+  @UseGuards(AdminRolesGuard)
+  @AdminRoles('SUPER_ADMIN', 'FINANCE', 'AUDIT')
+  @ApiOperation({ summary: 'Get all transactions with filters, date range, and pagination' })
   getAll(@Query() query: any) {
     return this.walletService.adminGetAll(query);
+  }
+
+  @Get(':id')
+  @UseGuards(AdminRolesGuard)
+  @AdminRoles('SUPER_ADMIN', 'FINANCE', 'AUDIT')
+  @ApiOperation({ summary: 'Get detailed transaction view with audit history (admin)' })
+  getDetail(@Param('id') id: string) {
+    return this.walletService.getTransactionDetail('', id);
   }
 
   @Post(':id/approve-withdrawal')
@@ -137,5 +156,35 @@ export class AdminTransactionsController {
       adminId: req.user.adminUserId,
       adminRole: req.user.adminRole || 'unknown',
     }, reason);
+  }
+
+  @Post(':id/reverse')
+  @UseGuards(AdminRolesGuard)
+  @AdminRoles('SUPER_ADMIN', 'FINANCE')
+  @ApiOperation({ summary: 'Reverse a completed transaction (creates reversal linked to original)' })
+  reverseTransaction(@Param('id') id: string, @Req() req: any, @Body('reason') reason: string) {
+    return this.walletService.reverseTransaction(id, {
+      adminId: req.user.adminUserId,
+      adminRole: req.user.adminRole || 'unknown',
+    }, reason);
+  }
+
+  @Post(':id/adjust')
+  @UseGuards(AdminRolesGuard)
+  @AdminRoles('SUPER_ADMIN', 'FINANCE')
+  @ApiOperation({ summary: 'Adjust a transaction (creates reversal + corrected version)' })
+  adjustTransaction(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Body() body: { correctedAmountKobo: number | bigint; correctedDescription?: string; reason: string },
+  ) {
+    return this.walletService.adjustTransaction(id, {
+      adminId: req.user.adminUserId,
+      adminRole: req.user.adminRole || 'unknown',
+    }, {
+      correctedAmountKobo: BigInt(body.correctedAmountKobo),
+      correctedDescription: body.correctedDescription,
+      reason: body.reason,
+    });
   }
 }
