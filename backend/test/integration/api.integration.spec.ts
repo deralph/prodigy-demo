@@ -50,14 +50,15 @@ describe('API Integration Tests', () => {
   function setupUserAuth() {
     // JWT strategy validates by calling prisma.authUser.findUnique with select: { id, isActive, clientId }
     prisma.authUser.findUnique.mockResolvedValue({
-      id: IDS.AUTH_USER, isActive: true, clientId: IDS.CLIENT_DB,
+      id: IDS.AUTH_USER, isActive: true, clientId: IDS.CLIENT_DB, adminUserId: null,
     } as any);
   }
 
   // Helper: set up auth for admin user
   function setupAdminAuth() {
     prisma.authUser.findUnique.mockResolvedValue({
-      id: IDS.ADMIN_AUTH, isActive: true, clientId: null,
+      id: IDS.ADMIN_AUTH, isActive: true, clientId: null, adminUserId: IDS.ADMIN_USER,
+      adminUser: { status: 'ACTIVE' },
     } as any);
   }
 
@@ -281,30 +282,46 @@ describe('API Integration Tests', () => {
   });
 
   describe('GET /api/v1/wallet/me/transactions', () => {
-    it('200 — returns transaction history', async () => {
+    it('200 — returns transaction history with pagination', async () => {
       prisma.walletTransaction.findMany.mockResolvedValueOnce([MOCK.walletTx] as any);
+      prisma.walletTransaction.count.mockResolvedValueOnce(1);
       await request(app.getHttpServer())
         .get('/api/v1/wallet/me/transactions')
         .set('Authorization', `Bearer ${userToken}`)
         .expect(200)
-        .expect(res => expect(Array.isArray(res.body)).toBe(true));
+        .expect(res => expect(res.body).toHaveProperty('data'))
+        .expect(res => expect(Array.isArray(res.body.data)).toBe(true))
+        .expect(res => expect(res.body).toHaveProperty('total'))
+        .expect(res => expect(res.body).toHaveProperty('page'))
+        .expect(res => expect(res.body).toHaveProperty('limit'));
     });
   });
 
   describe('POST /api/v1/wallet/withdraw', () => {
-    it('201 — creates withdrawal request', async () => {
+    it('201 — creates withdrawal request (auto-executes for individual client)', async () => {
       prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
+      // Second call in executeWithdrawal for individual client
+      prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
+      // JWT strategy validation (first call to findUnique)
+      prisma.authUser.findUnique.mockResolvedValueOnce({
+        id: IDS.AUTH_USER, isActive: true, clientId: IDS.CLIENT_DB, adminUserId: null, adminUser: null,
+      } as any);
+      // executeWithdrawal first findUnique call
+      prisma.authUser.findUnique.mockResolvedValueOnce({ id: 'cuid-auth-001', holderType: 'PRIMARY', email: 'john@example.com' } as any);
       prisma.$transaction.mockImplementationOnce(async (fn: any) => fn({
-        client: { update: jest.fn().mockResolvedValue(MOCK.client) },
-        walletTransaction: { create: jest.fn().mockResolvedValue({ ...MOCK.walletTx, type: 'WALLET_WITHDRAWAL', status: 'PENDING' }) },
+        client: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        walletTransaction: { create: jest.fn().mockResolvedValue({ status: 'SUCCESSFUL', amountKobo: BigInt(50_000_00), transferCode: 'AUTO-123' }) },
       }));
+      // executeWithdrawal second findUnique call
+      prisma.authUser.findUnique.mockResolvedValueOnce({ id: 'cuid-auth-001', holderType: 'PRIMARY', email: 'john@example.com' } as any);
+      prisma.activityLog.create.mockResolvedValueOnce({} as any);
 
       await request(app.getHttpServer())
         .post('/api/v1/wallet/withdraw')
         .set('Authorization', `Bearer ${userToken}`)
         .send({ amountKobo: 50000, bankName: 'GTBank', bankAcctNo: '0123456789', bankAcctName: 'John Doe' })
         .expect(201)
-        .expect(res => expect(res.body.status).toBe('PENDING'));
+        .expect(res => expect(res.body.status).toBe('SUCCESSFUL'));
     });
   });
 
@@ -327,9 +344,13 @@ describe('API Integration Tests', () => {
       prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
       prisma.product.findUnique.mockResolvedValueOnce(MOCK.product as any);
       prisma.investment.count.mockResolvedValueOnce(0);
+      prisma.client.updateMany.mockResolvedValueOnce({ count: 1 } as any); // atomic debit
+      prisma.walletTransaction.create.mockResolvedValueOnce({ txnRef: 'WAL-SUB-123' } as any);
       prisma.investment.create.mockResolvedValueOnce({
         ...MOCK.investment, status: 'PENDING_APPROVAL', product: MOCK.product,
       } as any);
+      prisma.approval.create.mockResolvedValueOnce({} as any);
+      prisma.activityLog.create.mockResolvedValueOnce({} as any);
 
       await request(app.getHttpServer())
         .post('/api/v1/investments/subscribe')
@@ -469,8 +490,8 @@ describe('API Integration Tests', () => {
     });
 
     it('POST /api/v1/admin/approvals/:id/approve — 201 approves item', async () => {
-      prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, type: 'OTHER' } as any);
-      prisma.approval.update.mockResolvedValueOnce({ ...MOCK.approval, status: 'APPROVED' } as any);
+      prisma.approval.updateMany.mockResolvedValueOnce({ count: 1 } as any); // atomic claim
+      prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, type: 'OTHER', status: 'APPROVED' } as any);
 
       await request(app.getHttpServer())
         .post(`/api/v1/admin/approvals/${IDS.APPROVAL}/approve`)
@@ -481,8 +502,8 @@ describe('API Integration Tests', () => {
     });
 
     it('POST /api/v1/admin/approvals/:id/reject — 201 rejects item', async () => {
-      prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, type: 'OTHER' } as any);
-      prisma.approval.update.mockResolvedValueOnce({ ...MOCK.approval, status: 'REJECTED' } as any);
+      prisma.approval.updateMany.mockResolvedValueOnce({ count: 1 } as any); // atomic claim
+      prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, type: 'OTHER', status: 'REJECTED' } as any);
 
       await request(app.getHttpServer())
         .post(`/api/v1/admin/approvals/${IDS.APPROVAL}/reject`)
@@ -658,7 +679,12 @@ describe('API Integration Tests', () => {
     });
 
     it('201 POST /api/v1/admin-users with a SUPER_ADMIN token succeeds', async () => {
-      prisma.authUser.findUnique.mockResolvedValueOnce(null);
+      // First findUnique = JWT strategy re-validation (admin user), second = email-not-taken check
+      prisma.authUser.findUnique
+        .mockResolvedValueOnce({
+          id: IDS.ADMIN_AUTH, isActive: true, clientId: null, adminUserId: IDS.ADMIN_USER, adminUser: { status: 'ACTIVE' },
+        } as any)
+        .mockResolvedValueOnce(null);
       prisma.$transaction.mockImplementationOnce(async (fn: any) => fn({
         adminUser: { create: jest.fn().mockResolvedValue({ id: 'new-1', email: 'new-admin@prodigy.ng', name: 'New Admin', role: 'FINANCE' }) },
         authUser: { create: jest.fn().mockResolvedValue({}) },
@@ -676,6 +702,29 @@ describe('API Integration Tests', () => {
         .get('/api/v1/admin-users')
         .set('Authorization', `Bearer ${financeToken}`)
         .expect(403);
+    });
+
+    it('401 admin endpoint when the admin AdminUser profile is LOCKED — revocation is enforced on every request', async () => {
+      // JWT strategy now re-checks the DB: admin tokens require a live,
+      // ACTIVE AdminUser profile, so a lock takes effect immediately.
+      prisma.authUser.findUnique.mockResolvedValue({
+        id: IDS.ADMIN_AUTH, isActive: true, clientId: null,
+        adminUserId: IDS.ADMIN_USER, adminUser: { status: 'LOCKED' },
+      } as any);
+      await request(app.getHttpServer())
+        .get('/api/v1/admin/clients')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(401);
+    });
+
+    it('401 protected route when the AuthUser is deactivated (isActive=false)', async () => {
+      prisma.authUser.findUnique.mockResolvedValue({
+        id: IDS.AUTH_USER, isActive: false, clientId: IDS.CLIENT_DB, adminUserId: null,
+      } as any);
+      await request(app.getHttpServer())
+        .get('/api/v1/clients/me')
+        .set('Authorization', `Bearer ${userToken}`)
+        .expect(401);
     });
   });
 });

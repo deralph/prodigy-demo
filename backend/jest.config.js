@@ -9,6 +9,7 @@ module.exports = {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   setupFiles: ['<rootDir>/test/jest.setup.ts'],
+  testTimeout: 30000,
   collectCoverageFrom: ['src/**/*.(t|j)s'],
   coveragePathIgnorePatterns: ['<rootDir>/node_modules/', '.module.ts$', 'main.ts$'],
 };

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { ApprovalsService } from './approvals.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -66,75 +66,133 @@ describe('ApprovalsService', () => {
 
   // ── approve ───────────────────────────────────────────────────────
   describe('approve()', () => {
-    it('sets approval status to APPROVED with reviewer details', async () => {
+    it('claims and sets approval status to APPROVED with reviewer details', async () => {
+      prisma.approval.updateMany.mockResolvedValueOnce({ count: 1 } as any);
       prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, type: 'OTHER' } as any);
-      prisma.approval.update.mockResolvedValueOnce({ ...MOCK.approval, status: 'APPROVED' } as any);
 
       const result = await service.approve(IDS.APPROVAL, IDS.ADMIN_USER, 'Looks good');
-      expect(result.status).toBe('APPROVED');
-      expect(prisma.approval.update).toHaveBeenCalledWith(
+      expect((result as any).status).toBe('PENDING'); // returns the pre-transition record
+      expect(prisma.approval.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
+          where: expect.objectContaining({ id: IDS.APPROVAL, status: 'PENDING' }),
           data: expect.objectContaining({ status: 'APPROVED', reviewedById: IDS.ADMIN_USER }),
         }),
       );
     });
 
-    it('also activates investment when type is SUBSCRIPTION', async () => {
+    it('also activates investment when type is SUBSCRIPTION (atomic claim + guarded pending clear)', async () => {
+      prisma.approval.updateMany.mockResolvedValueOnce({ count: 1 } as any);
       prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, type: 'SUBSCRIPTION', investmentId: IDS.INVESTMENT, details: { productName: 'Aura Fixed Income' } } as any);
-      prisma.approval.update.mockResolvedValueOnce({ ...MOCK.approval, status: 'APPROVED' } as any);
       prisma.investment.findUnique.mockResolvedValueOnce(MOCK.investment as any);
       prisma.investment.update.mockResolvedValueOnce({ ...MOCK.investment, status: 'ACTIVE' } as any);
+      prisma.client.updateMany.mockResolvedValueOnce({ count: 1 } as any);
+      prisma.walletTransaction.updateMany.mockResolvedValueOnce({ count: 1 } as any);
       prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
+      prisma.investment.findUnique.mockResolvedValueOnce(MOCK.investment as any);
 
       await service.approve(IDS.APPROVAL, IDS.ADMIN_USER);
       expect(prisma.investment.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: 'ACTIVE' }) }),
+      );
+      expect(prisma.client.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: IDS.CLIENT_DB, pendingBalance: { gte: MOCK.investment.principalKobo } }),
+          data: expect.objectContaining({ pendingBalance: { decrement: MOCK.investment.principalKobo } }),
+        }),
       );
       expect(notifications.sendInvestmentActivatedEmail).toHaveBeenCalledWith(
         MOCK.client.email, MOCK.client.name, 'Aura Fixed Income', expect.any(Number), expect.any(Date),
       );
     });
 
+    it('throws BadRequestException when the approval was already processed (claim lost)', async () => {
+      prisma.approval.updateMany.mockResolvedValueOnce({ count: 0 } as any);
+      prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, status: 'APPROVED' } as any);
+
+      await expect(service.approve(IDS.APPROVAL, IDS.ADMIN_USER)).rejects.toThrow(BadRequestException);
+    });
+
     it('throws NotFoundException when approval not found', async () => {
+      prisma.approval.updateMany.mockResolvedValueOnce({ count: 0 } as any);
       prisma.approval.findUnique.mockResolvedValueOnce(null);
       await expect(service.approve('bad-id', IDS.ADMIN_USER)).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws BadRequestException when client pendingBalance is insufficient (guarded decrement fails)', async () => {
+      prisma.approval.updateMany.mockResolvedValueOnce({ count: 1 } as any);
+      prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, type: 'SUBSCRIPTION', investmentId: IDS.INVESTMENT, details: {} } as any);
+      prisma.investment.findUnique.mockResolvedValueOnce(MOCK.investment as any);
+      prisma.investment.update.mockResolvedValueOnce({ ...MOCK.investment, status: 'ACTIVE' } as any);
+      prisma.client.updateMany.mockResolvedValueOnce({ count: 0 } as any);
+
+      await expect(service.approve(IDS.APPROVAL, IDS.ADMIN_USER)).rejects.toThrow(BadRequestException);
     });
   });
 
   // ── reject ────────────────────────────────────────────────────────
   describe('reject()', () => {
-    it('sets approval status to REJECTED with reason', async () => {
+    it('claims and sets approval status to REJECTED with reason', async () => {
+      prisma.approval.updateMany.mockResolvedValueOnce({ count: 1 } as any);
       prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, type: 'OTHER' } as any);
-      prisma.approval.update.mockResolvedValueOnce({ ...MOCK.approval, status: 'REJECTED' } as any);
 
       const result = await service.reject(IDS.APPROVAL, IDS.ADMIN_USER, 'Insufficient docs');
-      expect(result.status).toBe('REJECTED');
-      expect(prisma.approval.update).toHaveBeenCalledWith(
+      expect(prisma.approval.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
+          where: expect.objectContaining({ id: IDS.APPROVAL, status: 'PENDING' }),
           data: expect.objectContaining({ status: 'REJECTED', reviewNotes: 'Insufficient docs' }),
         }),
       );
+      expect((result as any).status).toBe('PENDING');
     });
 
-    it('also rejects the investment when type is SUBSCRIPTION', async () => {
+    it('also rejects the investment and refunds the wallet when type is SUBSCRIPTION', async () => {
+      prisma.approval.updateMany.mockResolvedValueOnce({ count: 1 } as any);
       prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, type: 'SUBSCRIPTION', investmentId: IDS.INVESTMENT, details: { productName: 'Aura Fixed Income' } } as any);
-      prisma.approval.update.mockResolvedValueOnce({ ...MOCK.approval, status: 'REJECTED' } as any);
       prisma.investment.findUnique.mockResolvedValueOnce(MOCK.investment as any);
       prisma.investment.update.mockResolvedValueOnce({ ...MOCK.investment, status: 'REJECTED' } as any);
+      prisma.client.updateMany.mockResolvedValueOnce({ count: 1 } as any);
+      prisma.walletTransaction.updateMany.mockResolvedValueOnce({ count: 1 } as any);
       prisma.client.findUnique.mockResolvedValueOnce(MOCK.client as any);
+      prisma.investment.findUnique.mockResolvedValueOnce(MOCK.investment as any);
 
       await service.reject(IDS.APPROVAL, IDS.ADMIN_USER, 'Reason');
       expect(prisma.investment.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: 'REJECTED' }) }),
+      );
+      expect(prisma.client.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: IDS.CLIENT_DB, pendingBalance: { gte: MOCK.investment.principalKobo } }),
+          data: expect.objectContaining({
+            walletBalance: { increment: MOCK.investment.principalKobo },
+            pendingBalance: { decrement: MOCK.investment.principalKobo },
+          }),
+        }),
       );
       expect(notifications.sendInvestmentRejectedEmail).toHaveBeenCalledWith(
         MOCK.client.email, MOCK.client.name, 'Aura Fixed Income', expect.any(Number), 'Reason',
       );
     });
 
+    it('throws BadRequestException when already processed (no double refund)', async () => {
+      prisma.approval.updateMany.mockResolvedValueOnce({ count: 0 } as any);
+      prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, status: 'REJECTED' } as any);
+      await expect(service.reject(IDS.APPROVAL, IDS.ADMIN_USER, 'reason')).rejects.toThrow(BadRequestException);
+    });
+
     it('throws NotFoundException when approval not found', async () => {
+      prisma.approval.updateMany.mockResolvedValueOnce({ count: 0 } as any);
       prisma.approval.findUnique.mockResolvedValueOnce(null);
       await expect(service.reject('bad-id', IDS.ADMIN_USER, 'reason')).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws BadRequestException when client pendingBalance is insufficient for the refund', async () => {
+      prisma.approval.updateMany.mockResolvedValueOnce({ count: 1 } as any);
+      prisma.approval.findUnique.mockResolvedValueOnce({ ...MOCK.approval, type: 'SUBSCRIPTION', investmentId: IDS.INVESTMENT, details: {} } as any);
+      prisma.investment.findUnique.mockResolvedValueOnce(MOCK.investment as any);
+      prisma.investment.update.mockResolvedValueOnce({ ...MOCK.investment, status: 'REJECTED' } as any);
+      prisma.client.updateMany.mockResolvedValueOnce({ count: 0 } as any);
+
+      await expect(service.reject(IDS.APPROVAL, IDS.ADMIN_USER, 'Reason')).rejects.toThrow(BadRequestException);
     });
   });
 });

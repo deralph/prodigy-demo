@@ -24,6 +24,13 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { ActivityModule } from './activity/activity.module';
 import { NibssModule } from './nibss/nibss.module';
+import { AdminPasswordModule } from './admin-password/admin-password.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
+import { CertificatesModule } from './certificates/certificates.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { MigrationModule } from './migration/migration.module';
+import { ReconciliationModule } from './reconciliation/reconciliation.module';
+import { ErpModule } from './erp/erp.module';
 
 @Module({
   imports: [
@@ -56,6 +63,13 @@ import { NibssModule } from './nibss/nibss.module';
     WebhooksModule,
     ActivityModule,
     NibssModule,
+    AdminPasswordModule,
+    OnboardingModule,
+    CertificatesModule,
+    DashboardModule,
+    MigrationModule,
+    ReconciliationModule,
+    ErpModule,
   ],
   providers: [
     {

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { logAdminAction } from '../common/audit/log-admin-action';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -7,6 +7,7 @@ const PENALTY_RATE = 0.1; // 10% early exit penalty
 
 @Injectable()
 export class PreTerminationService {
+  private readonly logger = new Logger(PreTerminationService.name);
   constructor(private prisma: PrismaService, private notifications: NotificationsService) {}
 
   async findAll(query: { status?: string }) {
@@ -62,8 +63,11 @@ export class PreTerminationService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const preTerm = await tx.preTermination.update({
-        where: { id },
+      // Atomic claim — a double-click or concurrent approve can never create
+      // two finance queue items (which finance could then double-approve and
+      // double-credit).
+      const claimed = await tx.preTermination.updateMany({
+        where: { id, status: 'PENDING_OPS' },
         data: {
           status: 'PENDING_FINANCE',
           penaltyKobo,
@@ -72,11 +76,18 @@ export class PreTerminationService {
           opsApprovedAt: new Date(),
         },
       });
+      if (claimed.count === 0) {
+        const current = await tx.preTermination.findUnique({ where: { id } });
+        if (!current) throw new NotFoundException('Pre-termination not found');
+        throw new BadRequestException(`This pre-termination is already ${current.status.toLowerCase()} and cannot be approved again.`);
+      }
+
+      const preTerm = await tx.preTermination.findUnique({ where: { id } });
 
       // Route to Finance Queue
       await tx.financeQueueItem.create({
         data: {
-          fqRef: `FQ-${Date.now()}`,
+          fqRef: `FQ-${id}`,
           type: 'Pre-Termination',
           status: 'PENDING',
           clientId: pt.investment.clientId,
@@ -98,6 +109,17 @@ export class PreTerminationService {
       return preTerm;
     });
 
+    // Client-facing ActivityLog: pre-termination approved by ops
+    await this.prisma.activityLog.create({
+      data: {
+        clientId: pt.investment.clientId,
+        action: 'PRE_TERMINATION_OPS_APPROVED',
+        description: `Early redemption approved by operations — ${pt.investment.product?.name || 'investment'} (${pt.investment.investRef}). Awaiting finance disbursement.`,
+        amountKobo: netPayoutKobo,
+        metadata: { preTerminationId: id, investmentId: pt.investmentId, penaltyKobo: Number(penaltyKobo), netPayoutKobo: Number(netPayoutKobo) } as any,
+      },
+    }).catch((err) => this.logger.warn(`ActivityLog write failed: ${err.message}`));
+
     await logAdminAction(this.prisma, {
       adminId: admin?.adminUserId,
       adminRole: admin?.adminRole,
@@ -114,15 +136,35 @@ export class PreTerminationService {
     const pt = await this.prisma.preTermination.findUnique({ where: { id } });
     if (!pt) throw new NotFoundException('Pre-termination not found');
 
-    const updated = await this.prisma.preTermination.update({
-      where: { id },
-      data: {
-        status: 'REJECTED',
-        rejectedById: adminId,
-        rejectedAt: new Date(),
-        rejectionReason: reason,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Atomic claim — only the first rejection wins.
+      const claimed = await tx.preTermination.updateMany({
+        where: { id, status: 'PENDING_OPS' },
+        data: {
+          status: 'REJECTED',
+          rejectedById: adminId,
+          rejectedAt: new Date(),
+          rejectionReason: reason,
+        },
+      });
+      if (claimed.count === 0) {
+        const current = await tx.preTermination.findUnique({ where: { id } });
+        if (!current) throw new NotFoundException('Pre-termination not found');
+        throw new BadRequestException(`This pre-termination is already ${current.status.toLowerCase()} and cannot be rejected again.`);
+      }
+      return tx.preTermination.findUnique({ where: { id }, include: { investment: { include: { product: true } } } });
     });
+
+    // Client-facing ActivityLog: pre-termination rejected
+    await this.prisma.activityLog.create({
+      data: {
+        clientId: updated!.investment.clientId,
+        action: 'PRE_TERMINATION_OPS_REJECTED',
+        description: `Early redemption request rejected — ${updated!.investment.product?.name || 'investment'} (${updated!.investment.investRef})`,
+        amountKobo: updated!.requestedAmountKobo,
+        metadata: { preTerminationId: id, investmentId: updated!.investmentId, reason } as any,
+      },
+    }).catch((err) => this.logger.warn(`ActivityLog write failed: ${err.message}`));
 
     await logAdminAction(this.prisma, {
       adminId: admin?.adminUserId,

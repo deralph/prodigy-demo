@@ -8,6 +8,8 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OnboardingService } from '../onboarding/onboarding.service';
+import { logAdminAction } from '../common/audit/log-admin-action';
 import * as bcrypt from 'bcrypt';
 import { createHmac } from 'crypto';
 import { RegisterCorporateDto } from './dto/register-corporate.dto';
@@ -21,6 +23,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private notifications: NotificationsService,
+    private onboarding: OnboardingService,
     private nibssService: NibssService,
   ) {}
 
@@ -32,12 +35,41 @@ export class AuthService {
     });
 
     if (!authUser) throw new UnauthorizedException('Invalid credentials');
-    if (!authUser.isActive) throw new UnauthorizedException('Account is locked or inactive');
+    if (!authUser.isActive) {
+      if (authUser.adminUserId) {
+        await logAdminAction(this.prisma, {
+          adminId: authUser.adminUserId, adminRole: authUser.adminUser?.role,
+          action: 'ADMIN_LOGIN_FAILED', category: 'AUTH',
+          metadata: { email: dto.email, reason: 'account_inactive' },
+        });
+      }
+      throw new UnauthorizedException('Account is locked or inactive');
+    }
+    // An admin whose AdminUser profile is locked/deleted must not be able to
+    // sign in, even if their AuthUser row is still technically active.
+    if (authUser.adminUser && authUser.adminUser.status !== 'ACTIVE') {
+      await logAdminAction(this.prisma, {
+        adminId: authUser.adminUserId, adminRole: authUser.adminUser?.role,
+        action: 'ADMIN_LOGIN_FAILED', category: 'AUTH',
+        metadata: { email: dto.email, reason: `admin_status_${authUser.adminUser.status}` },
+      });
+      throw new UnauthorizedException('Account is locked or inactive');
+    }
 
     const passwordOk = await bcrypt.compare(dto.password, authUser.passwordHash);
-    if (!passwordOk) throw new UnauthorizedException('Invalid credentials');
+    if (!passwordOk) {
+      if (authUser.adminUserId) {
+        await logAdminAction(this.prisma, {
+          adminId: authUser.adminUserId, adminRole: authUser.adminUser?.role,
+          action: 'ADMIN_LOGIN_FAILED', category: 'AUTH',
+          metadata: { email: dto.email, reason: 'invalid_password' },
+        });
+      }
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
     // Update last login
+    const isFirstLogin = !authUser.lastLoginAt;
     await this.prisma.authUser.update({
       where: { id: authUser.id },
       data: { lastLoginAt: new Date() },
@@ -52,6 +84,22 @@ export class AuthService {
       authUser.adminUser?.role ?? null,
       authUser.holderType,
     );
+
+    // Persist a revocable session for this refresh token.
+    await this.createSession(authUser.id, tokens.refreshToken);
+
+    if (authUser.adminUserId) {
+      await logAdminAction(this.prisma, {
+        adminId: authUser.adminUserId, adminRole: authUser.adminUser?.role,
+        action: 'ADMIN_LOGIN_SUCCESS', category: 'AUTH',
+        metadata: { email: dto.email },
+      });
+    }
+
+    // Trigger onboarding communication for first login after KYC activation
+    if (isFirstLogin && authUser.clientId && authUser.client?.status === 'ACTIVE') {
+      this.onboarding.onFirstLoginAfterActivation(authUser.clientId).catch(() => {});
+    }
 
     const isSecondaryHolder = authUser.holderType === 'SECONDARY';
 
@@ -107,11 +155,7 @@ export class AuthService {
       return { client, authUser };
     });
 
-    this.notifications.sendEmail(
-      dto.email,
-      'Welcome to Prodigy Finance',
-      `<p>Dear ${dto.entityName},</p><p>Your corporate account has been created on Prodigy Finance. Your Client ID is <strong>${result.client.clientRef}</strong>.</p><p>Please log in and complete your KYC to activate your account.</p><p>Best regards,<br/>Prodigy Finance Team</p>`,
-    ).catch(() => {});
+    await this.onboarding.onClientRegistered(result.client.id);
     return { message: 'Corporate account created. Please complete KYC.', clientRef: result.client.clientRef };
   }
 
@@ -183,11 +227,7 @@ export class AuthService {
       return { client, authUser };
     });
 
-    this.notifications.sendEmail(
-      dto.email,
-      'Welcome to Prodigy Finance',
-      `<p>Dear ${dto.primaryName},</p><p>Your ${isJoint ? 'joint' : 'individual'} account has been created on Prodigy Finance. Your Client ID is <strong>${result.client.clientRef}</strong>.</p><p>Please log in and complete your KYC to activate your account.</p><p>Best regards,<br/>Prodigy Finance Team</p>`,
-    ).catch(() => {});
+    await this.onboarding.onClientRegistered(result.client.id);
 
     if (isJoint && secondaryEmail) {
       const magicToken = await this.generateMagicToken(result.client.id, result.client.clientRef, secondaryEmail);
@@ -291,9 +331,23 @@ export class AuthService {
       include: { adminUser: true },
     });
     if (!authUser || !authUser.refreshToken) throw new UnauthorizedException();
+    if (!authUser.isActive) throw new UnauthorizedException('Account is locked or inactive');
+    if (authUser.adminUser && authUser.adminUser.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Account is locked or inactive');
+    }
     const valid = await bcrypt.compare(refreshToken, authUser.refreshToken);
     if (!valid) throw new UnauthorizedException();
-    return this.generateTokens(
+
+    // Session rotation: the presented refresh token must correspond to a live
+    // session. A revoked session (logout / lock / reset) blocks refresh even
+    // if the raw token is somehow still valid.
+    const sessionToken = this.hashToken(refreshToken);
+    const session = await this.prisma.session.findUnique({ where: { token: sessionToken } });
+    if (!session) throw new UnauthorizedException('Session has been revoked. Please sign in again.');
+
+    // Rotate: drop the old session, issue fresh tokens, persist a new session.
+    await this.prisma.session.deleteMany({ where: { authUserId, token: sessionToken } });
+    const tokens = await this.generateTokens(
       authUser.id,
       authUser.email,
       authUser.role,
@@ -302,6 +356,8 @@ export class AuthService {
       authUser.adminUser?.role ?? null,
       authUser.holderType,
     );
+    await this.createSession(authUser.id, tokens.refreshToken);
+    return tokens;
   }
 
   // ── Forgot password (sends OTP) ──────────────────────────────────
@@ -356,22 +412,28 @@ export class AuthService {
     }
 
     const hash = await bcrypt.hash(newPassword, 12);
-    await this.prisma.authUser.update({
-      where: { id: authUser.id },
-      data: { passwordHash: hash, otpCode: null, otpExpiry: null, refreshToken: null },
-    });
+    await this.prisma.$transaction([
+      this.prisma.authUser.update({
+        where: { id: authUser.id },
+        data: { passwordHash: hash, otpCode: null, otpExpiry: null, refreshToken: null },
+      }),
+      // Revoke every session — a password change must invalidate all devices.
+      this.prisma.session.deleteMany({ where: { authUserId: authUser.id } }),
+    ]);
 
     // Audit trail for password changes (important for financial services).
-    try {
-      await this.prisma.activityLog.create({
-        data: {
-          clientId: authUser.clientId ?? null,
-          action: 'PASSWORD_RESET',
-          description: `Password reset completed for ${email}`,
-          metadata: { email } as any,
-        },
-      });
-    } catch { /* never block the happy path */ }
+    if (authUser.clientId) {
+      try {
+        await this.prisma.activityLog.create({
+          data: {
+            clientId: authUser.clientId,
+            action: 'PASSWORD_RESET',
+            description: `Password reset completed for ${email}`,
+            metadata: { email } as any,
+          },
+        });
+      } catch { /* never block the happy path */ }
+    }
 
     this.notifications.sendPasswordChangedEmail(email).catch(() => {});
 
@@ -380,14 +442,46 @@ export class AuthService {
 
   // ── Logout ───────────────────────────────────────────────────────
   async logout(authUserId: string) {
-    await this.prisma.authUser.update({
-      where: { id: authUserId },
-      data: { refreshToken: null },
-    });
+    await this.prisma.$transaction([
+      this.prisma.authUser.update({
+        where: { id: authUserId },
+        data: { refreshToken: null },
+      }),
+      this.prisma.session.deleteMany({ where: { authUserId } }),
+    ]);
     return { message: 'Logged out' };
   }
 
   // ── Helpers ──────────────────────────────────────────────────────
+  /** One-way hash used to store session tokens (never store raw refresh tokens). */
+  private hashToken(token: string): string {
+    return createHmac('sha256', process.env.JWT_SECRET ?? 'prodigy-session').update(token).digest('hex');
+  }
+
+  private refreshTtlMs(): number {
+    const raw = process.env.JWT_REFRESH_EXPIRES_IN ?? '7d';
+    const match = /^(\d+)([smhd])$/.exec(raw);
+    if (!match) return 7 * 24 * 60 * 60 * 1000;
+    const unit = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 }[match[2]]!;
+    return Number(match[1]) * unit;
+  }
+
+  /** Persist a revocable session row for a refresh token (stores only a hash). */
+  private async createSession(authUserId: string, refreshToken: string) {
+    try {
+      await this.prisma.session.create({
+        data: {
+          token: this.hashToken(refreshToken),
+          authUserId,
+          expiresAt: new Date(Date.now() + this.refreshTtlMs()),
+        },
+      });
+    } catch {
+      // A session write must never break the login flow — the raw refresh
+      // token is still persisted (hashed) on the AuthUser row as before.
+    }
+  }
+
   private async generateTokens(
     userId: string,
     email: string,
@@ -495,6 +589,8 @@ export class AuthService {
       authUser.id, authUser.email, authUser.role,
       client.id, null, null, 'SECONDARY',
     );
+
+    await this.createSession(authUser.id, tokens.refreshToken);
 
     this.notifications.sendSecondaryHolderJoinedEmail(
       client.email, client.name, client.secondaryName || 'Your co-holder',

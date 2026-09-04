@@ -29,9 +29,24 @@ export class AdminUsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll() {
+    // Explicit select: never spread full records into the UI. AdminUser holds
+    // no password hash, but an explicit allow-list is defense in depth and
+    // guarantees future columns (e.g. secrets) can't silently leak.
     return this.prisma.adminUser.findMany({
       orderBy: { createdAt: 'desc' },
-      include: { authUser: { select: { email: true, isActive: true, lastLoginAt: true } } },
+      select: {
+        id: true,
+        adminRef: true,
+        name: true,
+        email: true,
+        role: true,
+        status: true,
+        department: true,
+        permissions: true,
+        createdAt: true,
+        updatedAt: true,
+        authUser: { select: { email: true, isActive: true, lastLoginAt: true } },
+      },
     });
   }
 
@@ -89,7 +104,10 @@ export class AdminUsersService {
   }
 
   async update(id: string, data: any, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
-    const existing = await this.prisma.adminUser.findUnique({ where: { id } });
+    const existing = await this.prisma.adminUser.findUnique({
+      where: { id },
+      include: { authUser: { select: { id: true } } },
+    });
     if (!existing) throw new NotFoundException('Admin user not found');
 
     const updateData: any = {};
@@ -98,13 +116,39 @@ export class AdminUsersService {
     if (data.status) updateData.status = toEnumStatus(data.status) as any;
     if (data.department) updateData.department = data.department;
 
-    const updated = await this.prisma.adminUser.update({
-      where: { id },
-      data: updateData,
+    // Privilege change — must be traceable. Also prevent an admin from
+    // locking/deleting their own account through this endpoint.
+    if (data.role || data.status) {
+      if (admin?.adminUserId && admin.adminUserId === id && updateData.status && updateData.status !== 'ACTIVE') {
+        throw new BadRequestException('You cannot lock or delete your own account.');
+      }
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.adminUser.update({
+        where: { id },
+        data: updateData,
+      });
+
+      // Sync the linked AuthUser so the JWT strategy (which re-checks
+      // isActive on every request) reflects the admin's status immediately:
+      //  - ACTIVE   → login enabled
+      //  - LOCKED   → login disabled AND all sessions revoked now
+      //  - DELETED  → login disabled AND all sessions revoked now
+      if (existing.authUser && updateData.status) {
+        const isActive = updateData.status === 'ACTIVE';
+        await tx.authUser.update({
+          where: { id: existing.authUser.id },
+          data: { isActive },
+        });
+        if (!isActive) {
+          await tx.session.deleteMany({ where: { authUserId: existing.authUser.id } });
+        }
+      }
+
+      return result;
     });
 
-    // A role or status change on an admin account is a privilege/access
-    // change and must always be traceable to who made it.
     await logAdminAction(this.prisma, {
       adminId: admin?.adminUserId,
       adminRole: admin?.adminRole,

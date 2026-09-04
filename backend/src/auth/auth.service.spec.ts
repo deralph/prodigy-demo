@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { NibssService } from '../nibss/nibss.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OnboardingService } from '../onboarding/onboarding.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { createMockPrisma, IDS, MOCK } from '../../test/helpers/mock-prisma';
 import { createMockNotifications } from '../../test/helpers/mock-notifications';
@@ -12,6 +13,14 @@ import { TEST_JWT_SECRET, setTestJwtEnv, makeMagicToken } from '../../test/helpe
 
 // Hash used in all tests — bcrypt of 'Test1234!'
 const HASH = '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi';
+
+const createMockOnboarding = () => ({
+  onClientRegistered: jest.fn().mockResolvedValue(undefined),
+  onKycSubmitted: jest.fn().mockResolvedValue(undefined),
+  onKycApproved: jest.fn().mockResolvedValue(undefined),
+  onKycRejected: jest.fn().mockResolvedValue(undefined),
+  onFirstLoginAfterActivation: jest.fn().mockResolvedValue(undefined),
+});
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -32,6 +41,7 @@ describe('AuthService', () => {
         AuthService,
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: createMockNotifications() },
+        { provide: OnboardingService, useValue: createMockOnboarding() },
         NibssService,
       ],
     }).compile();
@@ -335,6 +345,50 @@ describe('AuthService', () => {
         expect.objectContaining({ data: { refreshToken: null } }),
       );
       expect(res.message).toMatch(/logged out/i);
+    });
+  });
+
+  // ── refresh (session rotation) ────────────────────────────────────
+  describe('refresh()', () => {
+    const rawToken = 'refresh-token-abc';
+
+    it('issues fresh tokens and rotates the session', async () => {
+      prisma.authUser.findUnique.mockResolvedValueOnce({
+        ...MOCK.authUser, refreshToken: 'bcrypt-hash', adminUser: null,
+      } as any);
+      jest.spyOn(bcrypt, 'compare').mockResolvedValueOnce(true as never);
+      prisma.session.findUnique.mockResolvedValueOnce({ token: 'session-hash' } as any);
+      prisma.session.deleteMany.mockResolvedValueOnce({ count: 1 } as any);
+
+      const res = await service.refresh(IDS.AUTH_USER, rawToken);
+      expect(res).toHaveProperty('accessToken');
+      expect(res).toHaveProperty('refreshToken');
+      expect(prisma.session.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { token: expect.any(String) } }),
+      );
+    });
+
+    it('blocks refresh when the session has been revoked (logout/lock/reset)', async () => {
+      prisma.authUser.findUnique.mockResolvedValueOnce({
+        ...MOCK.authUser, refreshToken: 'bcrypt-hash', adminUser: null,
+      } as any);
+      jest.spyOn(bcrypt, 'compare').mockResolvedValueOnce(true as never);
+      prisma.session.findUnique.mockResolvedValueOnce(null); // no live session
+      await expect(service.refresh(IDS.AUTH_USER, rawToken)).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('blocks refresh for an inactive account', async () => {
+      prisma.authUser.findUnique.mockResolvedValueOnce({
+        ...MOCK.authUser, refreshToken: 'bcrypt-hash', isActive: false, adminUser: null,
+      } as any);
+      await expect(service.refresh(IDS.AUTH_USER, rawToken)).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('blocks refresh when the admin profile is locked', async () => {
+      prisma.authUser.findUnique.mockResolvedValueOnce({
+        ...MOCK.authUser, refreshToken: 'bcrypt-hash', adminUser: { role: 'FINANCE', status: 'LOCKED' },
+      } as any);
+      await expect(service.refresh(IDS.AUTH_USER, rawToken)).rejects.toThrow(UnauthorizedException);
     });
   });
 

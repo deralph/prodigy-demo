@@ -241,6 +241,10 @@ export class NibssService {
   }
 
   private shouldUseDemoVerification(): boolean {
+    // Demo verification must never run in production: an approval flow that
+    // "verifies" a BVN without any real provider check would clear KYC for an
+    // unverified person. Production requires the real provider to be wired up.
+    if (process.env.NODE_ENV === 'production') return false;
     return process.env.NODE_ENV === 'test' || process.env.QOREID_ALLOW_DEMO_VERIFICATION === 'true';
   }
 

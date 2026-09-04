@@ -6,12 +6,14 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { OnboardingModule } from '../onboarding/onboarding.module';
 import { NibssModule } from '../nibss/nibss.module';
 
 @Module({
   imports: [
     PassportModule,
     NotificationsModule,
+    OnboardingModule,
     NibssModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET,

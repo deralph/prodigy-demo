@@ -95,5 +95,30 @@ describe('AdminUsersService', () => {
         expect.objectContaining({ data: expect.objectContaining({ status: 'LOCKED' }) }),
       );
     });
+
+    it('prevents an admin from locking/deleting their own account', async () => {
+      prisma.adminUser.findUnique.mockResolvedValueOnce({ id: IDS.ADMIN_USER, email: 'admin@prodigy.ng', role: 'SUPER_ADMIN', status: 'ACTIVE' } as any);
+
+      await expect(
+        service.update(IDS.ADMIN_USER, { status: 'locked' }, { adminUserId: IDS.ADMIN_USER, adminRole: 'SUPER_ADMIN' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.adminUser.update).not.toHaveBeenCalled();
+    });
+
+    it('locking an admin syncs AuthUser.isActive=false and revokes all sessions', async () => {
+      prisma.adminUser.findUnique.mockResolvedValueOnce({
+        id: 'target-1', email: 'target@prodigy.ng', role: 'OPERATIONS', status: 'ACTIVE',
+        authUser: { id: 'auth-9' },
+      } as any);
+      prisma.adminUser.update.mockResolvedValueOnce({ id: 'target-1', status: 'LOCKED' } as any);
+
+      await service.update('target-1', { status: 'locked' }, { adminUserId: IDS.ADMIN_USER, adminRole: 'SUPER_ADMIN' });
+      expect(prisma.authUser.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'auth-9' }, data: { isActive: false } }),
+      );
+      expect(prisma.session.deleteMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { authUserId: 'auth-9' } }),
+      );
+    });
   });
 });

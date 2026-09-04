@@ -3,8 +3,17 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { KycService } from './kyc.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OnboardingService } from '../onboarding/onboarding.service';
 import { createMockPrisma, IDS, MOCK } from '../../test/helpers/mock-prisma';
 import { createMockNotifications } from '../../test/helpers/mock-notifications';
+
+const createMockOnboarding = () => ({
+  onClientRegistered: jest.fn().mockResolvedValue(undefined),
+  onKycSubmitted: jest.fn().mockResolvedValue(undefined),
+  onKycApproved: jest.fn().mockResolvedValue(undefined),
+  onKycRejected: jest.fn().mockResolvedValue(undefined),
+  onFirstLoginAfterActivation: jest.fn().mockResolvedValue(undefined),
+});
 
 const mockFile = (fieldname = 'valid_id'): Express.Multer.File => ({
   fieldname,
@@ -32,6 +41,7 @@ describe('KycService', () => {
         KycService,
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: notifications },
+        { provide: OnboardingService, useValue: createMockOnboarding() },
       ],
     }).compile();
     service = module.get(KycService);

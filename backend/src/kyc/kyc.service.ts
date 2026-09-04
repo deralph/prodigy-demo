@@ -2,10 +2,16 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { KYC_REQUIREMENTS } from './kyc.constants';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OnboardingService } from '../onboarding/onboarding.service';
+import { logAdminAction } from '../common/audit/log-admin-action';
 
 @Injectable()
 export class KycService {
-  constructor(private prisma: PrismaService, private notifications: NotificationsService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+    private onboarding: OnboardingService,
+  ) {}
 
   async getMyKyc(clientId: string) {
     const client = await this.prisma.client.findUnique({
@@ -121,12 +127,7 @@ export class KycService {
 
     await this.checkAndSubmitKyc(clientId, client.type.toLowerCase());
 
-    this.notifications.sendKycSubmittedEmail(client.email, client.name).catch(() => {});
-    this.notifications.notifyAdminsByRole(
-      ['SUPER_ADMIN', 'OPERATIONS', 'COMPLIANCE'],
-      'New KYC Submission Pending Review',
-      `<p>${client.name} (${client.clientRef}) has submitted all required KYC documents and is awaiting review.</p>`,
-    ).catch(() => {});
+    await this.onboarding.onKycSubmitted(clientId);
 
     return { message: 'All documents uploaded and KYC submitted for review.' };
   }
@@ -198,7 +199,7 @@ export class KycService {
   }
 
   // Admin: approve KYC
-  async approveKyc(clientId: string, adminId: string) {
+  async approveKyc(clientId: string, adminId: string, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
     await this.prisma.kycRecord.update({
       where: { clientId },
       data: { status: 'APPROVED', reviewedById: adminId, reviewedAt: new Date() },
@@ -212,16 +213,24 @@ export class KycService {
       data: { status: 'VERIFIED', verifiedById: adminId, verifiedAt: new Date() },
     });
 
-    const client = await this.prisma.client.findUnique({ where: { id: clientId } });
-    if (client) {
-      this.notifications.sendKycApprovalEmail(client.email, 'approved').catch(() => {});
-    }
+    // Approving KYC is what unlocks a client's ability to invest — every
+    // approval must be attributable to a specific admin.
+    await logAdminAction(this.prisma, {
+      adminId: admin?.adminUserId,
+      adminRole: admin?.adminRole,
+      action: 'KYC_APPROVED',
+      targetEntity: clientId,
+      category: 'KYC',
+      metadata: { documentsVerified: true },
+    });
+
+    await this.onboarding.onKycApproved(clientId);
 
     return { message: 'KYC approved' };
   }
 
   // Admin: reject KYC
-  async rejectKyc(clientId: string, adminId: string, reason: string) {
+  async rejectKyc(clientId: string, adminId: string, reason: string, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
     await this.prisma.kycRecord.update({
       where: { clientId },
       data: { status: 'REJECTED', reviewedById: adminId, reviewNotes: reason, reviewedAt: new Date() },
@@ -231,16 +240,22 @@ export class KycService {
       data: { status: 'PENDING_KYC' },
     });
 
-    const client = await this.prisma.client.findUnique({ where: { id: clientId } });
-    if (client) {
-      this.notifications.sendKycApprovalEmail(client.email, 'rejected', reason).catch(() => {});
-    }
+    await logAdminAction(this.prisma, {
+      adminId: admin?.adminUserId,
+      adminRole: admin?.adminRole,
+      action: 'KYC_REJECTED',
+      targetEntity: clientId,
+      category: 'KYC',
+      metadata: { reason },
+    });
+
+    await this.onboarding.onKycRejected(clientId, reason);
 
     return { message: 'KYC rejected' };
   }
 
   // Admin: approve a single KYC document
-  async approveDocument(clientId: string, docKey: string, adminId: string) {
+  async approveDocument(clientId: string, docKey: string, adminId: string, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
     const existing = await this.prisma.kycDocument.findUnique({
       where: { clientId_docKey: { clientId, docKey } },
     });
@@ -252,11 +267,21 @@ export class KycService {
       where: { clientId_docKey: { clientId, docKey } },
       data: { status: 'VERIFIED', verifiedById: adminId, verifiedAt: new Date(), rejectionReason: null },
     });
+
+    await logAdminAction(this.prisma, {
+      adminId: admin?.adminUserId,
+      adminRole: admin?.adminRole,
+      action: 'KYC_DOCUMENT_VERIFIED',
+      targetEntity: clientId,
+      category: 'KYC',
+      metadata: { docKey },
+    });
+
     return doc;
   }
 
   // Admin: reject a single KYC document
-  async rejectDocument(clientId: string, docKey: string, adminId: string, reason: string) {
+  async rejectDocument(clientId: string, docKey: string, adminId: string, reason: string, admin?: { adminUserId?: string | null; adminRole?: string | null }) {
     const existing = await this.prisma.kycDocument.findUnique({
       where: { clientId_docKey: { clientId, docKey } },
     });
@@ -268,6 +293,16 @@ export class KycService {
       where: { clientId_docKey: { clientId, docKey } },
       data: { status: 'REJECTED', verifiedById: adminId, verifiedAt: new Date(), rejectionReason: reason },
     });
+
+    await logAdminAction(this.prisma, {
+      adminId: admin?.adminUserId,
+      adminRole: admin?.adminRole,
+      action: 'KYC_DOCUMENT_REJECTED',
+      targetEntity: clientId,
+      category: 'KYC',
+      metadata: { docKey, reason },
+    });
+
     return doc;
   }
 }

@@ -40,18 +40,24 @@ export class AdminClientsController {
   constructor(private clientsService: ClientsService) {}
 
   @Get()
+  @UseGuards(AdminRolesGuard)
+  @AdminRoles('SUPER_ADMIN', 'OPERATIONS', 'COMPLIANCE', 'AUDIT')
   @ApiOperation({ summary: 'List all clients with filters' })
   findAll(@Query() query: { search?: string; type?: string; status?: string }) {
     return this.clientsService.findAll(query);
   }
 
   @Get(':clientId')
+  @UseGuards(AdminRolesGuard)
+  @AdminRoles('SUPER_ADMIN', 'OPERATIONS', 'COMPLIANCE', 'AUDIT')
   @ApiOperation({ summary: 'Get single client full profile' })
   findOne(@Param('clientId') clientId: string) {
     return this.clientsService.findOne(clientId);
   }
 
   @Patch(':clientId/status')
+  @UseGuards(AdminRolesGuard)
+  @AdminRoles('SUPER_ADMIN', 'OPERATIONS')
   @ApiOperation({ summary: 'Update client status (approve, suspend, activate)' })
   updateStatus(
     @Param('clientId') clientId: string,
@@ -71,7 +77,7 @@ export class AdminClientsController {
     @Req() req: any,
   ) {
     return this.clientsService.updateMandateByClientRef(clientId, mandateType, {
-      adminId: req.user.sub,
+      adminId: req.user.adminUserId,
       adminRole: req.user.adminRole,
     });
   }
