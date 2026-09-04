@@ -9,7 +9,10 @@ import { AppModule } from './app.module';
 (BigInt.prototype as any).toJSON = function () { return Number(this); };
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody: true is required so the Paystack webhook can verify its HMAC
+  // signature against the ORIGINAL request bytes (re-serializing parsed JSON
+  // would produce a different digest and defeat signature verification).
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   // Security headers (HSTS, X-Frame-Options, X-Content-Type-Options, etc.)
   // — standard hardening for any production API, doubly important for a

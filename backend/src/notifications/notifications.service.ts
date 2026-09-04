@@ -210,6 +210,47 @@ export class NotificationsService implements OnModuleInit {
     );
   }
 
+  async sendWelcomeEmail(to: string, name: string, clientRef: string, accountType: 'individual' | 'joint' | 'corporate') {
+    const typeLabel = accountType === 'corporate' ? 'corporate' : accountType;
+    return this.sendEmail(
+      to,
+      'Welcome to Prodigy Finance',
+      this.wrap(`<p>Dear ${name},</p><p>Your ${typeLabel} account has been created on Prodigy Finance. Your Client ID is <strong>${clientRef}</strong>.</p><p>Please log in and complete your KYC to activate your account and start investing.</p><p>Best regards,<br/>Prodigy Finance Team</p>`),
+    );
+  }
+
+  async sendKycSubmissionReminder(to: string, name: string, clientRef: string, daysSinceRegistration: number) {
+    return this.sendEmail(
+      to,
+      'Complete Your KYC to Activate Your Account — Prodigy Finance',
+      this.wrap(`<p>Hi ${name},</p><p>It's been ${daysSinceRegistration} day${daysSinceRegistration === 1 ? '' : 's'} since you created your Prodigy Finance account (${clientRef}).</p><p>To start investing, you need to complete your KYC verification. Please log in and upload the required documents.</p><p><a href="${process.env.FRONTEND_URL ?? 'http://localhost:5173'}/kyc" style="background:#0d1b35;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;">Complete KYC Now</a></p><p>If you need help, contact our support team.</p>`),
+    );
+  }
+
+  async sendWelcomeActiveAccount(to: string, name: string, clientRef: string) {
+    return this.sendEmail(
+      to,
+      'Your Account is Now Active — Prodigy Finance',
+      this.wrap(`<p>Hi ${name},</p><p>Great news! Your KYC has been approved and your Prodigy Finance account (<strong>${clientRef}</strong>) is now <strong>active</strong>.</p><p>You can now:</p><ul><li>Fund your wallet</li><li>Browse investment products</li><li>Make your first investment</li></ul><p><a href="${process.env.FRONTEND_URL ?? 'http://localhost:5173'}/dashboard" style="background:#0d1b35;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;">Go to Dashboard</a></p><p>Welcome to Prodigy Finance — we're excited to help you grow your wealth.</p>`),
+    );
+  }
+
+  async sendFirstInvestmentGuidance(to: string, name: string, clientRef: string) {
+    return this.sendEmail(
+      to,
+      'Ready to Make Your First Investment? — Prodigy Finance',
+      this.wrap(`<p>Hi ${name},</p><p>Your account (<strong>${clientRef}</strong>) is active and ready for investing. If you haven't made your first investment yet, here's how to get started:</p><ol><li>Fund your wallet via bank transfer or card</li><li>Browse our investment products (Fixed Income, Money Market, etc.)</li><li>Choose a product that matches your goals and risk appetite</li><li>Invest with as little as ₦10,000</li></ol><p><a href="${process.env.FRONTEND_URL ?? 'http://localhost:5173'}/investments" style="background:#0d1b35;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;">Explore Products</a></p><p>Need help choosing? Our investment team is here to assist.</p>`),
+    );
+  }
+
+  async sendWalletFundingReminder(to: string, name: string, clientRef: string) {
+    return this.sendEmail(
+      to,
+      'Fund Your Wallet to Start Investing — Prodigy Finance',
+      this.wrap(`<p>Hi ${name},</p><p>Your Prodigy Finance account (<strong>${clientRef}</strong>) is active, but your wallet balance is currently zero.</p><p>To invest, you'll need to fund your wallet first. You can do this via:</p><ul><li>Bank transfer (using your unique virtual account)</li><li>Card payment (instant)</li></ul><p><a href="${process.env.FRONTEND_URL ?? 'http://localhost:5173'}/wallet/fund" style="background:#0d1b35;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;">Fund Wallet Now</a></p><p>Once funded, you can start investing immediately.</p>`),
+    );
+  }
+
   /** Broadcast an email to every active admin holding any of the given AdminRole values. Never throws. */
   async notifyAdminsByRole(roles: string[], subject: string, body: string) {
     try {

@@ -101,7 +101,7 @@ export class KycController {
   @AdminRoles(...KYC_ADMIN_ROLES)
   @ApiOperation({ summary: 'Admin: approve KYC for a client' })
   approveKyc(@Param('clientId') clientId: string, @Req() req: any) {
-    return this.kycService.approveKyc(clientId, req.user.sub);
+    return this.kycService.approveKyc(clientId, req.user.sub, { adminUserId: req.user.adminUserId, adminRole: req.user.adminRole });
   }
 
   @Post(':clientId/reject')
@@ -114,7 +114,7 @@ export class KycController {
     @Req() req: any,
     @Body('reason') reason: string,
   ) {
-    return this.kycService.rejectKyc(clientId, req.user.sub, reason);
+    return this.kycService.rejectKyc(clientId, req.user.sub, reason, { adminUserId: req.user.adminUserId, adminRole: req.user.adminRole });
   }
 
   @Post('documents/:clientId/:docKey/approve')
@@ -127,7 +127,7 @@ export class KycController {
     @Param('docKey') docKey: string,
     @Req() req: any,
   ) {
-    return this.kycService.approveDocument(clientId, docKey, req.user.sub);
+    return this.kycService.approveDocument(clientId, docKey, req.user.sub, { adminUserId: req.user.adminUserId, adminRole: req.user.adminRole });
   }
 
   @Post('documents/:clientId/:docKey/reject')
@@ -141,6 +141,6 @@ export class KycController {
     @Req() req: any,
     @Body('reason') reason: string,
   ) {
-    return this.kycService.rejectDocument(clientId, docKey, req.user.sub, reason);
+    return this.kycService.rejectDocument(clientId, docKey, req.user.sub, reason, { adminUserId: req.user.adminUserId, adminRole: req.user.adminRole });
   }
 }
